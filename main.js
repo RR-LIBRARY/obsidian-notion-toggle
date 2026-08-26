@@ -437,10 +437,16 @@ function planEnter(text, opts) {
   const fold = opts.collapsed ? "-" : "+";
   const calloutHeader = `> [!${opts.calloutType}]${fold} `;
   if (opts.format === "details") {
+    const openAttr = opts.collapsed ? "" : " open";
+    const sOpen = opts.boldSummary ? "<summary><b>" : "<summary>";
+    const sClose = opts.boldSummary ? "</b></summary>" : "</summary>";
+    if (/^\s*<summary>(<b>)?\s*(<\/b>)?<\/summary>\s*$/.test(text)) {
+      return { from: "lineStart", insert: "", cursorOffset: 0 };
+    }
+    if (/<\/summary>\s*$/.test(text)) {
+      return { from: "cursor", insert: "\n", cursorOffset: 1 };
+    }
     if (text.trim() === "</details>") {
-      const openAttr = opts.collapsed ? "" : " open";
-      const sOpen = opts.boldSummary ? "<summary><b>" : "<summary>";
-      const sClose = opts.boldSummary ? "</b></summary>" : "</summary>";
       const insert = `
 
 <details${openAttr}>
@@ -461,6 +467,9 @@ ${sOpen}`.length;
   const isCalloutLine = /^>/.test(text);
   if (!isCalloutLine)
     return null;
+  if (isCalloutHeader && /^>\s*\[![^\]]+\][+-]\s*(\*\*\s*\*\*)?\s*$/.test(text)) {
+    return { from: "lineStart", insert: "", cursorOffset: 0 };
+  }
   if (!isCalloutHeader && /^>\s*$/.test(text)) {
     const insert = `
 ${calloutHeader}${bold}${bold}`;
