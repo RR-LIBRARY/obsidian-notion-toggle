@@ -100,3 +100,22 @@ node esbuild.config.mjs
 ```
 
 This regenerates `main.js`.
+
+## v1.0.2 — Notion parity update
+
+**Enter**
+- Question line end → cursor inside the toggle (`> `)
+- Answer line with text → next `> ` answer line
+- Empty `> ` line → closes the toggle and starts the **next** toggle
+- Empty toggle header → toggle removed (escape to plain text)
+- **Mid-line Enter** → block is not split; the remaining text moves to a fresh `> ` answer line
+
+**Backspace (new)**
+- Empty `> ` answer line → prefix removed, plain empty line
+- Caret at the very start of the question text → toggle marker removed, question text kept
+- Empty toggle header → line removed
+- Caret right after `> ` on an answer line → that line unwrapped, text kept
+- Anywhere else → default Backspace
+
+Both keys respect the **Auto-continue on Enter** setting and work in `<details>` mode too.
+Toolbar/command icon is now the Notion-style ▶ triangle.
