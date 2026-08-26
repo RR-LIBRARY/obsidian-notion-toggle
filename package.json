@@ -1,0 +1,17 @@
+{
+  "name": "obsidian-notion-toggle",
+  "version": "1.0.5",
+  "description": "Notion-style toggle plugin for Obsidian",
+  "private": true,
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "esbuild": "^0.20.2",
+    "obsidian": "^1.5.7",
+    "typescript": "^5.4.0"
+  }
+}

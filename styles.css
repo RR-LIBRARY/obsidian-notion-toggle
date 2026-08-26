@@ -45,3 +45,206 @@
 .callout.is-collapsible .callout-title:hover {
   background-color: var(--background-modifier-hover);
 }
+
+/* ===== Notion Toggle v1.0.3 — colour palette ===== */
+/* Obsidian reads --callout-color as "R, G, B" */
+.callout[data-callout="recall-red"]    { --callout-color: 235, 87, 87;  --callout-icon: lucide-flame; }
+.callout[data-callout="recall-yellow"] { --callout-color: 242, 201, 76; --callout-icon: lucide-alert-triangle; }
+.callout[data-callout="recall-green"]  { --callout-color: 39, 174, 96;  --callout-icon: lucide-check-circle; }
+.callout[data-callout="recall-blue"]   { --callout-color: 47, 128, 237; --callout-icon: lucide-lightbulb; }
+.callout[data-callout="recall-purple"] { --callout-color: 155, 81, 224; --callout-icon: lucide-book-open; }
+.callout[data-callout="recall-orange"] { --callout-color: 242, 153, 74; --callout-icon: lucide-sigma; }
+.callout[data-callout="recall-gray"]   { --callout-color: 130, 130, 130; --callout-icon: lucide-circle; }
+.callout[data-callout="recall-plain"]  { --callout-color: 40, 40, 40;   --callout-icon: lucide-chevron-right; }
+
+.theme-dark .callout[data-callout="recall-plain"] { --callout-color: 220, 220, 220; }
+
+/* Notion-like clean look for every recall colour */
+.callout[data-callout^="recall-"] {
+  background-color: rgba(var(--callout-color), 0.07);
+  border: none;
+  border-left: 3px solid rgba(var(--callout-color), 0.85);
+  box-shadow: none;
+  border-radius: 4px;
+}
+
+.callout[data-callout^="recall-"] .callout-title {
+  color: rgb(var(--callout-color));
+}
+
+.callout[data-callout="recall-plain"] {
+  background-color: transparent;
+}
+
+/* Colour picker modal */
+.notion-toggle-color-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.notion-toggle-color-btn {
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* ===== v1.0.4 — MCQ + Match the following ===== */
+.callout[data-callout^="recall-"] .callout-content ul,
+.callout[data-callout="question"] .callout-content ul {
+  margin: 2px 0;
+  padding-left: 1.2em;
+}
+
+.callout .callout-content li.task-list-item {
+  margin: 1px 0;
+  line-height: 1.5;
+}
+
+/* Answer line inside MCQ / match toggles — muted until you look at it */
+.callout .callout-content p:has(> strong:first-child) {
+  color: var(--text-muted);
+}
+
+/* Match-the-following table: compact, Notion-like */
+.callout .callout-content table {
+  width: 100%;
+  font-size: 0.9em;
+  border-collapse: collapse;
+}
+
+.callout .callout-content th,
+.callout .callout-content td {
+  padding: 3px 6px;
+  border: 1px solid var(--background-modifier-border);
+}
+
+/* ---------- v1.0.5: Floating recall timer (Pomodoro) ---------- */
+
+.notion-toggle-timer {
+  position: fixed;
+  z-index: 9999;
+  min-width: 168px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  font-family: var(--font-interface);
+  user-select: none;
+  touch-action: none;
+  transition: box-shadow 120ms ease;
+}
+
+.notion-toggle-timer.is-dragging {
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.38);
+  opacity: 0.94;
+}
+
+.notion-toggle-timer .ntt-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: grab;
+}
+
+.notion-toggle-timer .ntt-grip {
+  color: var(--text-faint);
+  font-size: 11px;
+  letter-spacing: -1px;
+}
+
+.notion-toggle-timer .ntt-time {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  color: var(--text-normal);
+}
+
+.notion-toggle-timer .ntt-meta {
+  display: flex;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.notion-toggle-timer .ntt-session {
+  opacity: 0.8;
+}
+
+.notion-toggle-timer .ntt-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.notion-toggle-timer .ntt-btn {
+  flex: 1;
+  padding: 4px 0;
+  min-width: 26px;
+  font-size: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  cursor: pointer;
+}
+
+.notion-toggle-timer .ntt-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.notion-toggle-timer .ntt-hint-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.notion-toggle-timer .ntt-hint {
+  flex: 1;
+}
+
+/* Phase accents */
+.notion-toggle-timer[data-phase="focus"] {
+  border-left: 4px solid var(--color-red, #e5484d);
+}
+.notion-toggle-timer[data-phase="short"] {
+  border-left: 4px solid var(--color-green, #30a46c);
+}
+.notion-toggle-timer[data-phase="long"] {
+  border-left: 4px solid var(--color-blue, #3b82f6);
+}
+
+.notion-toggle-timer.is-running .ntt-time {
+  color: var(--text-accent);
+}
+
+/* Compact pill: only the clock */
+.notion-toggle-timer.is-compact {
+  min-width: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+.notion-toggle-timer.is-compact .ntt-actions,
+.notion-toggle-timer.is-compact .ntt-meta,
+.notion-toggle-timer.is-compact .ntt-hint-row,
+.notion-toggle-timer.is-compact .ntt-grip {
+  display: none;
+}
+.notion-toggle-timer.is-compact .ntt-time {
+  font-size: 16px;
+}
+
+@keyframes ntt-flash {
+  0%, 100% { transform: scale(1); }
+  35% { transform: scale(1.08); }
+}
+
+.notion-toggle-timer.ntt-flash {
+  animation: ntt-flash 480ms ease 2;
+}

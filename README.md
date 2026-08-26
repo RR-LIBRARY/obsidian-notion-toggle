@@ -119,3 +119,49 @@ This regenerates `main.js`.
 
 Both keys respect the **Auto-continue on Enter** setting and work in `<details>` mode too.
 Toolbar/command icon is now the Notion-style ▶ triangle.
+
+
+## v1.0.3
+
+- **Auto-numbering**: new toggles get `1.`, `2.`, `3.` automatically (setting *Auto-numbering*, command *Insert numbered toggle*, plus *Renumber toggles in note* to fix gaps). Numbering continues automatically in notes that are already numbered.
+- **Colour palette**: traffic-light `recall-red` / `recall-yellow` / `recall-green` plus blue, purple, orange, gray and a plain black Notion look. Choose in settings, change per-toggle with *Set toggle colour*, or grade fast with *Cycle toggle colour (red → yellow → green)*.
+- Colours are styled in `styles.css` via Obsidian's native `--callout-color` hook, so they follow light/dark themes.
+
+## v1.0.4 — MCQ & Match the following (new, nothing else changed)
+
+New commands:
+
+- **Insert MCQ toggle (checkbox options)** — question toggle + `- [ ]` options + `**Answer:**` line
+- **Add MCQ option** — one more checkbox inside the current toggle
+- **Insert Match the following toggle** — two-column table skeleton inside a toggle
+- **Insert answer key line** — adds `**Answer:** ` to the toggle at the cursor
+
+New settings: **MCQ options** (2–6), **Match the following rows** (2–8), **Auto-add Answer line**.
+
+Enter inside an MCQ: option line → next `- [ ]`; empty option → `**Answer:** ` line. Numbering, colours and the existing Enter/Backspace flow are untouched.
+
+## v1.0.5 — Floating recall timer (Pomodoro) 🆕
+
+A draggable floating ⌛ timer for timed active-recall sessions. Nothing from earlier versions changed.
+
+**Commands**
+
+- **Toggle recall timer (show / hide)** — also on the ribbon (⌛)
+- **Recall timer: start / pause**
+- **Recall timer: reset phase**
+- **Recall timer: skip phase**
+- **Start recall session on this note (collapse all answers)** — collapses every toggle in the note, then starts the timer
+
+**Widget** — big countdown, phase label (Focus / Short break / Long break), session counter `2/4`, buttons ▶/⏸ · ↺ · ⏭ · ◑ compact · ✕ hide, drag handle. Position and compact mode persist in `data.json`.
+
+**Settings → Recall timer (Pomodoro)** — preset (Classic 25/5, Deep 50/10, Quick recall 15/3, Custom), focus / short / long minutes, sessions before long break (1–8), auto-start next phase, notice on phase end, vibrate on phase end, show on startup, compact by default, reset position.
+
+**Recall intelligence** — phase-end notices and break hints show 🔴/🟡/🟢 toggle counts for the active note, with a **🔴 Jump** button to the first red toggle; the status bar keeps `⌛ N sessions · Nm`.
+
+**Tests** — `bun test` runs 63 pure tests covering Enter/Backspace, numbering, colours, MCQ, Match the following, the Pomodoro state machine and the recall scan. Botany round-trip verified: 179 callouts ↔ 179 `<details>` ↔ 179 callouts.
+
+### v1.0.5 also adds
+
+- **Toggle option checkbox** — tick/untick the `- [ ]` option at the cursor (works in callout and `<details>` bodies).
+- MCQ/Match Enter + Backspace edge cases: mid-line Enter keeps the checkbox, empty option/Answer/blank row collapse to a plain body line, filled table rows chain to the next numbered row, `<details>` parity.
+- Test suite: `bun test` → **89 pass / 0 fail**; Botany round-trip 179 ↔ 179 ↔ 179.
