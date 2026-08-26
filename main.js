@@ -23,6 +23,7 @@ __export(main_exports, {
   convertCalloutsToDetails: () => convertCalloutsToDetails,
   convertDetailsToCallouts: () => convertDetailsToCallouts,
   default: () => NotionTogglePlugin,
+  planBackspace: () => planBackspace,
   planEnter: () => planEnter
 });
 module.exports = __toCommonJS(main_exports);
@@ -46,7 +47,7 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     await this.loadSettings();
     this.addCommand({
       id: "insert-toggle",
-      icon: "chevrons-down-up",
+      icon: "right-triangle",
       name: "Insert toggle (empty)",
       editorCallback: (editor) => {
         const fold = this.settings.defaultCollapsed ? "-" : "+";
@@ -141,7 +142,7 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     });
     this.addCommand({
       id: "quick-qa-toggle",
-      icon: "help-circle",
+      icon: "message-square-plus",
       name: "Quick Q&A toggle (prompt)",
       editorCallback: (editor) => {
         new QuickQAModal(this.app, this, (result) => {
@@ -162,7 +163,7 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     });
     this.addCommand({
       id: "new-toggle-below",
-      icon: "plus-circle",
+      icon: "right-triangle",
       name: "New toggle below",
       editorCallback: (editor) => this.insertNewToggleBelow(editor)
     });
@@ -185,6 +186,14 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
               if (!this.settings.autoContinue)
                 return false;
               return this.handleEnter(view);
+            }
+          },
+          {
+            key: "Backspace",
+            run: (view) => {
+              if (!this.settings.autoContinue)
+                return false;
+              return this.handleBackspace(view);
             }
           }
         ])
@@ -253,8 +262,18 @@ ${summaryOpen}${summaryClose}
     const line = state.doc.lineAt(sel.head);
     const text = line.text;
     const atLineEnd = sel.head === line.to;
-    if (!atLineEnd)
+    if (!atLineEnd) {
+      if (this.settings.format === "callout" && /^>/.test(text)) {
+        view.dispatch({
+          changes: { from: sel.head, to: sel.head, insert: "\n> " },
+          selection: { anchor: sel.head + 3 },
+          scrollIntoView: true,
+          userEvent: "input"
+        });
+        return true;
+      }
       return false;
+    }
     const plan = planEnter(text, {
       calloutType: this.settings.calloutType,
       collapsed: this.settings.defaultCollapsed,
@@ -268,6 +287,35 @@ ${summaryOpen}${summaryClose}
       selection: { anchor: (plan.from === "lineStart" ? line.from : sel.head) + plan.cursorOffset },
       scrollIntoView: true,
       userEvent: "input"
+    });
+    return true;
+  }
+  /**
+   * Backspace inside a toggle:
+   *  - empty "> " answer line   -> drop the prefix, back to plain text
+   *  - caret right before the question text -> unwrap the toggle marker
+   *  - <details> equivalents
+   * Returns true when handled.
+   */
+  handleBackspace(view) {
+    const state = view.state;
+    const sel = state.selection.main;
+    if (!sel.empty)
+      return false;
+    const line = state.doc.lineAt(sel.head);
+    const plan = planBackspace(line.text, sel.head - line.from, {
+      calloutType: this.settings.calloutType,
+      collapsed: this.settings.defaultCollapsed,
+      boldSummary: this.settings.boldSummary,
+      format: this.settings.format
+    });
+    if (!plan)
+      return false;
+    view.dispatch({
+      changes: { from: line.from, to: line.to, insert: plan.insert },
+      selection: { anchor: line.from + plan.cursorOffset },
+      scrollIntoView: true,
+      userEvent: "delete.backward"
     });
     return true;
   }
@@ -480,4 +528,39 @@ ${calloutHeader}${bold}${bold}`;
     };
   }
   return { from: "cursor", insert: "\n> ", cursorOffset: 3 };
+}
+function planBackspace(text, col, opts) {
+  var _a, _b;
+  if (opts.format === "details") {
+    const emptySummary = /^\s*<summary>(<b>)?\s*(<\/b>)?<\/summary>\s*$/;
+    if (emptySummary.test(text)) {
+      return { insert: "", cursorOffset: 0 };
+    }
+    const sm = text.match(/^(\s*<summary>(?:<b>)?)([\s\S]*?)((?:<\/b>)?<\/summary>\s*)$/);
+    if (sm && col === sm[1].length && sm[2].length > 0) {
+      return { insert: sm[2], cursorOffset: 0 };
+    }
+    return null;
+  }
+  const headerMatch = text.match(/^(>\s*\[![^\]]+\][+-]\s*)(\*\*)?([\s\S]*?)(\*\*)?\s*$/);
+  const isHeader = /^>\s*\[![^\]]+\][+-]/.test(text);
+  if (!isHeader && /^>\s*$/.test(text) && col === text.length) {
+    return { insert: "", cursorOffset: 0 };
+  }
+  if (isHeader && headerMatch) {
+    const prefix = headerMatch[1] + ((_a = headerMatch[2]) != null ? _a : "");
+    const title = (_b = headerMatch[3]) != null ? _b : "";
+    if (title.length === 0) {
+      return { insert: "", cursorOffset: 0 };
+    }
+    if (col === prefix.length) {
+      return { insert: title, cursorOffset: 0 };
+    }
+    return null;
+  }
+  const bodyMatch = text.match(/^(>\s)([\s\S]+)$/);
+  if (!isHeader && bodyMatch && col === bodyMatch[1].length) {
+    return { insert: bodyMatch[2], cursorOffset: 0 };
+  }
+  return null;
 }
