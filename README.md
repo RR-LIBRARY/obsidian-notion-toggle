@@ -40,6 +40,34 @@ Desktop ke liye: **Settings → Hotkeys** → "New toggle below" ko `Ctrl/Cmd + 
 
 ## How to use
 
+### Mobile (keyboard ke upar wala toolbar) — recommended
+
+**Settings → Toolbar (Mobile) → "Add a command..."** se ye commands add karo. Jo daily use karte ho unko `≡` handle se list me sabse upar drag kar do; jo nahi chahiye unko `X` se hata do.
+
+| Command | Icon | Kab use karo |
+|---|---|---|
+| **New toggle below** | `+` | Sabse zyada use hoga — ek tap = naya toggle, cursor seedha question par |
+| **Quick Q&A toggle (prompt)** | `?` | Popup me question + answer ek saath likh ke insert |
+| **Wrap selection as toggle** | list | Pehle se likhe Q&A ko select karke toggle bana do |
+| **Convert `<details>` blocks to callouts** | tree | Poori purani file ko foldable callouts me badlo |
+| **Convert callouts to `<details>`** | `<>` | Ulta convert (HTML format chahiye to) |
+| **Insert toggle (empty)** | chevrons | Khali toggle skeleton |
+
+**Daily flow:** toolbar me `New toggle below` tap → question likho → `Enter` → answer likho → `Enter` `Enter` → agla toggle apne aap ban jata hai.
+
+### Enter behaviour (Notion parity)
+
+| Cursor kahan hai | `Enter` dabane par |
+|---|---|
+| Toggle header (`> [!question]- Question`) ke end me | cursor toggle ke **andar** (`> ` answer line) |
+| Answer line jisme text hai | nayi answer line usi toggle ke andar |
+| Khali `> ` answer line | toggle band, **agla toggle header** ban jata hai, cursor question par |
+| Khali toggle header (bina question) | toggle hatt jata hai → normal plain text (double-Enter escape) |
+
+Normal text me Enter bilkul normal rehta hai. Settings → Notion Toggle me **Auto-continue on Enter** off bhi kar sakte ho, aur format `callout` / `details` choose kar sakte ho.
+
+### Other workflows
+
 | Workflow | Steps |
 |---|---|
 | **Fastest** | Type the question on one line and the answer below it → select both → run **"Wrap selection as toggle"** (assign a hotkey like `Ctrl/Cmd+T`). |
