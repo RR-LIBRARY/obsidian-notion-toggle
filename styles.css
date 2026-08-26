@@ -1,0 +1,47 @@
+/* Notion Toggle — Notion-like styling for foldable callout toggles */
+
+/* Notion-style arrow on foldable callouts */
+.callout[data-callout="question"].is-collapsible .callout-title,
+.callout[data-callout="info"].is-collapsible .callout-title,
+.callout[data-callout="note"].is-collapsible .callout-title,
+.callout[data-callout="abstract"].is-collapsible .callout-title {
+  cursor: pointer;
+}
+
+/* Rotating arrow like Notion */
+.callout.is-collapsible .callout-fold {
+  transition: transform 0.15s ease;
+}
+
+.callout.is-collapsible.is-collapsed .callout-fold {
+  transform: rotate(-90deg);
+}
+
+/* Subtle hover background like Notion toggles */
+.callout.is-collapsible {
+  transition: background-color 0.1s ease;
+}
+
+.callout.is-collapsible:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+/* Clean borderless look for toggle callouts */
+.callout[data-callout="question"].is-collapsible,
+.callout[data-callout="info"].is-collapsible,
+.callout[data-callout="note"].is-collapsible,
+.callout[data-callout="abstract"].is-collapsible {
+  border-left: 2px solid var(--interactive-accent);
+  background-color: transparent;
+  box-shadow: none;
+}
+
+/* Make the title row feel like a Notion toggle row */
+.callout.is-collapsible .callout-title {
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.callout.is-collapsible .callout-title:hover {
+  background-color: var(--background-modifier-hover);
+}
