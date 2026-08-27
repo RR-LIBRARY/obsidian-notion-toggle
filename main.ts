@@ -4,21 +4,44 @@ import { keymap } from "@codemirror/view";
 import {
   DEFAULT_POMODORO,
   POMODORO_PRESETS,
+  autoPauseNotice,
   clampMinutes,
   collapseAllToggles,
   createState,
+  isIdle,
   nextPhase,
+  pauseForInactivity,
   phaseDuration,
   phaseLabel,
   resetPhase,
   resolvePreset,
+  resumeAfterAutoPause,
   scanRecallStats,
   sessionSummary,
+  shouldAutoPause,
+  stopSession,
+  stopSummary,
   tick,
   type PomodoroSettings,
   type PomodoroState,
 } from "./src/timer";
+
 import { TimerWidget } from "./src/timer-ui";
+import { commandName } from "./src/naming";
+import { blankTableRow, smartAction, smartActionLabel } from "./src/smart";
+import {
+  GRADE_LABEL,
+
+  dueNotes,
+  dueSummary,
+  gradeCard,
+  newCard,
+  nextDueLabel,
+  suggestGrade,
+  type Grade,
+  type SrsCard,
+} from "./src/srs";
+
 
 
 type ToggleFormat = "callout" | "details";
@@ -39,6 +62,13 @@ interface NotionToggleSettings extends PomodoroSettings {
   matchRowCount: number;
   /** Append an "**Answer:** " line inside new MCQ / match toggles. */
   addAnswerLine: boolean;
+  /** v1.0.7: keep the command list minimal (4 primary + "Advanced: …"). */
+  minimalNames: boolean;
+  /** v1.0.7: SM-2 schedule per note path. */
+  srs: Record<string, SrsCard>;
+  /** v1.0.7: ask for one grade when a focus phase ends. */
+  autoReview: boolean;
+
 }
 
 const DEFAULT_SETTINGS: NotionToggleSettings = {
@@ -53,6 +83,10 @@ const DEFAULT_SETTINGS: NotionToggleSettings = {
   mcqOptionCount: 4,
   matchRowCount: 4,
   addAnswerLine: true,
+  minimalNames: true,
+  srs: {},
+  autoReview: true,
+
 };
 
 const CALLOUT_TYPES = ["question", "info", "note", "abstract", "tip", "warning", "success"];
@@ -87,11 +121,64 @@ export default class NotionTogglePlugin extends Plugin {
   timerWidget: TimerWidget | null = null;
   statusEl: HTMLElement | null = null;
   lastTick = Date.now();
+  /* v1.0.6 attention tracking */
+  lastActivityAt = Date.now();
+  sessionNotePath: string | null = null;
+  /* v1.0.7 review state */
+  reviewOpen = false;
+  reviewSuggestion: Grade = "good";
+
+  /**
+   * v1.0.7: every command goes through here, so the toolbar list stays short.
+   * Four primary commands keep clean names; the rest get an "Advanced: " prefix.
+   */
+  addCommand(cmd: Parameters<Plugin["addCommand"]>[0]) {
+    return super.addCommand({
+      ...cmd,
+      name: commandName(cmd.id, cmd.name, this.settings.minimalNames),
+    });
+  }
 
   async onload() {
+
     await this.loadSettings();
 
+    /* ---------- v1.0.7: four primary, context-aware commands ---------- */
+
+    // Primary 1: one button that adds whatever fits the cursor.
+    this.addCommand({
+      id: "smart-toggle",
+      icon: "plus-circle",
+      name: "Toggle (smart add)",
+      editorCallback: (editor) => this.runSmartToggle(editor),
+    });
+
+    // Primary 2: traffic-light grading of the toggle under the cursor.
+    this.addCommand({
+      id: "smart-colour",
+      icon: "traffic-cone",
+      name: "Colour (red → yellow → green)",
+      editorCallback: (editor) => this.cycleColorAtCursor(editor),
+    });
+
+    // Primary 3: start / pause / resume the recall session.
+    this.addCommand({
+      id: "smart-recall",
+      icon: "timer",
+      name: "Recall (start / pause session)",
+      editorCallback: (editor) => this.runSmartRecall(editor),
+    });
+
+    // Primary 4: SM-2 review of the current note.
+    this.addCommand({
+      id: "smart-review",
+      icon: "check-circle",
+      name: "Review (spaced repetition)",
+      editorCallback: (editor) => this.openReview(editor),
+    });
+
     // Command 1: Insert an empty foldable toggle at cursor
+
     this.addCommand({
       id: "insert-toggle",
       icon: "right-triangle",
@@ -112,58 +199,9 @@ export default class NotionTogglePlugin extends Plugin {
       id: "wrap-selection-toggle",
       icon: "text-quote",
       name: "Wrap selection as toggle",
-      editorCallback: (editor) => {
-        const selection = editor.getSelection();
-        const type = this.activeCallout();
-        const fold = this.settings.defaultCollapsed ? "-" : "+";
-
-        if (selection.trim().length === 0) {
-          // No selection: wrap the current line
-          const line = editor.getLine(editor.getCursor().line);
-          if (line.trim().length === 0) {
-            new Notice("Nothing to wrap — select the question and answer first.");
-            return;
-          }
-          const title = this.maybeBold(line.trim());
-          editor.replaceRange(`> [!${type}]${fold} ${title}\n> \n`, {
-            line: editor.getCursor().line,
-            ch: 0,
-          }, {
-            line: editor.getCursor().line,
-            ch: line.length,
-          });
-          return;
-        }
-
-        // Selection present: first non-empty line = title, rest = body
-        const lines = selection.split("\n");
-        let titleLine = "";
-        let bodyStart = 0;
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i].trim().length > 0) {
-            titleLine = lines[i].trim();
-            bodyStart = i + 1;
-            break;
-          }
-        }
-        if (titleLine.length === 0) {
-          new Notice("Selection is empty.");
-          return;
-        }
-        const title = this.maybeBold(titleLine);
-        const bodyLines = lines.slice(bodyStart);
-        // Drop leading blank lines of the body
-        while (bodyLines.length > 0 && bodyLines[0].trim().length === 0) {
-          bodyLines.shift();
-        }
-        const body = bodyLines.length > 0
-          ? "\n" + bodyLines.map((l) => `> ${l}`.replace(/>\s+$/, ">")).join("\n")
-          : "";
-        const block = `> [!${type}]${fold} ${title}${body}\n`;
-
-        editor.replaceSelection(block);
-      },
+      editorCallback: (editor) => this.wrapSelectionAsToggle(editor),
     });
+
 
     // Command 3: Convert <details> blocks in the current file to foldable callouts
     this.addCommand({
@@ -291,17 +329,8 @@ export default class NotionTogglePlugin extends Plugin {
       id: "cycle-toggle-color",
       icon: "traffic-cone",
       name: "Cycle toggle colour (red → yellow → green)",
-      editorCallback: (editor) => {
-        const found = this.findHeaderLine(editor);
-        if (!found) {
-          new Notice("Cursor is not inside a toggle.");
-          return;
-        }
-        const current = found.text.match(/^>\s*\[!([^\]]+)\]/)?.[1] ?? "";
-        const idx = TRAFFIC_CYCLE.indexOf(current);
-        const next = TRAFFIC_CYCLE[(idx + 1) % TRAFFIC_CYCLE.length];
-        this.recolorToggleAtCursor(editor, next);
-      },
+      editorCallback: (editor) => this.cycleColorAtCursor(editor),
+
     });
 
     // Command 12: Turn auto-numbering on/off
@@ -408,18 +437,21 @@ export default class NotionTogglePlugin extends Plugin {
     this.addCommand({
       id: "toggle-recall-timer",
       icon: "timer",
-      name: "Toggle recall timer (show / hide)",
+      name: "Timer: show / hide",
       callback: () => this.toggleTimer(),
     });
 
     this.addCommand({
       id: "recall-timer-start-pause",
       icon: "play",
-      name: "Recall timer: start / pause",
+      name: "Timer: start / pause",
       callback: () => {
         this.showTimer();
-        this.timerState = { ...this.timerState, running: !this.timerState.running };
+        const running = !this.timerState.running;
+        this.timerState = { ...this.timerState, running, autoPaused: false };
+        if (running && !this.sessionNotePath) this.sessionNotePath = this.activeNotePath();
         this.lastTick = Date.now();
+        this.lastActivityAt = Date.now();
         this.renderTimer();
       },
     });
@@ -427,7 +459,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.addCommand({
       id: "recall-timer-reset",
       icon: "rotate-ccw",
-      name: "Recall timer: reset phase",
+      name: "Timer: reset phase",
       callback: () => {
         this.timerState = resetPhase(this.timerState, this.settings);
         this.renderTimer();
@@ -437,7 +469,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.addCommand({
       id: "recall-timer-skip",
       icon: "skip-forward",
-      name: "Recall timer: skip phase",
+      name: "Timer: skip phase",
       callback: () => {
         this.timerState = nextPhase(this.timerState, this.settings);
         this.lastTick = Date.now();
@@ -446,28 +478,28 @@ export default class NotionTogglePlugin extends Plugin {
       },
     });
 
+
     this.addCommand({
       id: "recall-session-this-note",
       icon: "brain",
-      name: "Start recall session on this note (collapse all answers)",
-      editorCallback: (editor) => {
-        const doc = editor.getValue();
-        const collapsed = collapseAllToggles(doc);
-        if (collapsed !== doc) {
-          const cursor = editor.getCursor();
-          editor.setValue(collapsed);
-          editor.setCursor(cursor);
-        }
-        const stats = scanRecallStats(collapsed);
-        this.showTimer();
-        this.timerState = { ...resetPhase(createState(this.settings), this.settings), running: true };
-        this.lastTick = Date.now();
-        this.renderTimer();
-        new Notice(
-          `Recall session started — ${stats.total} toggles (🔴 ${stats.red} · 🟡 ${stats.yellow} · 🟢 ${stats.green})`
-        );
-      },
+      name: "Timer: start recall session on this note",
+      editorCallback: (editor) => this.startRecallSession(editor),
     });
+
+    this.addCommand({
+      id: "recall-timer-stop",
+      icon: "square",
+      name: "Timer: stop session",
+      callback: () => this.stopTimerSession(),
+    });
+
+    this.addCommand({
+      id: "show-due-notes",
+      icon: "calendar-clock",
+      name: "Show notes due for recall",
+      callback: () => this.showDueNotes(),
+    });
+
 
     // 250 ms tick, registered so Obsidian clears it on unload.
     this.lastTick = Date.now();
@@ -475,7 +507,25 @@ export default class NotionTogglePlugin extends Plugin {
       window.setInterval(() => this.onTimerTick(), 250) as unknown as number
     );
 
+    /* ---------- v1.0.6: attention-aware auto-pause ---------- */
+    const bumpActivity = () => {
+      this.lastActivityAt = Date.now();
+    };
+    for (const evt of ["keydown", "pointerdown", "touchstart", "wheel"] as const) {
+      this.registerDomEvent(document, evt, bumpActivity, { passive: true });
+    }
+    this.registerDomEvent(document, "visibilitychange", () => this.evaluateAttention());
+    this.registerDomEvent(window, "blur", () => this.evaluateAttention());
+    this.registerDomEvent(window, "focus", () => this.evaluateAttention());
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", () => {
+        bumpActivity();
+        this.evaluateAttention();
+      })
+    );
+
     if (this.settings.showOnStartup) this.showTimer();
+
 
 
 
@@ -712,7 +762,191 @@ export default class NotionTogglePlugin extends Plugin {
     return `**${text}**`;
   }
 
+  /* ---------- v1.0.7: smart commands + SM-2 review ---------- */
+
+  /** Wrap the selection (or current line) in a toggle. */
+  wrapSelectionAsToggle(editor: Editor) {
+    const selection = editor.getSelection();
+    const type = this.activeCallout();
+    const fold = this.settings.defaultCollapsed ? "-" : "+";
+
+    if (selection.trim().length === 0) {
+      const line = editor.getLine(editor.getCursor().line);
+      if (line.trim().length === 0) {
+        new Notice("Nothing to wrap — select the question and answer first.");
+        return;
+      }
+      const title = this.maybeBold(line.trim());
+      editor.replaceRange(
+        `> [!${type}]${fold} ${title}\n> \n`,
+        { line: editor.getCursor().line, ch: 0 },
+        { line: editor.getCursor().line, ch: line.length }
+      );
+      return;
+    }
+
+    const lines = selection.split("\n");
+    let titleLine = "";
+    let bodyStart = 0;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim().length > 0) {
+        titleLine = lines[i].trim();
+        bodyStart = i + 1;
+        break;
+      }
+    }
+    if (titleLine.length === 0) {
+      new Notice("Selection is empty.");
+      return;
+    }
+    const title = this.maybeBold(titleLine);
+    const bodyLines = lines.slice(bodyStart);
+    while (bodyLines.length > 0 && bodyLines[0].trim().length === 0) bodyLines.shift();
+    const body =
+      bodyLines.length > 0
+        ? "\n" + bodyLines.map((l) => `> ${l}`.replace(/>\s+$/, ">")).join("\n")
+        : "";
+    editor.replaceSelection(`> [!${type}]${fold} ${title}${body}\n`);
+  }
+
+
+  /** Cycle the toggle at the cursor through red → yellow → green. */
+  cycleColorAtCursor(editor: Editor) {
+    const found = this.findHeaderLine(editor);
+    if (!found) {
+      new Notice("Cursor is not inside a toggle.");
+      return;
+    }
+    const current = found.text.match(/^>\s*\[!([^\]]+)\]/)?.[1] ?? "";
+    const idx = TRAFFIC_CYCLE.indexOf(current);
+    const next = TRAFFIC_CYCLE[(idx + 1) % TRAFFIC_CYCLE.length];
+    this.recolorToggleAtCursor(editor, next);
+  }
+
+  /** One button, five outcomes — decided by the cursor context. */
+  runSmartToggle(editor: Editor) {
+    const cursor = editor.getCursor();
+    const line = editor.getLine(cursor.line);
+    const action = smartAction({
+      selection: editor.getSelection(),
+      line,
+      insideToggle: !!this.findHeaderLine(editor),
+    });
+
+    switch (action) {
+      case "wrap-selection":
+        this.wrapSelectionAsToggle(editor);
+        break;
+      case "mcq-option":
+        editor.replaceRange("\n> - [ ] ", { line: cursor.line, ch: line.length });
+        editor.setCursor({ line: cursor.line + 1, ch: 8 });
+        break;
+      case "match-row": {
+        const row = blankTableRow(line);
+        editor.replaceRange(`\n${row}`, { line: cursor.line, ch: line.length });
+        editor.setCursor({ line: cursor.line + 1, ch: 4 });
+        break;
+      }
+      case "answer-key":
+        editor.replaceRange("\n> **Answer key:** ", { line: cursor.line, ch: line.length });
+        editor.setCursor({ line: cursor.line + 1, ch: 18 });
+        break;
+      default:
+        this.insertNewToggleBelow(editor);
+    }
+    if (action !== "new-toggle") new Notice(smartActionLabel(action));
+  }
+
+  /** Start, pause or resume the recall session with a single command. */
+  runSmartRecall(editor: Editor) {
+    if (!this.timerWidget || !this.sessionNotePath) {
+      this.startRecallSession(editor);
+      return;
+    }
+    if (this.timerState.running) {
+      this.timerState = { ...this.timerState, running: false, autoPaused: false };
+      new Notice("⌛ Paused");
+    } else {
+      this.timerState = { ...this.timerState, running: true, autoPaused: false };
+      this.lastTick = Date.now();
+      this.lastActivityAt = Date.now();
+      new Notice("⌛ Running");
+    }
+    this.renderTimer();
+  }
+
+  /** Collapse all answers, show the timer and start a focus phase on this note. */
+  startRecallSession(editor: Editor) {
+    const doc = editor.getValue();
+    const collapsed = collapseAllToggles(doc);
+    if (collapsed !== doc) {
+      const cursor = editor.getCursor();
+      editor.setValue(collapsed);
+      editor.setCursor(cursor);
+    }
+    const stats = scanRecallStats(collapsed);
+    this.showTimer();
+    this.sessionNotePath = this.activeNotePath();
+    this.timerState = {
+      ...resetPhase(createState(this.settings), this.settings),
+      running: true,
+    };
+    this.lastTick = Date.now();
+    this.lastActivityAt = Date.now();
+    this.renderTimer();
+    new Notice(
+      `Recall session started — ${stats.total} toggles (🔴 ${stats.red} · 🟡 ${stats.yellow} · 🟢 ${stats.green})`
+    );
+  }
+
+  /** The SM-2 card for a note path. */
+  cardFor(path: string | null): SrsCard | undefined {
+    if (!path) return undefined;
+    return this.settings.srs?.[path];
+  }
+
+  /** Show the grading row (Again / Hard / Good / Easy) for the current note. */
+  openReview(editor?: Editor) {
+    this.showTimer();
+    const doc = editor?.getValue() ?? "";
+    const stats = doc ? scanRecallStats(doc) : { total: 0, red: 0, yellow: 0, green: 0, firstRedLine: -1 };
+    this.reviewSuggestion = suggestGrade(stats);
+    this.reviewOpen = true;
+    this.renderTimer();
+  }
+
+  /** Apply a grade to the active note and store the next due date. */
+  async applyGrade(grade: Grade) {
+    const path = this.sessionNotePath ?? this.activeNotePath();
+    if (!path) {
+      new Notice("Open a note first to schedule its recall.");
+      return;
+    }
+    const card = gradeCard(this.cardFor(path) ?? newCard(), grade, Date.now());
+    this.settings.srs = { ...(this.settings.srs ?? {}), [path]: card };
+    await this.saveSettings();
+    this.reviewOpen = false;
+    this.renderTimer();
+    this.updateStatus();
+    new Notice(`${GRADE_LABEL[grade]} → ${nextDueLabel(card, Date.now())} · ease ${card.ease}`);
+  }
+
+  /** List the notes whose recall is due, newest schedule first. */
+  showDueNotes() {
+    const due = dueNotes(this.settings.srs ?? {}, Date.now());
+    if (!due.length) {
+      new Notice("Nothing due — everything is scheduled ahead.");
+      return;
+    }
+    const rows = due.map((path) => ({ path, card: this.settings.srs[path] }));
+    new DueNotesModal(this.app, rows, (path) => {
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (file) void this.app.workspace.openLinkText(path, "", false);
+    }).open();
+  }
+
   /* ---------- v1.0.5: timer plumbing ---------- */
+
 
   toggleTimer() {
     if (this.timerWidget) {
@@ -727,8 +961,11 @@ export default class NotionTogglePlugin extends Plugin {
     this.timerWidget = new TimerWidget(
       {
         onToggleRun: () => {
-          this.timerState = { ...this.timerState, running: !this.timerState.running };
+          const running = !this.timerState.running;
+          this.timerState = { ...this.timerState, running, autoPaused: false };
+          if (running && !this.sessionNotePath) this.sessionNotePath = this.activeNotePath();
           this.lastTick = Date.now();
+          this.lastActivityAt = Date.now();
           this.renderTimer();
         },
         onReset: () => {
@@ -743,6 +980,8 @@ export default class NotionTogglePlugin extends Plugin {
         },
         onHide: () => this.hideTimer(),
         onJumpRed: () => this.jumpToFirstRed(),
+        onRecallAgain: () => this.collapseActiveNote(true),
+        onGrade: (grade) => void this.applyGrade(grade as Grade),
         onMove: (x, y) => {
           this.settings.timerX = x;
           this.settings.timerY = y;
@@ -763,11 +1002,88 @@ export default class NotionTogglePlugin extends Plugin {
     this.timerWidget = null;
   }
 
+  /** Stop the session completely: paused fresh focus phase + summary. */
+  stopTimerSession() {
+    const summary = stopSummary(this.timerState);
+    this.timerState = stopSession(this.timerState, this.settings);
+    this.sessionNotePath = null;
+    this.renderTimer();
+    this.updateStatus();
+    new Notice(summary);
+  }
+
+  private activeNotePath(): string | null {
+    return this.app.workspace.activeEditor?.file?.path ?? null;
+  }
+
+  /** Auto-pause / auto-resume based on visibility and the session note. */
+  private evaluateAttention() {
+    const reason = shouldAutoPause({
+      state: this.timerState,
+      enabled: this.settings.autoPauseOnLeave,
+      visible: document.visibilityState !== "hidden" && document.hasFocus(),
+      onSessionNote: !this.sessionNotePath || this.activeNotePath() === this.sessionNotePath,
+      pinned: this.settings.pinToSessionNote,
+    });
+
+    if (reason) {
+      this.timerState = pauseForInactivity(this.timerState);
+      this.renderTimer();
+      if (this.settings.notifyOnPhaseEnd) new Notice(autoPauseNotice(reason));
+      return;
+    }
+
+    if (
+      this.settings.autoResumeOnReturn &&
+      this.timerState.autoPaused &&
+      document.visibilityState !== "hidden"
+    ) {
+      const onNote =
+        !this.sessionNotePath ||
+        !this.settings.pinToSessionNote ||
+        this.activeNotePath() === this.sessionNotePath;
+      if (onNote) {
+        this.timerState = resumeAfterAutoPause(this.timerState);
+        this.lastTick = Date.now();
+        this.lastActivityAt = Date.now();
+        this.renderTimer();
+      }
+    }
+  }
+
+  /** Collapse every toggle in the active note (used on breaks / "recall again"). */
+  private collapseActiveNote(notify = false) {
+    const editor = this.app.workspace.activeEditor?.editor;
+    if (!editor) return;
+    const doc = editor.getValue();
+    const collapsed = collapseAllToggles(doc);
+    if (collapsed !== doc) {
+      const cursor = editor.getCursor();
+      editor.setValue(collapsed);
+      editor.setCursor(cursor);
+    }
+    if (notify) {
+      const stats = scanRecallStats(collapsed);
+      new Notice(`All ${stats.total} toggles collapsed — recall again 🔴 ${stats.red}`);
+    }
+  }
+
   private onTimerTick() {
     const now = Date.now();
     const elapsed = now - this.lastTick;
     this.lastTick = now;
     if (!this.timerState.running) return;
+
+    // Idle auto-pause (focus phase only — breaks are meant to be idle).
+    if (
+      this.timerState.phase === "focus" &&
+      isIdle(this.lastActivityAt, now, this.settings.idlePauseMinutes)
+    ) {
+      this.timerState = pauseForInactivity(this.timerState);
+      this.renderTimer();
+      if (this.settings.notifyOnPhaseEnd) new Notice(autoPauseNotice("idle"));
+      return;
+    }
 
     const result = tick(this.timerState, elapsed, this.settings);
     this.timerState = result.state;
@@ -781,8 +1097,19 @@ export default class NotionTogglePlugin extends Plugin {
         new Notice(`${ended} done → ${phaseLabel(this.timerState.phase)} · ${this.recallHint() ?? ""}`.trim());
       }
       if (this.settings.soundOnPhaseEnd) this.buzz();
+      if (result.endedPhase === "focus" && this.settings.autoCollapseOnBreak) {
+        this.collapseActiveNote();
+      }
+      // v1.0.7: after a focus phase, ask for one grade so SM-2 can schedule the next recall.
+      if (result.endedPhase === "focus" && this.settings.autoReview) {
+        const doc = this.activeDoc() ?? "";
+        this.reviewSuggestion = suggestGrade(scanRecallStats(doc));
+        this.reviewOpen = true;
+        this.renderTimer();
+      }
     }
   }
+
 
   private buzz() {
     try {
@@ -827,17 +1154,34 @@ export default class NotionTogglePlugin extends Plugin {
   renderTimer() {
     if (!this.timerWidget) return;
     const breakPhase = this.timerState.phase !== "focus";
-    const hint = breakPhase ? this.recallHint() : undefined;
+    const recall = this.recallHint();
+    const hint = this.timerState.autoPaused
+      ? "Paused — tap ▶ to resume"
+      : breakPhase
+        ? recall
+        : undefined;
     this.timerWidget.render({
       state: this.timerState,
       cycleSize: Math.max(1, Math.min(8, this.settings.sessionsBeforeLongBreak)),
       hint,
-      canJumpRed: breakPhase && !!hint,
+      canJumpRed: breakPhase && !!recall,
+      canRecallAgain: breakPhase && !!recall,
+      reviewOpen: this.reviewOpen,
+      suggestedGrade: this.reviewSuggestion,
+      scheduleLabel: this.scheduleLabel(),
     });
   }
 
+
   updateStatus() {
-    this.statusEl?.setText(sessionSummary(this.timerState));
+    const due = dueSummary(this.settings.srs ?? {}, Date.now());
+    this.statusEl?.setText(`${sessionSummary(this.timerState)}${due ? ` · ${due}` : ""}`);
+  }
+
+  /** "Next recall: …" line for the current note, if it has been graded before. */
+  scheduleLabel(): string | undefined {
+    const card = this.cardFor(this.sessionNotePath ?? this.activeNotePath());
+    return card ? `Next recall: ${nextDueLabel(card, Date.now())}` : undefined;
   }
 
   /** Re-apply durations after a settings change without losing progress. */
@@ -1211,6 +1555,85 @@ class NotionToggleSettingTab extends PluginSettingTab {
       () => this.plugin.settings.compactByDefault,
       (v) => (this.plugin.settings.compactByDefault = v)
     );
+
+    /* ---------- v1.0.6: attention-aware behaviour ---------- */
+    containerEl.createEl("h3", { text: "Timer focus guard (v1.0.6)" });
+
+    boolSetting(
+      "Auto-pause when you leave",
+      "Pause the running timer when Obsidian goes to the background or you switch away.",
+      () => this.plugin.settings.autoPauseOnLeave,
+      (v) => (this.plugin.settings.autoPauseOnLeave = v)
+    );
+    boolSetting(
+      "Pin session to its note",
+      "Only the note where the session started counts as focus time.",
+      () => this.plugin.settings.pinToSessionNote,
+      (v) => (this.plugin.settings.pinToSessionNote = v)
+    );
+    boolSetting(
+      "Auto-resume when you return",
+      "Continue automatically once you are back on the session note.",
+      () => this.plugin.settings.autoResumeOnReturn,
+      (v) => (this.plugin.settings.autoResumeOnReturn = v)
+    );
+    boolSetting(
+      "Collapse toggles on break",
+      "When a focus phase ends, hide every answer again for the next recall round.",
+      () => this.plugin.settings.autoCollapseOnBreak,
+      (v) => (this.plugin.settings.autoCollapseOnBreak = v)
+    );
+
+    new Setting(containerEl)
+      .setName("Idle pause (minutes)")
+      .setDesc("Pause the focus phase after this much inactivity. 0 turns it off.")
+      .addText((text) => {
+        text
+          .setPlaceholder("2")
+          .setValue(String(this.plugin.settings.idlePauseMinutes))
+          .onChange(async (value) => {
+            const n = Number.parseInt(value, 10);
+            this.plugin.settings.idlePauseMinutes = Number.isFinite(n)
+              ? Math.max(0, Math.min(120, n))
+              : 0;
+            await this.plugin.saveSettings();
+          });
+      });
+
+    containerEl.createEl("h3", { text: "Minimal mode & spaced repetition" });
+
+    new Setting(containerEl)
+      .setName("Minimal command names")
+      .setDesc(
+        "Keep 4 primary commands (Toggle, Colour, Recall, Review) clean and prefix everything else with \"Advanced:\" so the toolbar stays uncluttered. Restart Obsidian to refresh names."
+      )
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.minimalNames).onChange(async (v) => {
+          this.plugin.settings.minimalNames = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Ask for a grade after each focus phase")
+      .setDesc("Shows Again / Hard / Good / Easy on the timer; SM-2 then calculates your next recall date automatically.")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.autoReview).onChange(async (v) => {
+          this.plugin.settings.autoReview = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Clear recall schedule")
+      .setDesc("Forget all stored SM-2 intervals for every note.")
+      .addButton((btn) => {
+        btn.setButtonText("Clear").onClick(async () => {
+          this.plugin.settings.srs = {};
+          await this.plugin.saveSettings();
+          new Notice("Recall schedule cleared.");
+        });
+      });
 
     new Setting(containerEl)
       .setName("Reset timer position")
@@ -1657,4 +2080,36 @@ export function planBackspace(text: string, col: number, opts: EnterOptions): Ba
   }
 
   return null;
+}
+
+
+/** Simple picker listing notes whose recall is due (v1.0.7). */
+class DueNotesModal extends Modal {
+  constructor(
+    app: App,
+    private due: { path: string; card: SrsCard }[],
+    private onPick: (path: string) => void
+  ) {
+    super(app);
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h3", { text: `Due for recall (${this.due.length})` });
+    for (const { path, card } of this.due) {
+      const row = contentEl.createDiv({ cls: "ntt-due-row" });
+      const btn = row.createEl("button", { text: path.replace(/\.md$/, "") });
+      btn.addClass("ntt-due-btn");
+      row.createSpan({ text: ` ${nextDueLabel(card, Date.now())} · ease ${card.ease}` });
+      btn.addEventListener("click", () => {
+        this.close();
+        this.onPick(path);
+      });
+    }
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
 }
