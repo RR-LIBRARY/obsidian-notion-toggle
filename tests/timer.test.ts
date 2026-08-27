@@ -1,19 +1,26 @@
 import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_POMODORO,
+  autoPauseNotice,
   POMODORO_PRESETS,
   clampMinutes,
   collapseAllToggles,
   createState,
   formatTime,
+  isIdle,
   nextPhase,
   phaseDuration,
+  pauseForInactivity,
   phaseLabel,
   resetPhase,
   resolvePreset,
+  resumeAfterAutoPause,
   scanRecallStats,
   sessionSummary,
+  shouldAutoPause,
   skipPhase,
+  stopSession,
+  stopSummary,
   tick,
 } from "../src/timer";
 
@@ -177,5 +184,94 @@ describe("v1.0.5 — recall intelligence", () => {
 
   test("collapse keeps the question text intact", () => {
     expect(collapseAllToggles(doc)).toContain("**1. Hard one**");
+  });
+});
+
+describe("v1.0.6 — attention guard", () => {
+  const base = { ...createState(s), running: true };
+  const input = {
+    state: base,
+    enabled: true,
+    visible: true,
+    onSessionNote: true,
+    pinned: true,
+  };
+
+  test("no pause while visible on the session note", () => {
+    expect(shouldAutoPause(input)).toBeNull();
+  });
+
+  test("app hidden pauses the timer", () => {
+    expect(shouldAutoPause({ ...input, visible: false })).toBe("hidden");
+  });
+
+  test("leaving the session note pauses when pinned", () => {
+    expect(shouldAutoPause({ ...input, onSessionNote: false })).toBe("other-note");
+  });
+
+  test("unpinned sessions keep running on other notes", () => {
+    expect(shouldAutoPause({ ...input, onSessionNote: false, pinned: false })).toBeNull();
+  });
+
+  test("setting off disables the guard entirely", () => {
+    expect(shouldAutoPause({ ...input, enabled: false, visible: false })).toBeNull();
+  });
+
+  test("a paused timer is never auto-paused again", () => {
+    expect(shouldAutoPause({ ...input, state: createState(s), visible: false })).toBeNull();
+  });
+
+  test("idle detection respects the minutes setting", () => {
+    const now = 10_000_000;
+    expect(isIdle(now - 3 * 60_000, now, 2)).toBe(true);
+    expect(isIdle(now - 30_000, now, 2)).toBe(false);
+    expect(isIdle(now - 60 * 60_000, now, 0)).toBe(false);
+  });
+
+  test("pause marks autoPaused, resume clears it", () => {
+    const paused = pauseForInactivity(base);
+    expect(paused.running).toBe(false);
+    expect(paused.autoPaused).toBe(true);
+    const back = resumeAfterAutoPause(paused);
+    expect(back.running).toBe(true);
+    expect(back.autoPaused).toBe(false);
+  });
+
+  test("manual pause is not resumed automatically", () => {
+    const manual = { ...base, running: false, autoPaused: false };
+    expect(resumeAfterAutoPause(manual).running).toBe(false);
+  });
+
+  test("stop session resets the phase but keeps totals", () => {
+    const st = { ...base, remaining: 1000, totalFocusSessions: 2, totalFocusMinutes: 50 };
+    const out = stopSession(st, s);
+    expect(out.phase).toBe("focus");
+    expect(out.running).toBe(false);
+    expect(out.remaining).toBe(25 * 60_000);
+    expect(out.totalFocusSessions).toBe(2);
+    expect(out.totalFocusMinutes).toBe(50);
+  });
+
+  test("stop summary reads naturally", () => {
+    expect(stopSummary({ ...base, totalFocusSessions: 1, totalFocusMinutes: 25 })).toContain(
+      "1 focus session"
+    );
+    expect(stopSummary({ ...base, totalFocusSessions: 3, totalFocusMinutes: 75 })).toContain(
+      "3 focus sessions"
+    );
+  });
+
+  test("each pause reason has its own notice", () => {
+    expect(autoPauseNotice("hidden")).toContain("left the app");
+    expect(autoPauseNotice("other-note")).toContain("session note");
+    expect(autoPauseNotice("idle")).toContain("no activity");
+  });
+
+  test("v1.0.6 defaults are safe", () => {
+    expect(DEFAULT_POMODORO.autoPauseOnLeave).toBe(true);
+    expect(DEFAULT_POMODORO.autoResumeOnReturn).toBe(false);
+    expect(DEFAULT_POMODORO.pinToSessionNote).toBe(true);
+    expect(DEFAULT_POMODORO.idlePauseMinutes).toBe(2);
+    expect(DEFAULT_POMODORO.autoCollapseOnBreak).toBe(false);
   });
 });
