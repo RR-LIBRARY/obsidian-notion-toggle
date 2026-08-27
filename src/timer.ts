@@ -21,6 +21,17 @@ export interface PomodoroSettings {
   /** Last widget position, in px from the top-left of the window. */
   timerX: number;
   timerY: number;
+  /* ---- v1.0.6: attention-aware behaviour ---- */
+  /** Auto-pause the focus phase when you leave the note / app. */
+  autoPauseOnLeave: boolean;
+  /** Resume automatically when you come back to the session note. */
+  autoResumeOnReturn: boolean;
+  /** Keep the session bound to the note where it started. */
+  pinToSessionNote: boolean;
+  /** Auto-pause after this many idle minutes (0 = off). */
+  idlePauseMinutes: number;
+  /** Collapse every toggle in the session note when a break starts. */
+  autoCollapseOnBreak: boolean;
 }
 
 export const DEFAULT_POMODORO: PomodoroSettings = {
@@ -36,7 +47,13 @@ export const DEFAULT_POMODORO: PomodoroSettings = {
   compactByDefault: false,
   timerX: 24,
   timerY: 120,
+  autoPauseOnLeave: true,
+  autoResumeOnReturn: false,
+  pinToSessionNote: true,
+  idlePauseMinutes: 2,
+  autoCollapseOnBreak: false,
 };
+
 
 export interface PomodoroPreset {
   id: string;
@@ -99,6 +116,9 @@ export interface PomodoroState {
   totalFocusSessions: number;
   /** Total focused minutes overall. */
   totalFocusMinutes: number;
+  /** True when the plugin paused this phase for you (left note / idle). */
+  autoPaused?: boolean;
+
 }
 
 export function createState(s: PomodoroSettings): PomodoroState {
@@ -109,6 +129,8 @@ export function createState(s: PomodoroSettings): PomodoroState {
     completedInCycle: 0,
     totalFocusSessions: 0,
     totalFocusMinutes: 0,
+    autoPaused: false,
+
   };
 }
 
@@ -227,4 +249,69 @@ export function collapseAllToggles(doc: string): string {
         : line.replace(/^(\s*)<details\s+open>/, "$1<details>")
     )
     .join("\n");
+}
+
+/* ---------- v1.0.6: attention-aware helpers (pure) ---------- */
+
+export interface AutoPauseInput {
+  state: PomodoroState;
+  /** Setting: auto-pause when attention leaves. */
+  enabled: boolean;
+  /** App / tab is visible right now. */
+  visible: boolean;
+  /** The active note is the note the session started on. */
+  onSessionNote: boolean;
+  /** Setting: pin the session to its note. */
+  pinned: boolean;
+}
+
+export type AutoPauseReason = "hidden" | "other-note" | "idle";
+
+/** Should the running timer be paused right now? Returns the reason, or null. */
+export function shouldAutoPause(input: AutoPauseInput): AutoPauseReason | null {
+  const { state, enabled, visible, onSessionNote, pinned } = input;
+  if (!enabled || !state.running) return null;
+  if (!visible) return "hidden";
+  if (pinned && !onSessionNote) return "other-note";
+  return null;
+}
+
+/** True when there has been no activity for `idleMinutes` (0 disables it). */
+export function isIdle(lastActivityAt: number, now: number, idleMinutes: number): boolean {
+  const minutes = Number.isFinite(idleMinutes) ? idleMinutes : 0;
+  if (minutes <= 0) return false;
+  return now - lastActivityAt >= minutes * 60_000;
+}
+
+/** Pause the current phase and remember that the plugin did it. */
+export function pauseForInactivity(state: PomodoroState): PomodoroState {
+  if (!state.running) return state;
+  return { ...state, running: false, autoPaused: true };
+}
+
+/** Resume a phase that the plugin auto-paused. Manual pauses stay paused. */
+export function resumeAfterAutoPause(state: PomodoroState): PomodoroState {
+  if (!state.autoPaused) return state;
+  return { ...state, running: true, autoPaused: false };
+}
+
+/** Stop the whole session: fresh focus phase, paused, totals kept. */
+export function stopSession(state: PomodoroState, s: PomodoroSettings): PomodoroState {
+  return {
+    ...createState(s),
+    totalFocusSessions: state.totalFocusSessions,
+    totalFocusMinutes: state.totalFocusMinutes,
+  };
+}
+
+/** One-line report for a finished session. */
+export function stopSummary(state: PomodoroState): string {
+  const plural = state.totalFocusSessions === 1 ? "session" : "sessions";
+  return `Session stopped — ${state.totalFocusSessions} focus ${plural} · ${state.totalFocusMinutes}m total`;
+}
+
+export function autoPauseNotice(reason: AutoPauseReason): string {
+  if (reason === "hidden") return "⌛ Timer paused — you left the app.";
+  if (reason === "other-note") return "⌛ Timer paused — go back to your session note.";
+  return "⌛ Timer paused — no activity.";
 }
