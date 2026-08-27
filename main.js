@@ -20,13 +20,13 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // main.ts
 var main_exports = {};
 __export(main_exports, {
-  ANSWER_LINE: () => ANSWER_LINE,
+  ANSWER_LINE: () => ANSWER_LINE2,
   EMPTY_ANSWER_LINE: () => EMPTY_ANSWER_LINE,
   EMPTY_MATCH_ROW: () => EMPTY_MATCH_ROW,
   MATCH_ROW: () => MATCH_ROW,
   MATCH_SEPARATOR: () => MATCH_SEPARATOR,
   MCQ_EMPTY_OPTION: () => MCQ_EMPTY_OPTION,
-  MCQ_OPTION: () => MCQ_OPTION,
+  MCQ_OPTION: () => MCQ_OPTION2,
   NUMBERED_HEADER: () => NUMBERED_HEADER,
   NUMBERED_SUMMARY: () => NUMBERED_SUMMARY,
   TOGGLE_COLORS: () => TOGGLE_COLORS,
@@ -62,7 +62,12 @@ var DEFAULT_POMODORO = {
   showOnStartup: false,
   compactByDefault: false,
   timerX: 24,
-  timerY: 120
+  timerY: 120,
+  autoPauseOnLeave: true,
+  autoResumeOnReturn: false,
+  pinToSessionNote: true,
+  idlePauseMinutes: 2,
+  autoCollapseOnBreak: false
 };
 var POMODORO_PRESETS = [
   { id: "classic", label: "Classic 25 / 5", focus: 25, short: 5, long: 15, sessions: 4 },
@@ -102,7 +107,8 @@ function createState(s) {
     running: false,
     completedInCycle: 0,
     totalFocusSessions: 0,
-    totalFocusMinutes: 0
+    totalFocusMinutes: 0,
+    autoPaused: false
   };
 }
 function formatTime(ms) {
@@ -180,30 +186,80 @@ function collapseAllToggles(doc) {
     (line) => HEADER_ANY.test(line) ? line.replace(/^(>\s*\[![^\]]+\])\+/, "$1-") : line.replace(/^(\s*)<details\s+open>/, "$1<details>")
   ).join("\n");
 }
+function shouldAutoPause(input) {
+  const { state, enabled, visible, onSessionNote, pinned } = input;
+  if (!enabled || !state.running)
+    return null;
+  if (!visible)
+    return "hidden";
+  if (pinned && !onSessionNote)
+    return "other-note";
+  return null;
+}
+function isIdle(lastActivityAt, now, idleMinutes) {
+  const minutes = Number.isFinite(idleMinutes) ? idleMinutes : 0;
+  if (minutes <= 0)
+    return false;
+  return now - lastActivityAt >= minutes * 6e4;
+}
+function pauseForInactivity(state) {
+  if (!state.running)
+    return state;
+  return { ...state, running: false, autoPaused: true };
+}
+function resumeAfterAutoPause(state) {
+  if (!state.autoPaused)
+    return state;
+  return { ...state, running: true, autoPaused: false };
+}
+function stopSession(state, s) {
+  return {
+    ...createState(s),
+    totalFocusSessions: state.totalFocusSessions,
+    totalFocusMinutes: state.totalFocusMinutes
+  };
+}
+function stopSummary(state) {
+  const plural = state.totalFocusSessions === 1 ? "session" : "sessions";
+  return `Session stopped \u2014 ${state.totalFocusSessions} focus ${plural} \xB7 ${state.totalFocusMinutes}m total`;
+}
+function autoPauseNotice(reason) {
+  if (reason === "hidden")
+    return "\u231B Timer paused \u2014 you left the app.";
+  if (reason === "other-note")
+    return "\u231B Timer paused \u2014 go back to your session note.";
+  return "\u231B Timer paused \u2014 no activity.";
+}
 
 // src/timer-ui.ts
+var EDGE = 8;
 var TimerWidget = class {
   constructor(cb, opts) {
     this.cb = cb;
+    this.gradeBtns = {};
     this.cleanups = [];
     this.compact = opts.compact;
     this.root = document.createElement("div");
     this.root.className = "notion-toggle-timer";
     this.root.setAttribute("role", "group");
     this.root.setAttribute("aria-label", "Recall timer");
-    this.root.style.left = `${clamp(opts.x, window.innerWidth - 80)}px`;
-    this.root.style.top = `${clamp(opts.y, window.innerHeight - 60)}px`;
     this.build();
     this.applyCompact();
     document.body.appendChild(this.root);
+    this.place(opts.x, opts.y, false);
+    this.on(window, "resize", () => {
+      const rect = this.root.getBoundingClientRect();
+      this.place(rect.left, rect.top, false);
+    });
+    this.on(window, "orientationchange", () => {
+      const rect = this.root.getBoundingClientRect();
+      this.place(rect.left, rect.top, false);
+    });
   }
   build() {
-    var _a;
     const head = div(this.root, "ntt-head");
     const grip = div(head, "ntt-grip");
-    (_a = grip.setText) == null ? void 0 : _a.call(grip, "\u22EE\u22EE");
-    if (!grip.textContent)
-      grip.textContent = "\u22EE\u22EE";
+    grip.textContent = "\u22EE\u22EE";
     this.makeDraggable(grip);
     this.makeDraggable(head);
     const info = div(head, "ntt-info");
@@ -214,37 +270,85 @@ var TimerWidget = class {
     this.phaseEl.textContent = "Focus";
     this.sessionEl = div(meta, "ntt-session");
     this.sessionEl.textContent = "0/4";
+    this.compactRunBtn = button(head, "\u25B6", "Start / pause", () => this.cb.onToggleRun());
+    this.compactRunBtn.classList.add("ntt-btn-compact");
     const actions = div(this.root, "ntt-actions");
     this.runBtn = button(actions, "\u25B6", "Start / pause", () => this.cb.onToggleRun());
     button(actions, "\u21BA", "Reset phase", () => this.cb.onReset());
     button(actions, "\u23ED", "Skip phase", () => this.cb.onSkip());
-    button(actions, "\u25D1", "Compact / expand", () => {
-      this.compact = !this.compact;
-      this.applyCompact();
-      this.cb.onCompactChange(this.compact);
-    });
+    button(actions, "\u25D1", "Compact / expand", () => this.setCompact(!this.compact));
     button(actions, "\u2715", "Hide timer", () => this.cb.onHide());
     const hintRow = div(this.root, "ntt-hint-row");
     this.hintEl = div(hintRow, "ntt-hint");
     this.jumpBtn = button(
       hintRow,
-      "\u{1F534} Jump",
+      "\u{1F534}",
       "Jump to first red toggle",
       () => {
-        var _a2, _b;
-        return (_b = (_a2 = this.cb).onJumpRed) == null ? void 0 : _b.call(_a2);
+        var _a, _b;
+        return (_b = (_a = this.cb).onJumpRed) == null ? void 0 : _b.call(_a);
+      }
+    );
+    this.againBtn = button(
+      hintRow,
+      "\u21BB",
+      "Collapse & recall again",
+      () => {
+        var _a, _b;
+        return (_b = (_a = this.cb).onRecallAgain) == null ? void 0 : _b.call(_a);
       }
     );
     this.jumpBtn.style.display = "none";
+    this.againBtn.style.display = "none";
     hintRow.style.display = "none";
-    this.on(this.timeEl, "dblclick", () => {
-      this.compact = !this.compact;
-      this.applyCompact();
-      this.cb.onCompactChange(this.compact);
-    });
+    this.gradeRow = div(this.root, "ntt-grade-row");
+    const grades = [
+      ["again", "Again"],
+      ["hard", "Hard"],
+      ["good", "Good"],
+      ["easy", "Easy"]
+    ];
+    for (const [id, label] of grades) {
+      this.gradeBtns[id] = button(
+        this.gradeRow,
+        label,
+        `Grade: ${label}`,
+        () => {
+          var _a, _b;
+          return (_b = (_a = this.cb).onGrade) == null ? void 0 : _b.call(_a, id);
+        }
+      );
+      this.gradeBtns[id].classList.add("ntt-grade", `is-${id}`);
+    }
+    this.gradeRow.style.display = "none";
+    this.scheduleEl = div(this.root, "ntt-schedule");
+    this.scheduleEl.style.display = "none";
+    this.on(this.timeEl, "click", () => this.setCompact(!this.compact));
+  }
+  setCompact(compact) {
+    this.compact = compact;
+    this.applyCompact();
+    const rect = this.root.getBoundingClientRect();
+    this.place(rect.left, rect.top, false);
+    this.cb.onCompactChange(this.compact);
   }
   applyCompact() {
     this.root.classList.toggle("is-compact", this.compact);
+  }
+  /** Position the widget inside the viewport, optionally snapping to an edge. */
+  place(x, y, snap) {
+    const rect = this.root.getBoundingClientRect();
+    const w = rect.width || 168;
+    const h = rect.height || 60;
+    let left = clamp(x, EDGE, Math.max(EDGE, window.innerWidth - w - EDGE));
+    const top = clamp(y, EDGE, Math.max(EDGE, window.innerHeight - h - EDGE));
+    if (snap) {
+      const center = left + w / 2;
+      left = center < window.innerWidth / 2 ? EDGE : Math.max(EDGE, window.innerWidth - w - EDGE);
+    }
+    this.root.style.left = `${Math.round(left)}px`;
+    this.root.style.top = `${Math.round(top)}px`;
+    return { left: Math.round(left), top: Math.round(top) };
   }
   makeDraggable(handle) {
     let startX = 0;
@@ -269,10 +373,7 @@ var TimerWidget = class {
       if (!dragging)
         return;
       e.preventDefault();
-      const x = clamp(originX + (e.clientX - startX), window.innerWidth - 60);
-      const y = clamp(originY + (e.clientY - startY), window.innerHeight - 40);
-      this.root.style.left = `${x}px`;
-      this.root.style.top = `${y}px`;
+      this.place(originX + (e.clientX - startX), originY + (e.clientY - startY), false);
     };
     const up = () => {
       if (!dragging)
@@ -280,32 +381,47 @@ var TimerWidget = class {
       dragging = false;
       this.root.classList.remove("is-dragging");
       const rect = this.root.getBoundingClientRect();
-      this.cb.onMove(Math.round(rect.left), Math.round(rect.top));
+      const pos = this.place(rect.left, rect.top, true);
+      this.cb.onMove(pos.left, pos.top);
     };
     this.on(handle, "pointerdown", down);
     this.on(window, "pointermove", move);
     this.on(window, "pointerup", up);
     this.on(window, "pointercancel", up);
   }
-  on(target, type, fn) {
-    target.addEventListener(type, fn);
+  on(target, type, fn, opts) {
+    target.addEventListener(type, fn, opts);
     this.cleanups.push(() => target.removeEventListener(type, fn));
   }
   render(data) {
     const { state } = data;
+    const label = state.running ? "\u23F8" : "\u25B6";
     this.timeEl.textContent = formatTime(state.remaining);
     this.phaseEl.textContent = phaseLabel(state.phase);
     this.sessionEl.textContent = `${state.completedInCycle}/${data.cycleSize}`;
-    this.runBtn.textContent = state.running ? "\u23F8" : "\u25B6";
+    this.runBtn.textContent = label;
+    this.compactRunBtn.textContent = label;
     this.root.dataset.phase = state.phase;
     this.root.classList.toggle("is-running", state.running);
+    this.root.classList.toggle("is-auto-paused", !!state.autoPaused);
     const hintRow = this.hintEl.parentElement;
     if (data.hint) {
       this.hintEl.textContent = data.hint;
       hintRow.style.display = "";
       this.jumpBtn.style.display = data.canJumpRed ? "" : "none";
+      this.againBtn.style.display = data.canRecallAgain ? "" : "none";
     } else {
       hintRow.style.display = "none";
+    }
+    this.gradeRow.style.display = data.reviewOpen ? "" : "none";
+    for (const [id, btn] of Object.entries(this.gradeBtns)) {
+      btn.classList.toggle("is-suggested", data.reviewOpen && data.suggestedGrade === id);
+    }
+    if (data.scheduleLabel) {
+      this.scheduleEl.textContent = data.scheduleLabel;
+      this.scheduleEl.style.display = "";
+    } else {
+      this.scheduleEl.style.display = "none";
     }
   }
   flashPhaseEnd() {
@@ -320,10 +436,10 @@ var TimerWidget = class {
     this.root.remove();
   }
 };
-function clamp(value, max) {
+function clamp(value, min, max) {
   if (!Number.isFinite(value))
-    return 24;
-  return Math.max(4, Math.min(Math.max(4, max), value));
+    return min;
+  return Math.max(min, Math.min(max, value));
 }
 function div(parent, cls) {
   const el = document.createElement("div");
@@ -347,6 +463,191 @@ function button(parent, label, title, onClick) {
   return el;
 }
 
+// src/naming.ts
+var PRIMARY_IDS = [
+  "smart-toggle",
+  "smart-colour",
+  "smart-recall",
+  "smart-review"
+];
+var PRIMARY_NAMES = {
+  "smart-toggle": "Toggle (smart add)",
+  "smart-colour": "Colour (red \u2192 yellow \u2192 green)",
+  "smart-recall": "Recall (start / pause session)",
+  "smart-review": "Review (spaced repetition)"
+};
+function isPrimary(id) {
+  return PRIMARY_IDS.includes(id);
+}
+function commandName(id, legacyName, minimal) {
+  if (isPrimary(id))
+    return PRIMARY_NAMES[id];
+  if (!minimal)
+    return legacyName;
+  if (legacyName.startsWith("Advanced: "))
+    return legacyName;
+  return `Advanced: ${legacyName}`;
+}
+
+// src/smart.ts
+var MCQ_OPTION = /^>\s*-\s*\[[ xX]\]/;
+var TABLE_ROW = /^>\s*\|.*\|/;
+var ANSWER_LINE = /^>\s*(\*\*)?(Answer|Answers|Ans)\b/i;
+function smartAction(ctx) {
+  if (ctx.selection.trim().length > 0)
+    return "wrap-selection";
+  if (MCQ_OPTION.test(ctx.line))
+    return "mcq-option";
+  if (TABLE_ROW.test(ctx.line))
+    return "match-row";
+  if (ctx.insideToggle && ANSWER_LINE.test(ctx.line))
+    return "answer-key";
+  return "new-toggle";
+}
+function smartActionLabel(action) {
+  switch (action) {
+    case "wrap-selection":
+      return "Selection wrapped as toggle";
+    case "mcq-option":
+      return "Option added";
+    case "match-row":
+      return "Row added";
+    case "answer-key":
+      return "Answer key line added";
+    default:
+      return "New toggle";
+  }
+}
+function blankTableRow(line) {
+  const inner = line.replace(/^>\s*/, "").replace(/^\|/, "").replace(/\|\s*$/, "");
+  const count = Math.max(2, inner.split("|").length);
+  return `> | ${new Array(count).fill("  ").join("| ")}|`;
+}
+
+// src/srs.ts
+var GRADE_QUALITY = {
+  again: 2,
+  hard: 3,
+  good: 4,
+  easy: 5
+};
+var GRADE_LABEL = {
+  again: "Again",
+  hard: "Hard",
+  good: "Good",
+  easy: "Easy"
+};
+var MIN_EASE = 1.3;
+var MAX_EASE = 2.7;
+var DAY_MS = 864e5;
+function newCard() {
+  return {
+    ease: 2.5,
+    interval: 0,
+    repetitions: 0,
+    lapses: 0,
+    lastReviewed: 0,
+    due: 0
+  };
+}
+function clampEase(ease) {
+  if (!Number.isFinite(ease))
+    return 2.5;
+  return Math.max(MIN_EASE, Math.min(MAX_EASE, Math.round(ease * 100) / 100));
+}
+function startOfDay(now) {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+function gradeCard(card, grade, now) {
+  const base = { ...newCard(), ...card };
+  const q = GRADE_QUALITY[grade];
+  let { ease, interval, repetitions, lapses } = base;
+  ease = clampEase(ease + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)));
+  if (grade === "again") {
+    repetitions = 0;
+    lapses += 1;
+    interval = 1;
+  } else {
+    repetitions += 1;
+    if (repetitions === 1)
+      interval = 1;
+    else if (repetitions === 2)
+      interval = 6;
+    else
+      interval = Math.round(interval * ease);
+    if (grade === "hard")
+      interval = Math.max(1, Math.round(interval * 0.8));
+    if (grade === "easy")
+      interval = Math.round(interval * 1.3);
+  }
+  interval = Math.max(1, Math.min(365, interval));
+  return {
+    ease,
+    interval,
+    repetitions,
+    lapses,
+    lastReviewed: now,
+    due: startOfDay(now) + interval * DAY_MS
+  };
+}
+function isDue(card, now) {
+  if (!card || !card.lastReviewed)
+    return true;
+  return card.due <= startOfDay(now) + DAY_MS - 1;
+}
+function daysUntilDue(card, now) {
+  if (!card || !card.lastReviewed)
+    return 0;
+  return Math.round((startOfDay(card.due) - startOfDay(now)) / DAY_MS);
+}
+var WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function nextDueLabel(card, now) {
+  if (!card || !card.lastReviewed)
+    return "Not scheduled yet \u2014 grade to start";
+  const days = daysUntilDue(card, now);
+  if (days <= 0)
+    return "Due today";
+  const day = WEEKDAYS[new Date(card.due).getDay()];
+  if (days === 1)
+    return `Next recall: tomorrow (${day})`;
+  return `Next recall: ${days} days (${day})`;
+}
+function dueCount(cards, now) {
+  let n = 0;
+  for (const key of Object.keys(cards != null ? cards : {})) {
+    if (isDue(cards[key], now))
+      n += 1;
+  }
+  return n;
+}
+function dueNotes(cards, now) {
+  return Object.keys(cards != null ? cards : {}).filter((k) => isDue(cards[k], now)).sort((a, b) => {
+    var _a, _b, _c, _d;
+    return ((_b = (_a = cards[a]) == null ? void 0 : _a.due) != null ? _b : 0) - ((_d = (_c = cards[b]) == null ? void 0 : _c.due) != null ? _d : 0);
+  });
+}
+function suggestGrade(stats) {
+  const graded = stats.red + stats.yellow + stats.green;
+  if (!graded)
+    return "good";
+  const redShare = stats.red / graded;
+  if (redShare >= 0.5)
+    return "again";
+  if (redShare > 0 || stats.yellow / graded >= 0.4)
+    return "hard";
+  if (stats.green === graded)
+    return "easy";
+  return "good";
+}
+function dueSummary(cards, now) {
+  const n = dueCount(cards, now);
+  if (!n)
+    return "";
+  return ` \xB7 \u23ED ${n} due`;
+}
+
 // main.ts
 var DEFAULT_SETTINGS = {
   ...DEFAULT_POMODORO,
@@ -359,7 +660,10 @@ var DEFAULT_SETTINGS = {
   color: "default",
   mcqOptionCount: 4,
   matchRowCount: 4,
-  addAnswerLine: true
+  addAnswerLine: true,
+  minimalNames: true,
+  srs: {},
+  autoReview: true
 };
 var CALLOUT_TYPES = ["question", "info", "note", "abstract", "tip", "warning", "success"];
 var TOGGLE_COLORS = [
@@ -387,9 +691,49 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     this.timerWidget = null;
     this.statusEl = null;
     this.lastTick = Date.now();
+    /* v1.0.6 attention tracking */
+    this.lastActivityAt = Date.now();
+    this.sessionNotePath = null;
+    /* v1.0.7 review state */
+    this.reviewOpen = false;
+    this.reviewSuggestion = "good";
+  }
+  /**
+   * v1.0.7: every command goes through here, so the toolbar list stays short.
+   * Four primary commands keep clean names; the rest get an "Advanced: " prefix.
+   */
+  addCommand(cmd) {
+    return super.addCommand({
+      ...cmd,
+      name: commandName(cmd.id, cmd.name, this.settings.minimalNames)
+    });
   }
   async onload() {
     await this.loadSettings();
+    this.addCommand({
+      id: "smart-toggle",
+      icon: "plus-circle",
+      name: "Toggle (smart add)",
+      editorCallback: (editor) => this.runSmartToggle(editor)
+    });
+    this.addCommand({
+      id: "smart-colour",
+      icon: "traffic-cone",
+      name: "Colour (red \u2192 yellow \u2192 green)",
+      editorCallback: (editor) => this.cycleColorAtCursor(editor)
+    });
+    this.addCommand({
+      id: "smart-recall",
+      icon: "timer",
+      name: "Recall (start / pause session)",
+      editorCallback: (editor) => this.runSmartRecall(editor)
+    });
+    this.addCommand({
+      id: "smart-review",
+      icon: "check-circle",
+      name: "Review (spaced repetition)",
+      editorCallback: (editor) => this.openReview(editor)
+    });
     this.addCommand({
       id: "insert-toggle",
       icon: "right-triangle",
@@ -408,52 +752,7 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
       id: "wrap-selection-toggle",
       icon: "text-quote",
       name: "Wrap selection as toggle",
-      editorCallback: (editor) => {
-        const selection = editor.getSelection();
-        const type = this.activeCallout();
-        const fold = this.settings.defaultCollapsed ? "-" : "+";
-        if (selection.trim().length === 0) {
-          const line = editor.getLine(editor.getCursor().line);
-          if (line.trim().length === 0) {
-            new import_obsidian.Notice("Nothing to wrap \u2014 select the question and answer first.");
-            return;
-          }
-          const title2 = this.maybeBold(line.trim());
-          editor.replaceRange(`> [!${type}]${fold} ${title2}
-> 
-`, {
-            line: editor.getCursor().line,
-            ch: 0
-          }, {
-            line: editor.getCursor().line,
-            ch: line.length
-          });
-          return;
-        }
-        const lines = selection.split("\n");
-        let titleLine = "";
-        let bodyStart = 0;
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i].trim().length > 0) {
-            titleLine = lines[i].trim();
-            bodyStart = i + 1;
-            break;
-          }
-        }
-        if (titleLine.length === 0) {
-          new import_obsidian.Notice("Selection is empty.");
-          return;
-        }
-        const title = this.maybeBold(titleLine);
-        const bodyLines = lines.slice(bodyStart);
-        while (bodyLines.length > 0 && bodyLines[0].trim().length === 0) {
-          bodyLines.shift();
-        }
-        const body = bodyLines.length > 0 ? "\n" + bodyLines.map((l) => `> ${l}`.replace(/>\s+$/, ">")).join("\n") : "";
-        const block = `> [!${type}]${fold} ${title}${body}
-`;
-        editor.replaceSelection(block);
-      }
+      editorCallback: (editor) => this.wrapSelectionAsToggle(editor)
     });
     this.addCommand({
       id: "convert-details-to-callouts",
@@ -562,18 +861,7 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
       id: "cycle-toggle-color",
       icon: "traffic-cone",
       name: "Cycle toggle colour (red \u2192 yellow \u2192 green)",
-      editorCallback: (editor) => {
-        var _a, _b;
-        const found = this.findHeaderLine(editor);
-        if (!found) {
-          new import_obsidian.Notice("Cursor is not inside a toggle.");
-          return;
-        }
-        const current = (_b = (_a = found.text.match(/^>\s*\[!([^\]]+)\]/)) == null ? void 0 : _a[1]) != null ? _b : "";
-        const idx = TRAFFIC_CYCLE.indexOf(current);
-        const next = TRAFFIC_CYCLE[(idx + 1) % TRAFFIC_CYCLE.length];
-        this.recolorToggleAtCursor(editor, next);
-      }
+      editorCallback: (editor) => this.cycleColorAtCursor(editor)
     });
     this.addCommand({
       id: "toggle-auto-numbering",
@@ -643,7 +931,7 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
         for (let l = found.line + 1; l < editor.lineCount(); l++) {
           if (!/^>/.test(editor.getLine(l)))
             break;
-          if (ANSWER_LINE.test(editor.getLine(l))) {
+          if (ANSWER_LINE2.test(editor.getLine(l))) {
             new import_obsidian.Notice("This toggle already has an answer line.");
             return;
           }
@@ -666,24 +954,28 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     this.addCommand({
       id: "toggle-recall-timer",
       icon: "timer",
-      name: "Toggle recall timer (show / hide)",
+      name: "Timer: show / hide",
       callback: () => this.toggleTimer()
     });
     this.addCommand({
       id: "recall-timer-start-pause",
       icon: "play",
-      name: "Recall timer: start / pause",
+      name: "Timer: start / pause",
       callback: () => {
         this.showTimer();
-        this.timerState = { ...this.timerState, running: !this.timerState.running };
+        const running = !this.timerState.running;
+        this.timerState = { ...this.timerState, running, autoPaused: false };
+        if (running && !this.sessionNotePath)
+          this.sessionNotePath = this.activeNotePath();
         this.lastTick = Date.now();
+        this.lastActivityAt = Date.now();
         this.renderTimer();
       }
     });
     this.addCommand({
       id: "recall-timer-reset",
       icon: "rotate-ccw",
-      name: "Recall timer: reset phase",
+      name: "Timer: reset phase",
       callback: () => {
         this.timerState = resetPhase(this.timerState, this.settings);
         this.renderTimer();
@@ -692,7 +984,7 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     this.addCommand({
       id: "recall-timer-skip",
       icon: "skip-forward",
-      name: "Recall timer: skip phase",
+      name: "Timer: skip phase",
       callback: () => {
         this.timerState = nextPhase(this.timerState, this.settings);
         this.lastTick = Date.now();
@@ -703,28 +995,39 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     this.addCommand({
       id: "recall-session-this-note",
       icon: "brain",
-      name: "Start recall session on this note (collapse all answers)",
-      editorCallback: (editor) => {
-        const doc = editor.getValue();
-        const collapsed = collapseAllToggles(doc);
-        if (collapsed !== doc) {
-          const cursor = editor.getCursor();
-          editor.setValue(collapsed);
-          editor.setCursor(cursor);
-        }
-        const stats = scanRecallStats(collapsed);
-        this.showTimer();
-        this.timerState = { ...resetPhase(createState(this.settings), this.settings), running: true };
-        this.lastTick = Date.now();
-        this.renderTimer();
-        new import_obsidian.Notice(
-          `Recall session started \u2014 ${stats.total} toggles (\u{1F534} ${stats.red} \xB7 \u{1F7E1} ${stats.yellow} \xB7 \u{1F7E2} ${stats.green})`
-        );
-      }
+      name: "Timer: start recall session on this note",
+      editorCallback: (editor) => this.startRecallSession(editor)
+    });
+    this.addCommand({
+      id: "recall-timer-stop",
+      icon: "square",
+      name: "Timer: stop session",
+      callback: () => this.stopTimerSession()
+    });
+    this.addCommand({
+      id: "show-due-notes",
+      icon: "calendar-clock",
+      name: "Show notes due for recall",
+      callback: () => this.showDueNotes()
     });
     this.lastTick = Date.now();
     this.registerInterval(
       window.setInterval(() => this.onTimerTick(), 250)
+    );
+    const bumpActivity = () => {
+      this.lastActivityAt = Date.now();
+    };
+    for (const evt of ["keydown", "pointerdown", "touchstart", "wheel"]) {
+      this.registerDomEvent(document, evt, bumpActivity, { passive: true });
+    }
+    this.registerDomEvent(document, "visibilitychange", () => this.evaluateAttention());
+    this.registerDomEvent(window, "blur", () => this.evaluateAttention());
+    this.registerDomEvent(window, "focus", () => this.evaluateAttention());
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", () => {
+        bumpActivity();
+        this.evaluateAttention();
+      })
     );
     if (this.settings.showOnStartup)
       this.showTimer();
@@ -875,7 +1178,7 @@ ${summaryOpen}${num2}${summaryClose}
     const atLineEnd = sel.head === line.to;
     if (!atLineEnd) {
       if (this.settings.format === "callout" && /^>/.test(text)) {
-        const prefix = MCQ_OPTION.test(text) || MCQ_EMPTY_OPTION.test(text) ? "\n> - [ ] " : "\n> ";
+        const prefix = MCQ_OPTION2.test(text) || MCQ_EMPTY_OPTION.test(text) ? "\n> - [ ] " : "\n> ";
         view.dispatch({
           changes: { from: sel.head, to: sel.head, insert: prefix },
           selection: { anchor: sel.head + prefix.length },
@@ -946,6 +1249,185 @@ ${summaryOpen}${num2}${summaryClose}
       return text;
     return `**${text}**`;
   }
+  /* ---------- v1.0.7: smart commands + SM-2 review ---------- */
+  /** Wrap the selection (or current line) in a toggle. */
+  wrapSelectionAsToggle(editor) {
+    const selection = editor.getSelection();
+    const type = this.activeCallout();
+    const fold = this.settings.defaultCollapsed ? "-" : "+";
+    if (selection.trim().length === 0) {
+      const line = editor.getLine(editor.getCursor().line);
+      if (line.trim().length === 0) {
+        new import_obsidian.Notice("Nothing to wrap \u2014 select the question and answer first.");
+        return;
+      }
+      const title2 = this.maybeBold(line.trim());
+      editor.replaceRange(
+        `> [!${type}]${fold} ${title2}
+> 
+`,
+        { line: editor.getCursor().line, ch: 0 },
+        { line: editor.getCursor().line, ch: line.length }
+      );
+      return;
+    }
+    const lines = selection.split("\n");
+    let titleLine = "";
+    let bodyStart = 0;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim().length > 0) {
+        titleLine = lines[i].trim();
+        bodyStart = i + 1;
+        break;
+      }
+    }
+    if (titleLine.length === 0) {
+      new import_obsidian.Notice("Selection is empty.");
+      return;
+    }
+    const title = this.maybeBold(titleLine);
+    const bodyLines = lines.slice(bodyStart);
+    while (bodyLines.length > 0 && bodyLines[0].trim().length === 0)
+      bodyLines.shift();
+    const body = bodyLines.length > 0 ? "\n" + bodyLines.map((l) => `> ${l}`.replace(/>\s+$/, ">")).join("\n") : "";
+    editor.replaceSelection(`> [!${type}]${fold} ${title}${body}
+`);
+  }
+  /** Cycle the toggle at the cursor through red → yellow → green. */
+  cycleColorAtCursor(editor) {
+    var _a, _b;
+    const found = this.findHeaderLine(editor);
+    if (!found) {
+      new import_obsidian.Notice("Cursor is not inside a toggle.");
+      return;
+    }
+    const current = (_b = (_a = found.text.match(/^>\s*\[!([^\]]+)\]/)) == null ? void 0 : _a[1]) != null ? _b : "";
+    const idx = TRAFFIC_CYCLE.indexOf(current);
+    const next = TRAFFIC_CYCLE[(idx + 1) % TRAFFIC_CYCLE.length];
+    this.recolorToggleAtCursor(editor, next);
+  }
+  /** One button, five outcomes — decided by the cursor context. */
+  runSmartToggle(editor) {
+    const cursor = editor.getCursor();
+    const line = editor.getLine(cursor.line);
+    const action = smartAction({
+      selection: editor.getSelection(),
+      line,
+      insideToggle: !!this.findHeaderLine(editor)
+    });
+    switch (action) {
+      case "wrap-selection":
+        this.wrapSelectionAsToggle(editor);
+        break;
+      case "mcq-option":
+        editor.replaceRange("\n> - [ ] ", { line: cursor.line, ch: line.length });
+        editor.setCursor({ line: cursor.line + 1, ch: 8 });
+        break;
+      case "match-row": {
+        const row = blankTableRow(line);
+        editor.replaceRange(`
+${row}`, { line: cursor.line, ch: line.length });
+        editor.setCursor({ line: cursor.line + 1, ch: 4 });
+        break;
+      }
+      case "answer-key":
+        editor.replaceRange("\n> **Answer key:** ", { line: cursor.line, ch: line.length });
+        editor.setCursor({ line: cursor.line + 1, ch: 18 });
+        break;
+      default:
+        this.insertNewToggleBelow(editor);
+    }
+    if (action !== "new-toggle")
+      new import_obsidian.Notice(smartActionLabel(action));
+  }
+  /** Start, pause or resume the recall session with a single command. */
+  runSmartRecall(editor) {
+    if (!this.timerWidget || !this.sessionNotePath) {
+      this.startRecallSession(editor);
+      return;
+    }
+    if (this.timerState.running) {
+      this.timerState = { ...this.timerState, running: false, autoPaused: false };
+      new import_obsidian.Notice("\u231B Paused");
+    } else {
+      this.timerState = { ...this.timerState, running: true, autoPaused: false };
+      this.lastTick = Date.now();
+      this.lastActivityAt = Date.now();
+      new import_obsidian.Notice("\u231B Running");
+    }
+    this.renderTimer();
+  }
+  /** Collapse all answers, show the timer and start a focus phase on this note. */
+  startRecallSession(editor) {
+    const doc = editor.getValue();
+    const collapsed = collapseAllToggles(doc);
+    if (collapsed !== doc) {
+      const cursor = editor.getCursor();
+      editor.setValue(collapsed);
+      editor.setCursor(cursor);
+    }
+    const stats = scanRecallStats(collapsed);
+    this.showTimer();
+    this.sessionNotePath = this.activeNotePath();
+    this.timerState = {
+      ...resetPhase(createState(this.settings), this.settings),
+      running: true
+    };
+    this.lastTick = Date.now();
+    this.lastActivityAt = Date.now();
+    this.renderTimer();
+    new import_obsidian.Notice(
+      `Recall session started \u2014 ${stats.total} toggles (\u{1F534} ${stats.red} \xB7 \u{1F7E1} ${stats.yellow} \xB7 \u{1F7E2} ${stats.green})`
+    );
+  }
+  /** The SM-2 card for a note path. */
+  cardFor(path) {
+    var _a;
+    if (!path)
+      return void 0;
+    return (_a = this.settings.srs) == null ? void 0 : _a[path];
+  }
+  /** Show the grading row (Again / Hard / Good / Easy) for the current note. */
+  openReview(editor) {
+    var _a;
+    this.showTimer();
+    const doc = (_a = editor == null ? void 0 : editor.getValue()) != null ? _a : "";
+    const stats = doc ? scanRecallStats(doc) : { total: 0, red: 0, yellow: 0, green: 0, firstRedLine: -1 };
+    this.reviewSuggestion = suggestGrade(stats);
+    this.reviewOpen = true;
+    this.renderTimer();
+  }
+  /** Apply a grade to the active note and store the next due date. */
+  async applyGrade(grade) {
+    var _a, _b, _c;
+    const path = (_a = this.sessionNotePath) != null ? _a : this.activeNotePath();
+    if (!path) {
+      new import_obsidian.Notice("Open a note first to schedule its recall.");
+      return;
+    }
+    const card = gradeCard((_b = this.cardFor(path)) != null ? _b : newCard(), grade, Date.now());
+    this.settings.srs = { ...(_c = this.settings.srs) != null ? _c : {}, [path]: card };
+    await this.saveSettings();
+    this.reviewOpen = false;
+    this.renderTimer();
+    this.updateStatus();
+    new import_obsidian.Notice(`${GRADE_LABEL[grade]} \u2192 ${nextDueLabel(card, Date.now())} \xB7 ease ${card.ease}`);
+  }
+  /** List the notes whose recall is due, newest schedule first. */
+  showDueNotes() {
+    var _a;
+    const due = dueNotes((_a = this.settings.srs) != null ? _a : {}, Date.now());
+    if (!due.length) {
+      new import_obsidian.Notice("Nothing due \u2014 everything is scheduled ahead.");
+      return;
+    }
+    const rows = due.map((path) => ({ path, card: this.settings.srs[path] }));
+    new DueNotesModal(this.app, rows, (path) => {
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (file)
+        void this.app.workspace.openLinkText(path, "", false);
+    }).open();
+  }
   /* ---------- v1.0.5: timer plumbing ---------- */
   toggleTimer() {
     if (this.timerWidget) {
@@ -960,8 +1442,12 @@ ${summaryOpen}${num2}${summaryClose}
     this.timerWidget = new TimerWidget(
       {
         onToggleRun: () => {
-          this.timerState = { ...this.timerState, running: !this.timerState.running };
+          const running = !this.timerState.running;
+          this.timerState = { ...this.timerState, running, autoPaused: false };
+          if (running && !this.sessionNotePath)
+            this.sessionNotePath = this.activeNotePath();
           this.lastTick = Date.now();
+          this.lastActivityAt = Date.now();
           this.renderTimer();
         },
         onReset: () => {
@@ -976,6 +1462,8 @@ ${summaryOpen}${num2}${summaryClose}
         },
         onHide: () => this.hideTimer(),
         onJumpRed: () => this.jumpToFirstRed(),
+        onRecallAgain: () => this.collapseActiveNote(true),
+        onGrade: (grade) => void this.applyGrade(grade),
         onMove: (x, y) => {
           this.settings.timerX = x;
           this.settings.timerY = y;
@@ -995,13 +1483,77 @@ ${summaryOpen}${num2}${summaryClose}
     (_a = this.timerWidget) == null ? void 0 : _a.destroy();
     this.timerWidget = null;
   }
+  /** Stop the session completely: paused fresh focus phase + summary. */
+  stopTimerSession() {
+    const summary = stopSummary(this.timerState);
+    this.timerState = stopSession(this.timerState, this.settings);
+    this.sessionNotePath = null;
+    this.renderTimer();
+    this.updateStatus();
+    new import_obsidian.Notice(summary);
+  }
+  activeNotePath() {
+    var _a, _b, _c;
+    return (_c = (_b = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.file) == null ? void 0 : _b.path) != null ? _c : null;
+  }
+  /** Auto-pause / auto-resume based on visibility and the session note. */
+  evaluateAttention() {
+    const reason = shouldAutoPause({
+      state: this.timerState,
+      enabled: this.settings.autoPauseOnLeave,
+      visible: document.visibilityState !== "hidden" && document.hasFocus(),
+      onSessionNote: !this.sessionNotePath || this.activeNotePath() === this.sessionNotePath,
+      pinned: this.settings.pinToSessionNote
+    });
+    if (reason) {
+      this.timerState = pauseForInactivity(this.timerState);
+      this.renderTimer();
+      if (this.settings.notifyOnPhaseEnd)
+        new import_obsidian.Notice(autoPauseNotice(reason));
+      return;
+    }
+    if (this.settings.autoResumeOnReturn && this.timerState.autoPaused && document.visibilityState !== "hidden") {
+      const onNote = !this.sessionNotePath || !this.settings.pinToSessionNote || this.activeNotePath() === this.sessionNotePath;
+      if (onNote) {
+        this.timerState = resumeAfterAutoPause(this.timerState);
+        this.lastTick = Date.now();
+        this.lastActivityAt = Date.now();
+        this.renderTimer();
+      }
+    }
+  }
+  /** Collapse every toggle in the active note (used on breaks / "recall again"). */
+  collapseActiveNote(notify = false) {
+    var _a;
+    const editor = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.editor;
+    if (!editor)
+      return;
+    const doc = editor.getValue();
+    const collapsed = collapseAllToggles(doc);
+    if (collapsed !== doc) {
+      const cursor = editor.getCursor();
+      editor.setValue(collapsed);
+      editor.setCursor(cursor);
+    }
+    if (notify) {
+      const stats = scanRecallStats(collapsed);
+      new import_obsidian.Notice(`All ${stats.total} toggles collapsed \u2014 recall again \u{1F534} ${stats.red}`);
+    }
+  }
   onTimerTick() {
-    var _a, _b;
+    var _a, _b, _c;
     const now = Date.now();
     const elapsed = now - this.lastTick;
     this.lastTick = now;
     if (!this.timerState.running)
       return;
+    if (this.timerState.phase === "focus" && isIdle(this.lastActivityAt, now, this.settings.idlePauseMinutes)) {
+      this.timerState = pauseForInactivity(this.timerState);
+      this.renderTimer();
+      if (this.settings.notifyOnPhaseEnd)
+        new import_obsidian.Notice(autoPauseNotice("idle"));
+      return;
+    }
     const result = tick(this.timerState, elapsed, this.settings);
     this.timerState = result.state;
     this.renderTimer();
@@ -1014,6 +1566,15 @@ ${summaryOpen}${num2}${summaryClose}
       }
       if (this.settings.soundOnPhaseEnd)
         this.buzz();
+      if (result.endedPhase === "focus" && this.settings.autoCollapseOnBreak) {
+        this.collapseActiveNote();
+      }
+      if (result.endedPhase === "focus" && this.settings.autoReview) {
+        const doc = (_c = this.activeDoc()) != null ? _c : "";
+        this.reviewSuggestion = suggestGrade(scanRecallStats(doc));
+        this.reviewOpen = true;
+        this.renderTimer();
+      }
     }
   }
   buzz() {
@@ -1060,17 +1621,29 @@ ${summaryOpen}${num2}${summaryClose}
     if (!this.timerWidget)
       return;
     const breakPhase = this.timerState.phase !== "focus";
-    const hint = breakPhase ? this.recallHint() : void 0;
+    const recall = this.recallHint();
+    const hint = this.timerState.autoPaused ? "Paused \u2014 tap \u25B6 to resume" : breakPhase ? recall : void 0;
     this.timerWidget.render({
       state: this.timerState,
       cycleSize: Math.max(1, Math.min(8, this.settings.sessionsBeforeLongBreak)),
       hint,
-      canJumpRed: breakPhase && !!hint
+      canJumpRed: breakPhase && !!recall,
+      canRecallAgain: breakPhase && !!recall,
+      reviewOpen: this.reviewOpen,
+      suggestedGrade: this.reviewSuggestion,
+      scheduleLabel: this.scheduleLabel()
     });
   }
   updateStatus() {
+    var _a, _b;
+    const due = dueSummary((_a = this.settings.srs) != null ? _a : {}, Date.now());
+    (_b = this.statusEl) == null ? void 0 : _b.setText(`${sessionSummary(this.timerState)}${due ? ` \xB7 ${due}` : ""}`);
+  }
+  /** "Next recall: …" line for the current note, if it has been graded before. */
+  scheduleLabel() {
     var _a;
-    (_a = this.statusEl) == null ? void 0 : _a.setText(sessionSummary(this.timerState));
+    const card = this.cardFor((_a = this.sessionNotePath) != null ? _a : this.activeNotePath());
+    return card ? `Next recall: ${nextDueLabel(card, Date.now())}` : void 0;
   }
   /** Re-apply durations after a settings change without losing progress. */
   refreshTimerDurations() {
@@ -1341,6 +1914,60 @@ var NotionToggleSettingTab = class extends import_obsidian.PluginSettingTab {
       () => this.plugin.settings.compactByDefault,
       (v) => this.plugin.settings.compactByDefault = v
     );
+    containerEl.createEl("h3", { text: "Timer focus guard (v1.0.6)" });
+    boolSetting(
+      "Auto-pause when you leave",
+      "Pause the running timer when Obsidian goes to the background or you switch away.",
+      () => this.plugin.settings.autoPauseOnLeave,
+      (v) => this.plugin.settings.autoPauseOnLeave = v
+    );
+    boolSetting(
+      "Pin session to its note",
+      "Only the note where the session started counts as focus time.",
+      () => this.plugin.settings.pinToSessionNote,
+      (v) => this.plugin.settings.pinToSessionNote = v
+    );
+    boolSetting(
+      "Auto-resume when you return",
+      "Continue automatically once you are back on the session note.",
+      () => this.plugin.settings.autoResumeOnReturn,
+      (v) => this.plugin.settings.autoResumeOnReturn = v
+    );
+    boolSetting(
+      "Collapse toggles on break",
+      "When a focus phase ends, hide every answer again for the next recall round.",
+      () => this.plugin.settings.autoCollapseOnBreak,
+      (v) => this.plugin.settings.autoCollapseOnBreak = v
+    );
+    new import_obsidian.Setting(containerEl).setName("Idle pause (minutes)").setDesc("Pause the focus phase after this much inactivity. 0 turns it off.").addText((text) => {
+      text.setPlaceholder("2").setValue(String(this.plugin.settings.idlePauseMinutes)).onChange(async (value) => {
+        const n = Number.parseInt(value, 10);
+        this.plugin.settings.idlePauseMinutes = Number.isFinite(n) ? Math.max(0, Math.min(120, n)) : 0;
+        await this.plugin.saveSettings();
+      });
+    });
+    containerEl.createEl("h3", { text: "Minimal mode & spaced repetition" });
+    new import_obsidian.Setting(containerEl).setName("Minimal command names").setDesc(
+      'Keep 4 primary commands (Toggle, Colour, Recall, Review) clean and prefix everything else with "Advanced:" so the toolbar stays uncluttered. Restart Obsidian to refresh names.'
+    ).addToggle(
+      (tg) => tg.setValue(this.plugin.settings.minimalNames).onChange(async (v) => {
+        this.plugin.settings.minimalNames = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName("Ask for a grade after each focus phase").setDesc("Shows Again / Hard / Good / Easy on the timer; SM-2 then calculates your next recall date automatically.").addToggle(
+      (tg) => tg.setValue(this.plugin.settings.autoReview).onChange(async (v) => {
+        this.plugin.settings.autoReview = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName("Clear recall schedule").setDesc("Forget all stored SM-2 intervals for every note.").addButton((btn) => {
+      btn.setButtonText("Clear").onClick(async () => {
+        this.plugin.settings.srs = {};
+        await this.plugin.saveSettings();
+        new import_obsidian.Notice("Recall schedule cleared.");
+      });
+    });
     new import_obsidian.Setting(containerEl).setName("Reset timer position").setDesc("Bring the floating timer back to the top-left if it drifted off-screen.").addButton((btn) => {
       btn.setButtonText("Reset position").onClick(async () => {
         this.plugin.settings.timerX = 24;
@@ -1433,9 +2060,9 @@ function renumberToggles(doc) {
   });
   return n === 0 ? doc : out.join("\n");
 }
-var MCQ_OPTION = /^>\s*- \[[ xX]\]\s+\S/;
+var MCQ_OPTION2 = /^>\s*- \[[ xX]\]\s+\S/;
 var MCQ_EMPTY_OPTION = /^>\s*- \[[ xX]\]\s*$/;
-var ANSWER_LINE = /^>\s*\*\*Answer:\*\*/;
+var ANSWER_LINE2 = /^>\s*\*\*Answer:\*\*/;
 var EMPTY_ANSWER_LINE = /^>\s*\*\*Answer:\*\*\s*$/;
 var MATCH_ROW = /^>\s*\|\s*(\d+)\s*\|(.*)\|\s*$/;
 var EMPTY_MATCH_ROW = /^>\s*\|\s*\d*\s*\|\s*\|\s*\d*\.?\s*\|\s*$/;
@@ -1552,7 +2179,7 @@ ${sOpen}${num}`.length;
     const insert = opts.addAnswerLine === false ? "> " : "> **Answer:** ";
     return { from: "lineStart", insert, cursorOffset: insert.length };
   }
-  if (MCQ_OPTION.test(text)) {
+  if (MCQ_OPTION2.test(text)) {
     return { from: "cursor", insert: "\n> - [ ] ", cursorOffset: 9 };
   }
   if (EMPTY_ANSWER_LINE.test(text)) {
@@ -1626,3 +2253,28 @@ function planBackspace(text, col, opts) {
   }
   return null;
 }
+var DueNotesModal = class extends import_obsidian.Modal {
+  constructor(app, due, onPick) {
+    super(app);
+    this.due = due;
+    this.onPick = onPick;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h3", { text: `Due for recall (${this.due.length})` });
+    for (const { path, card } of this.due) {
+      const row = contentEl.createDiv({ cls: "ntt-due-row" });
+      const btn = row.createEl("button", { text: path.replace(/\.md$/, "") });
+      btn.addClass("ntt-due-btn");
+      row.createSpan({ text: ` ${nextDueLabel(card, Date.now())} \xB7 ease ${card.ease}` });
+      btn.addEventListener("click", () => {
+        this.close();
+        this.onPick(path);
+      });
+    }
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
