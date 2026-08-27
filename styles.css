@@ -248,3 +248,149 @@
 .notion-toggle-timer.ntt-flash {
   animation: ntt-flash 480ms ease 2;
 }
+
+/* ---------- v1.0.6: mobile UX + attention-aware timer ---------- */
+
+/* Compact pill keeps one big play/pause button. */
+.notion-toggle-timer .ntt-btn-compact {
+  display: none;
+}
+.notion-toggle-timer.is-compact .ntt-btn-compact {
+  display: block;
+  flex: 0 0 auto;
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: 999px;
+}
+.notion-toggle-timer.is-compact .ntt-head {
+  gap: 8px;
+}
+
+/* Auto-paused looks visibly idle so you notice it. */
+.notion-toggle-timer.is-auto-paused {
+  border-style: dashed;
+}
+.notion-toggle-timer.is-auto-paused .ntt-time {
+  color: var(--text-muted);
+}
+
+/* Touch targets + safe areas on phones and tablets. */
+.is-mobile .notion-toggle-timer,
+body.is-phone .notion-toggle-timer {
+  padding: 10px 12px;
+  border-radius: 18px;
+  margin-bottom: env(safe-area-inset-bottom, 0px);
+}
+.is-mobile .notion-toggle-timer .ntt-btn,
+body.is-phone .notion-toggle-timer .ntt-btn {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 15px;
+}
+.is-mobile .notion-toggle-timer .ntt-time,
+body.is-phone .notion-toggle-timer .ntt-time {
+  font-size: 26px;
+}
+.is-mobile .notion-toggle-timer.is-compact .ntt-time {
+  font-size: 18px;
+}
+.is-mobile .notion-toggle-timer.is-compact .ntt-btn-compact {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* Tighter reading layout on small screens: less dead space, no clipping. */
+@media (max-width: 768px) {
+  .markdown-source-view.mod-cm6 .callout,
+  .markdown-preview-view .callout {
+    padding: 8px 10px;
+    margin: 6px 0;
+  }
+  .markdown-preview-view .callout .callout-title {
+    line-height: 1.35;
+    padding: 2px 0;
+  }
+  .markdown-preview-view .callout-content > p,
+  .markdown-preview-view .callout-content > ul,
+  .markdown-preview-view .callout-content > ol {
+    margin: 4px 0;
+  }
+  /* MCQ option lists: compact rows, wrapped text stays aligned. */
+  .markdown-preview-view .callout-content ul,
+  .markdown-preview-view .callout-content ol {
+    padding-inline-start: 1.25em;
+  }
+  .markdown-preview-view .callout-content li {
+    margin: 2px 0;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+  /* Empty / collapsed toggles must not eat half the screen. */
+  .markdown-preview-view .callout:has(.callout-content:empty) {
+    padding-bottom: 6px;
+  }
+  .markdown-preview-view details {
+    padding: 6px 10px;
+    margin: 6px 0;
+  }
+  .markdown-preview-view details > summary {
+    line-height: 1.35;
+    min-height: 32px;
+  }
+  /* Match-the-following tables scroll instead of overflowing. */
+  .markdown-preview-view .callout-content table,
+  .markdown-preview-view details table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    font-size: 0.92em;
+  }
+  /* Keep the last lines above Obsidian's mobile toolbar. */
+  .is-mobile .markdown-preview-view,
+  .is-mobile .cm-contentContainer {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* ---------- v1.0.7: SM-2 grading row + due list ---------- */
+.ntt-grade-row {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+.ntt-grade {
+  flex: 1;
+  font-size: 11px;
+  padding: 4px 2px;
+}
+.ntt-grade.is-again { color: var(--color-red); }
+.ntt-grade.is-hard { color: var(--color-orange); }
+.ntt-grade.is-good { color: var(--color-green); }
+.ntt-grade.is-easy { color: var(--color-blue); }
+.ntt-grade.is-suggested {
+  outline: 1px solid var(--interactive-accent);
+  font-weight: 600;
+}
+.ntt-schedule {
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+.ntt-due-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+.ntt-due-btn {
+  flex: 1;
+  text-align: left;
+}
+body.is-mobile .ntt-grade {
+  min-height: 44px;
+  font-size: 13px;
+}
+body.is-mobile .ntt-due-btn {
+  min-height: 44px;
+}
