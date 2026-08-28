@@ -41,6 +41,13 @@ import {
   type Grade,
   type SrsCard,
 } from "./src/srs";
+import {
+  pruneCards,
+  removeCardKey,
+  renameCardKey,
+  scheduleStoreSummary,
+} from "./src/maintenance";
+
 
 
 
@@ -524,7 +531,30 @@ export default class NotionTogglePlugin extends Plugin {
       })
     );
 
+    /* ---------- v1.0.8: keep the recall schedule in sync with the vault ---------- */
+    this.registerEvent(
+      this.app.vault.on("rename", async (file, oldPath) => {
+        const { store, moved } = renameCardKey(this.settings.srs ?? {}, oldPath, file.path);
+        if (!moved) return;
+        this.settings.srs = store;
+        await this.saveSettings();
+        this.renderTimer();
+      })
+    );
+    this.registerEvent(
+      this.app.vault.on("delete", async (file) => {
+        const { store, removed } = removeCardKey(this.settings.srs ?? {}, file.path);
+        if (!removed) return;
+        this.settings.srs = store;
+        await this.saveSettings();
+        this.renderTimer();
+      })
+    );
+    // Drop cards whose note vanished (deleted outside Obsidian, or pre-v1.0.8).
+    void this.pruneSchedule(true);
+
     if (this.settings.showOnStartup) this.showTimer();
+
 
 
 
@@ -1199,9 +1229,32 @@ export default class NotionTogglePlugin extends Plugin {
     this.hideTimer();
   }
 
+  /**
+   * Remove schedule entries whose note no longer exists.
+   * Returns how many were removed; `silent` skips the notice (startup).
+   */
+  async pruneSchedule(silent = false): Promise<number> {
+    const existing = this.app.vault.getMarkdownFiles().map((f) => f.path);
+    const { store, removed } = pruneCards(this.settings.srs ?? {}, existing);
+    if (removed.length) {
+      this.settings.srs = store;
+      await this.saveSettings();
+      this.renderTimer();
+    }
+    if (!silent) {
+      new Notice(
+        removed.length
+          ? `Removed ${removed.length} schedule${removed.length === 1 ? "" : "s"} for missing notes.`
+          : "Recall schedule is already clean."
+      );
+    }
+    return removed.length;
+  }
+
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
   }
+
 
   async saveSettings() {
     await this.saveData(this.settings);
@@ -1224,31 +1277,25 @@ class QuickQAModal extends Modal {
 
   onOpen() {
     const { contentEl } = this;
-    contentEl.createEl("h2", { text: "Quick Q&A Toggle" });
+    this.setTitle("Quick Q&A toggle");
 
     contentEl.createEl("label", { text: "Question" });
-    this.questionEl = contentEl.createEl("textarea");
+    this.questionEl = contentEl.createEl("textarea", { cls: "ntt-modal-input" });
     this.questionEl.rows = 2;
-    this.questionEl.style.width = "100%";
-    this.questionEl.style.marginBottom = "12px";
     this.questionEl.placeholder = "Type the question...";
 
     contentEl.createEl("label", { text: "Answer" });
-    this.answerEl = contentEl.createEl("textarea");
+    this.answerEl = contentEl.createEl("textarea", { cls: "ntt-modal-input" });
     this.answerEl.rows = 4;
-    this.answerEl.style.width = "100%";
-    this.answerEl.style.marginBottom = "12px";
     this.answerEl.placeholder = "Type the answer...";
 
-    const buttonContainer = contentEl.createDiv();
-    buttonContainer.style.display = "flex";
-    buttonContainer.style.justifyContent = "flex-end";
-    buttonContainer.style.gap = "8px";
+    const buttonContainer = contentEl.createDiv({ cls: "ntt-modal-actions" });
 
     const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
     cancelBtn.onclick = () => this.close();
 
     const submitBtn = buttonContainer.createEl("button", { text: "Insert toggle", cls: "mod-cta" });
+
     submitBtn.onclick = () => {
       this.onSubmit({
         question: this.questionEl.value,
@@ -1275,7 +1322,7 @@ class ColorPickerModal extends Modal {
 
   onOpen() {
     const { contentEl } = this;
-    contentEl.createEl("h2", { text: "Toggle colour" });
+    this.setTitle("Toggle colour");
     const list = contentEl.createDiv({ cls: "notion-toggle-color-list" });
     for (const color of TOGGLE_COLORS) {
       if (!color.callout) continue;
@@ -1429,7 +1476,7 @@ class NotionToggleSettingTab extends PluginSettingTab {
 
     /* ---------- v1.0.5: Recall timer (Pomodoro) ---------- */
 
-    containerEl.createEl("h3", { text: "Recall timer (Pomodoro)" });
+    new Setting(containerEl).setName("Recall timer (Pomodoro)").setHeading();
 
     new Setting(containerEl)
       .setName("Preset")
@@ -1557,7 +1604,7 @@ class NotionToggleSettingTab extends PluginSettingTab {
     );
 
     /* ---------- v1.0.6: attention-aware behaviour ---------- */
-    containerEl.createEl("h3", { text: "Timer focus guard (v1.0.6)" });
+    new Setting(containerEl).setName("Timer focus guard (v1.0.6)").setHeading();
 
     boolSetting(
       "Auto-pause when you leave",
@@ -1600,7 +1647,7 @@ class NotionToggleSettingTab extends PluginSettingTab {
           });
       });
 
-    containerEl.createEl("h3", { text: "Minimal mode & spaced repetition" });
+    new Setting(containerEl).setName("Minimal mode & spaced repetition").setHeading();
 
     new Setting(containerEl)
       .setName("Minimal command names")
@@ -1625,15 +1672,30 @@ class NotionToggleSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Clear recall schedule")
-      .setDesc("Forget all stored SM-2 intervals for every note.")
+      .setName("Recall schedule")
+      .setDesc(
+        `${scheduleStoreSummary(Object.keys(this.plugin.settings.srs ?? {}).length)} Schedules follow a note when you rename or move it (v1.0.8).`
+      )
       .addButton((btn) => {
-        btn.setButtonText("Clear").onClick(async () => {
+        btn.setButtonText("Clean up").onClick(async () => {
+          const removed = await this.plugin.pruneSchedule();
+          new Notice(
+            removed > 0
+              ? `Removed ${removed} schedule${removed === 1 ? "" : "s"} for missing notes.`
+              : "Nothing to clean up."
+          );
+          this.display();
+        });
+      })
+      .addButton((btn) => {
+        btn.setWarning().setButtonText("Clear all").onClick(async () => {
           this.plugin.settings.srs = {};
           await this.plugin.saveSettings();
           new Notice("Recall schedule cleared.");
+          this.display();
         });
       });
+
 
     new Setting(containerEl)
       .setName("Reset timer position")
@@ -2096,7 +2158,7 @@ class DueNotesModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl("h3", { text: `Due for recall (${this.due.length})` });
+    this.setTitle(`Due for recall (${this.due.length})`);
     for (const { path, card } of this.due) {
       const row = contentEl.createDiv({ cls: "ntt-due-row" });
       const btn = row.createEl("button", { text: path.replace(/\.md$/, "") });
