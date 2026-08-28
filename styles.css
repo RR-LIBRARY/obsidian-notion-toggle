@@ -394,3 +394,17 @@ body.is-mobile .ntt-grade {
 body.is-mobile .ntt-due-btn {
   min-height: 44px;
 }
+
+/* ---------- v1.0.8: classes instead of inline styles ---------- */
+.ntt-hidden {
+  display: none !important;
+}
+.ntt-modal-input {
+  width: 100%;
+  margin-bottom: 12px;
+}
+.ntt-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
