@@ -112,9 +112,9 @@ export class TimerWidget {
     this.againBtn = button(hintRow, "↻", "Collapse & recall again", () =>
       this.cb.onRecallAgain?.()
     );
-    this.jumpBtn.style.display = "none";
-    this.againBtn.style.display = "none";
-    hintRow.style.display = "none";
+    setHidden(this.jumpBtn, true);
+    setHidden(this.againBtn, true);
+    setHidden(hintRow, true);
 
     // SM-2 grading row — appears automatically when a focus phase ends.
     this.gradeRow = div(this.root, "ntt-grade-row");
@@ -130,10 +130,10 @@ export class TimerWidget {
       );
       this.gradeBtns[id].classList.add("ntt-grade", `is-${id}`);
     }
-    this.gradeRow.style.display = "none";
+    setHidden(this.gradeRow, true);
 
     this.scheduleEl = div(this.root, "ntt-schedule");
-    this.scheduleEl.style.display = "none";
+    setHidden(this.scheduleEl, true);
 
     // One tap on the clock switches compact / expanded (mobile-friendly).
     this.on(this.timeEl, "click", () => this.setCompact(!this.compact));
@@ -226,22 +226,22 @@ export class TimerWidget {
     const hintRow = this.hintEl.parentElement as HTMLElement;
     if (data.hint) {
       this.hintEl.textContent = data.hint;
-      hintRow.style.display = "";
-      this.jumpBtn.style.display = data.canJumpRed ? "" : "none";
-      this.againBtn.style.display = data.canRecallAgain ? "" : "none";
+      setHidden(hintRow, false);
+      setHidden(this.jumpBtn, !data.canJumpRed);
+      setHidden(this.againBtn, !data.canRecallAgain);
     } else {
-      hintRow.style.display = "none";
+      setHidden(hintRow, true);
     }
 
-    this.gradeRow.style.display = data.reviewOpen ? "" : "none";
+    setHidden(this.gradeRow, !data.reviewOpen);
     for (const [id, btn] of Object.entries(this.gradeBtns)) {
       btn.classList.toggle("is-suggested", data.reviewOpen && data.suggestedGrade === id);
     }
     if (data.scheduleLabel) {
       this.scheduleEl.textContent = data.scheduleLabel;
-      this.scheduleEl.style.display = "";
+      setHidden(this.scheduleEl, false);
     } else {
-      this.scheduleEl.style.display = "none";
+      setHidden(this.scheduleEl, true);
     }
   }
 
@@ -290,4 +290,9 @@ function button(
   });
   parent.appendChild(el);
   return el;
+}
+
+/** v1.0.8: visibility via a CSS class instead of inline styles. */
+function setHidden(el: HTMLElement, hidden: boolean): void {
+  el.classList.toggle("ntt-hidden", hidden);
 }
