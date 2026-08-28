@@ -1,167 +1,111 @@
 # Notion Toggle — Obsidian Plugin
 
-Notion-style collapsible toggles for Obsidian, without typing any `<details>`, `<summary>`, or `>` brackets.
+Notion-style collapsible toggles for Obsidian, plus a recall workflow built on top of them: traffic-light grading, a floating Pomodoro timer, and SM-2 spaced repetition. You never type `<details>`, `<summary>` or `>` brackets by hand.
 
-## What it does
+Works on desktop and mobile. Version 1.0.8.
 
-- **Enter = next toggle (auto-continue)** — inside a toggle, `Enter` keeps you in the answer (`> ` added automatically). Press `Enter` again on the empty `> ` line and the **next toggle header is created instantly** — same flow as a numbered list. Third case: normal text, so you can always escape.
-- **New toggle below** — one command (one tap on mobile) = fresh empty toggle with the cursor inside the question.
-- **Insert toggle** — inserts an empty foldable callout at the cursor; just type the question.
-- **Wrap selection as toggle** — select your question + answer text, run the command → becomes a collapsed toggle.
-- **Convert `<details>` to callouts** — turns all HTML `<details>` blocks in the current file into native Obsidian foldable callouts (one command, e.g. all 179 Q&A blocks at once).
-- **Convert callouts to `<details>`** — reverse, if you ever want HTML back.
-- **Quick Q&A toggle (prompt)** — a small dialog to type a question + answer; inserts a toggle on submit.
-- **Settings** — default callout type (`question` / `info` / `note` / …), collapsed-by-default on/off, auto-bold the question, auto-continue on Enter on/off, and toggle format (native callout or HTML `<details>`).
-- **CSS** — Notion-like arrow rotation + hover styling for toggle callouts.
+## Install
 
-## Mobile: add the button above the keyboard
+### BRAT (recommended)
 
-Obsidian mobile ka toolbar (keyboard ke upar wali strip) commands se banti hai:
+1. Install the **BRAT** community plugin.
+2. BRAT → *Add a beta plugin* → paste `RR-LIBRARY/obsidian-notion-toggle`.
+3. Enable **Notion Toggle** in *Settings → Community plugins*.
+4. Later updates: BRAT → *Check for updates*.
 
-1. Obsidian mobile → **Settings → Toolbar** (Mobile → "Manage toolbar options").
-2. Available list me search karo **"New toggle below"** → `+` dabao.
-3. Optional: **"Wrap selection as toggle"** aur **"Quick Q&A toggle"** bhi add kar lo.
-4. Drag karke unko left side pe le aao, taki ek tap me mil jayein.
+### Manual
 
-Ab note me: toolbar icon tap → toggle ban gaya → question type karo → `Enter` → answer type karo → `Enter` `Enter` → agla toggle apne aap. Bilkul Notion jaisa.
+1. Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/RR-LIBRARY/obsidian-notion-toggle/releases/latest).
+2. Copy them into `<vault>/.obsidian/plugins/notion-toggle/`.
+3. Reload Obsidian and enable the plugin.
 
-Desktop ke liye: **Settings → Hotkeys** → "New toggle below" ko `Ctrl/Cmd + Shift + T` de do.
+## Minimal command surface
 
-## Install (your vault)
+Five context-aware commands cover the daily workflow — add them to the mobile toolbar (*Settings → Toolbar*) or to hotkeys.
 
-1. In your Obsidian vault, create the folder:
-   `.obsidian/plugins/notion-toggle/`
-2. Copy these three files into it:
-   - `main.js`
-   - `manifest.json`
-   - `styles.css`
-3. Obsidian → **Settings → Community plugins** → toggle off "Safe mode" (if needed) → find **"Notion Toggle"** → enable it.
-4. (Optional) **Settings → Hotkeys** → search "Notion Toggle" → assign hotkeys to the commands you use.
-
-## How to use
-
-### Mobile (keyboard ke upar wala toolbar) — recommended
-
-**Settings → Toolbar (Mobile) → "Add a command..."** se ye commands add karo. Jo daily use karte ho unko `≡` handle se list me sabse upar drag kar do; jo nahi chahiye unko `X` se hata do.
-
-| Command | Icon | Kab use karo |
-|---|---|---|
-| **New toggle below** | `+` | Sabse zyada use hoga — ek tap = naya toggle, cursor seedha question par |
-| **Quick Q&A toggle (prompt)** | `?` | Popup me question + answer ek saath likh ke insert |
-| **Wrap selection as toggle** | list | Pehle se likhe Q&A ko select karke toggle bana do |
-| **Convert `<details>` blocks to callouts** | tree | Poori purani file ko foldable callouts me badlo |
-| **Convert callouts to `<details>`** | `<>` | Ulta convert (HTML format chahiye to) |
-| **Insert toggle (empty)** | chevrons | Khali toggle skeleton |
-
-**Daily flow:** toolbar me `New toggle below` tap → question likho → `Enter` → answer likho → `Enter` `Enter` → agla toggle apne aap ban jata hai.
-
-### Enter behaviour (Notion parity)
-
-| Cursor kahan hai | `Enter` dabane par |
+| Command | What it does |
 |---|---|
-| Toggle header (`> [!question]- Question`) ke end me | cursor toggle ke **andar** (`> ` answer line) |
-| Answer line jisme text hai | nayi answer line usi toggle ke andar |
-| Khali `> ` answer line | toggle band, **agla toggle header** ban jata hai, cursor question par |
-| Khali toggle header (bina question) | toggle hatt jata hai → normal plain text (double-Enter escape) |
+| **Toggle (smart add)** | One button that adds whatever fits the cursor: a new toggle, an MCQ option, a table row, or an answer line. |
+| **Colour (red → yellow → green)** | Grades the toggle under the cursor with the traffic-light palette. |
+| **Recall (start / pause session)** | Starts the Pomodoro recall session on the current note, or pauses/resumes it. |
+| **Review (grade this note)** | Grades the note for spaced repetition; the suggested grade comes from your red/yellow/green toggles. |
+| **Due notes** | Lists every note that is due today, soonest first. |
 
-Normal text me Enter bilkul normal rehta hai. Settings → Notion Toggle me **Auto-continue on Enter** off bhi kar sakte ho, aur format `callout` / `details` choose kar sakte ho.
+All older commands still exist (insert toggle, wrap selection, Quick Q&A, MCQ, Match the following, numbering, `<details>` conversion, timer controls). They are simply no longer required for the common path.
 
-### Other workflows
+## Writing toggles
 
-| Workflow | Steps |
-|---|---|
-| **Fastest** | Type the question on one line and the answer below it → select both → run **"Wrap selection as toggle"** (assign a hotkey like `Ctrl/Cmd+T`). |
-| **Insert empty** | Run **"Insert toggle (empty)"** → type the question on the title line, press `Enter`, type the answer inside the callout. |
-| **Prompt box** | Run **"Quick Q&A toggle (prompt)"** → type Q & A in the dialog → it inserts a toggle. |
-| **Migrate old notes** | Open any file that has `<details>` blocks → run **"Convert `<details>` blocks to callouts"**. |
-
-A toggle looks like this in the markdown (no manual typing needed — the plugin writes it):
+Type a question, press `Enter`, type the answer, press `Enter` twice — the next toggle is created for you, numbered automatically.
 
 ```markdown
 > [!question]- **Q6. Bt crop ke liye cry gene ka selection kis par depend karta hai?**
 > **Answer:** Target pest pe depend karta hai — kaunsa insect, uska gut receptor.
 ```
 
-The `-` makes it start collapsed (answer hidden) — click to expand. Perfect for active recall.
+The trailing `-` starts the toggle collapsed, which is what makes active recall work.
 
-## Files
+### Enter and Backspace
 
-- `main.ts` — plugin source (TypeScript)
-- `main.js` — compiled bundle (drop into your vault)
-- `manifest.json` — plugin metadata
-- `styles.css` — Notion-like toggle styling
+| Cursor position | `Enter` |
+|---|---|
+| End of a toggle header | moves inside the toggle (`> ` answer line) |
+| Answer line with text | new answer line in the same toggle |
+| Empty `> ` line | closes the toggle and starts the next one |
+| Empty toggle header | unwraps to plain text (double-Enter escape) |
+| MCQ option line | next `- [ ]` option; empty option → `**Answer:** ` line |
+| Filled table row | next numbered row of the Match table |
 
-## Build from source
+`Backspace` mirrors this: empty answer lines, empty headers and half-typed options unwrap cleanly instead of leaving stray markup. Mid-line `Enter` never splits a block — the remaining text moves to a fresh answer line. Both keys respect the *Auto-continue on Enter* setting and work in `<details>` mode.
+
+## Recall features
+
+- **Colours** — traffic-light red/yellow/green plus blue, purple, orange, gray and a plain Notion black, themed through Obsidian's native `--callout-color`.
+- **Numbering** — new toggles get `1.`, `2.`, `3.` automatically; *Renumber toggles in note* fixes gaps.
+- **MCQ** — question toggle with 2–6 `- [ ]` options and an `**Answer:**` line; options are tickable from the editor.
+- **Match the following** — a two-column table skeleton (2–8 rows) inside a toggle, with an answer key line.
+- **Floating recall timer** — draggable Pomodoro widget with presets (Classic 25/5, Deep 50/10, Quick recall 15/3, Custom), session counter, compact mode, phase notices with 🔴/🟡/🟢 counts and a **🔴 Jump** button, auto-collapse of answers on session start, idle and attention-aware auto-pause, and safe-area/orientation handling on mobile.
+- **Spaced repetition (SM-2)** — grade a note *Again / Hard / Good / Easy* and the next recall date is computed for you (ease 1.3–2.7, interval up to 365 days). The widget shows *Next recall: 6 days (Sat)* and the status bar shows how many notes are due.
+
+## Conversion
+
+- **Convert `<details>` blocks to callouts** — migrates a whole HTML note to native foldable callouts in one command (verified on a 179-block note).
+- **Convert callouts to `<details>`** — the reverse, when you need portable HTML.
+
+## Settings
+
+Callout type, collapsed by default, auto-bold the question, auto-continue on Enter, toggle format (`callout` / `details`), auto-numbering, colour palette, MCQ option count, Match row count, auto Answer line, the full Pomodoro block, minimal command names, and the **Recall schedule** section.
+
+### Recall schedule maintenance (new in 1.0.8)
+
+Schedules are stored per note path, so the plugin now keeps them in sync with the vault:
+
+- renaming or moving a note carries its schedule along;
+- deleting a note removes its schedule;
+- **Clean up** removes schedules for notes that no longer exist (also run automatically on load);
+- **Clear all** resets the whole schedule store.
+
+## Development
 
 ```bash
 cd obsidian-toggle-plugin
 bun install
-node esbuild.config.mjs
+bun test         # 127 pure tests
+bun run typecheck
+bun run build    # regenerates main.js
 ```
 
-This regenerates `main.js`.
+Logic lives in pure modules — `src/smart.ts`, `src/naming.ts`, `src/timer.ts`, `src/timer-ui.ts`, `src/srs.ts`, `src/maintenance.ts` — so behaviour is tested without the Obsidian API.
 
-## v1.0.2 — Notion parity update
+## Changelog highlights
 
-**Enter**
-- Question line end → cursor inside the toggle (`> `)
-- Answer line with text → next `> ` answer line
-- Empty `> ` line → closes the toggle and starts the **next** toggle
-- Empty toggle header → toggle removed (escape to plain text)
-- **Mid-line Enter** → block is not split; the remaining text moves to a fresh `> ` answer line
+- **1.0.8** — schedule follows renames/moves and is pruned on delete, Recall schedule settings section, Obsidian-native modal/settings headings, CSS classes instead of inline styles, MIT LICENSE, `versions.json`.
+- **1.0.7** — minimal five-command surface with smart context actions, SM-2 spaced repetition, due-notes list.
+- **1.0.6** — mobile UX pass: attention-aware auto-pause, pinned session note, compact draggable widget, 44px touch targets.
+- **1.0.5** — floating recall timer (Pomodoro) with recall intelligence.
+- **1.0.4** — MCQ and Match the following toggles.
+- **1.0.3** — auto-numbering and the colour palette.
+- **1.0.2** — Notion parity for Enter and Backspace.
 
-**Backspace (new)**
-- Empty `> ` answer line → prefix removed, plain empty line
-- Caret at the very start of the question text → toggle marker removed, question text kept
-- Empty toggle header → line removed
-- Caret right after `> ` on an answer line → that line unwrapped, text kept
-- Anywhere else → default Backspace
+## License
 
-Both keys respect the **Auto-continue on Enter** setting and work in `<details>` mode too.
-Toolbar/command icon is now the Notion-style ▶ triangle.
-
-
-## v1.0.3
-
-- **Auto-numbering**: new toggles get `1.`, `2.`, `3.` automatically (setting *Auto-numbering*, command *Insert numbered toggle*, plus *Renumber toggles in note* to fix gaps). Numbering continues automatically in notes that are already numbered.
-- **Colour palette**: traffic-light `recall-red` / `recall-yellow` / `recall-green` plus blue, purple, orange, gray and a plain black Notion look. Choose in settings, change per-toggle with *Set toggle colour*, or grade fast with *Cycle toggle colour (red → yellow → green)*.
-- Colours are styled in `styles.css` via Obsidian's native `--callout-color` hook, so they follow light/dark themes.
-
-## v1.0.4 — MCQ & Match the following (new, nothing else changed)
-
-New commands:
-
-- **Insert MCQ toggle (checkbox options)** — question toggle + `- [ ]` options + `**Answer:**` line
-- **Add MCQ option** — one more checkbox inside the current toggle
-- **Insert Match the following toggle** — two-column table skeleton inside a toggle
-- **Insert answer key line** — adds `**Answer:** ` to the toggle at the cursor
-
-New settings: **MCQ options** (2–6), **Match the following rows** (2–8), **Auto-add Answer line**.
-
-Enter inside an MCQ: option line → next `- [ ]`; empty option → `**Answer:** ` line. Numbering, colours and the existing Enter/Backspace flow are untouched.
-
-## v1.0.5 — Floating recall timer (Pomodoro) 🆕
-
-A draggable floating ⌛ timer for timed active-recall sessions. Nothing from earlier versions changed.
-
-**Commands**
-
-- **Toggle recall timer (show / hide)** — also on the ribbon (⌛)
-- **Recall timer: start / pause**
-- **Recall timer: reset phase**
-- **Recall timer: skip phase**
-- **Start recall session on this note (collapse all answers)** — collapses every toggle in the note, then starts the timer
-
-**Widget** — big countdown, phase label (Focus / Short break / Long break), session counter `2/4`, buttons ▶/⏸ · ↺ · ⏭ · ◑ compact · ✕ hide, drag handle. Position and compact mode persist in `data.json`.
-
-**Settings → Recall timer (Pomodoro)** — preset (Classic 25/5, Deep 50/10, Quick recall 15/3, Custom), focus / short / long minutes, sessions before long break (1–8), auto-start next phase, notice on phase end, vibrate on phase end, show on startup, compact by default, reset position.
-
-**Recall intelligence** — phase-end notices and break hints show 🔴/🟡/🟢 toggle counts for the active note, with a **🔴 Jump** button to the first red toggle; the status bar keeps `⌛ N sessions · Nm`.
-
-**Tests** — `bun test` runs 63 pure tests covering Enter/Backspace, numbering, colours, MCQ, Match the following, the Pomodoro state machine and the recall scan. Botany round-trip verified: 179 callouts ↔ 179 `<details>` ↔ 179 callouts.
-
-### v1.0.5 also adds
-
-- **Toggle option checkbox** — tick/untick the `- [ ]` option at the cursor (works in callout and `<details>` bodies).
-- MCQ/Match Enter + Backspace edge cases: mid-line Enter keeps the checkbox, empty option/Answer/blank row collapse to a plain body line, filled table rows chain to the next numbered row, `<details>` parity.
-- Test suite: `bun test` → **89 pass / 0 fail**; Botany round-trip 179 ↔ 179 ↔ 179.
+MIT — see [LICENSE](LICENSE).
