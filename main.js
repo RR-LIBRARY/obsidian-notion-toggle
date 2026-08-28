@@ -298,9 +298,9 @@ var TimerWidget = class {
         return (_b = (_a = this.cb).onRecallAgain) == null ? void 0 : _b.call(_a);
       }
     );
-    this.jumpBtn.style.display = "none";
-    this.againBtn.style.display = "none";
-    hintRow.style.display = "none";
+    setHidden(this.jumpBtn, true);
+    setHidden(this.againBtn, true);
+    setHidden(hintRow, true);
     this.gradeRow = div(this.root, "ntt-grade-row");
     const grades = [
       ["again", "Again"],
@@ -320,9 +320,9 @@ var TimerWidget = class {
       );
       this.gradeBtns[id].classList.add("ntt-grade", `is-${id}`);
     }
-    this.gradeRow.style.display = "none";
+    setHidden(this.gradeRow, true);
     this.scheduleEl = div(this.root, "ntt-schedule");
-    this.scheduleEl.style.display = "none";
+    setHidden(this.scheduleEl, true);
     this.on(this.timeEl, "click", () => this.setCompact(!this.compact));
   }
   setCompact(compact) {
@@ -407,21 +407,21 @@ var TimerWidget = class {
     const hintRow = this.hintEl.parentElement;
     if (data.hint) {
       this.hintEl.textContent = data.hint;
-      hintRow.style.display = "";
-      this.jumpBtn.style.display = data.canJumpRed ? "" : "none";
-      this.againBtn.style.display = data.canRecallAgain ? "" : "none";
+      setHidden(hintRow, false);
+      setHidden(this.jumpBtn, !data.canJumpRed);
+      setHidden(this.againBtn, !data.canRecallAgain);
     } else {
-      hintRow.style.display = "none";
+      setHidden(hintRow, true);
     }
-    this.gradeRow.style.display = data.reviewOpen ? "" : "none";
+    setHidden(this.gradeRow, !data.reviewOpen);
     for (const [id, btn] of Object.entries(this.gradeBtns)) {
       btn.classList.toggle("is-suggested", data.reviewOpen && data.suggestedGrade === id);
     }
     if (data.scheduleLabel) {
       this.scheduleEl.textContent = data.scheduleLabel;
-      this.scheduleEl.style.display = "";
+      setHidden(this.scheduleEl, false);
     } else {
-      this.scheduleEl.style.display = "none";
+      setHidden(this.scheduleEl, true);
     }
   }
   flashPhaseEnd() {
@@ -461,6 +461,9 @@ function button(parent, label, title, onClick) {
   });
   parent.appendChild(el);
   return el;
+}
+function setHidden(el, hidden) {
+  el.classList.toggle("ntt-hidden", hidden);
 }
 
 // src/naming.ts
@@ -646,6 +649,53 @@ function dueSummary(cards, now) {
   if (!n)
     return "";
   return ` \xB7 \u23ED ${n} due`;
+}
+
+// src/maintenance.ts
+function renameCardKey(store, oldPath, newPath) {
+  if (oldPath === newPath)
+    return { store, moved: false };
+  if (!Object.prototype.hasOwnProperty.call(store, oldPath)) {
+    return { store, moved: false };
+  }
+  const next = {};
+  for (const [key, value] of Object.entries(store)) {
+    if (key === oldPath)
+      continue;
+    next[key] = value;
+  }
+  next[newPath] = store[oldPath];
+  return { store: next, moved: true };
+}
+function removeCardKey(store, path) {
+  if (!Object.prototype.hasOwnProperty.call(store, path)) {
+    return { store, removed: false };
+  }
+  const next = {};
+  for (const [key, value] of Object.entries(store)) {
+    if (key !== path)
+      next[key] = value;
+  }
+  return { store: next, removed: true };
+}
+function pruneCards(store, existingPaths) {
+  const alive = new Set(existingPaths);
+  const next = {};
+  const removed = [];
+  for (const [key, value] of Object.entries(store)) {
+    if (alive.has(key))
+      next[key] = value;
+    else
+      removed.push(key);
+  }
+  return { store: next, removed: removed.sort() };
+}
+function scheduleStoreSummary(count) {
+  if (count <= 0)
+    return "No notes scheduled yet.";
+  if (count === 1)
+    return "1 note scheduled.";
+  return `${count} notes scheduled.`;
 }
 
 // main.ts
@@ -1029,6 +1079,29 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
         this.evaluateAttention();
       })
     );
+    this.registerEvent(
+      this.app.vault.on("rename", async (file, oldPath) => {
+        var _a;
+        const { store, moved } = renameCardKey((_a = this.settings.srs) != null ? _a : {}, oldPath, file.path);
+        if (!moved)
+          return;
+        this.settings.srs = store;
+        await this.saveSettings();
+        this.renderTimer();
+      })
+    );
+    this.registerEvent(
+      this.app.vault.on("delete", async (file) => {
+        var _a;
+        const { store, removed } = removeCardKey((_a = this.settings.srs) != null ? _a : {}, file.path);
+        if (!removed)
+          return;
+        this.settings.srs = store;
+        await this.saveSettings();
+        this.renderTimer();
+      })
+    );
+    void this.pruneSchedule(true);
     if (this.settings.showOnStartup)
       this.showTimer();
     this.registerEditorExtension(
@@ -1658,6 +1731,26 @@ ${row}`, { line: cursor.line, ch: line.length });
   onunload() {
     this.hideTimer();
   }
+  /**
+   * Remove schedule entries whose note no longer exists.
+   * Returns how many were removed; `silent` skips the notice (startup).
+   */
+  async pruneSchedule(silent = false) {
+    var _a;
+    const existing = this.app.vault.getMarkdownFiles().map((f) => f.path);
+    const { store, removed } = pruneCards((_a = this.settings.srs) != null ? _a : {}, existing);
+    if (removed.length) {
+      this.settings.srs = store;
+      await this.saveSettings();
+      this.renderTimer();
+    }
+    if (!silent) {
+      new import_obsidian.Notice(
+        removed.length ? `Removed ${removed.length} schedule${removed.length === 1 ? "" : "s"} for missing notes.` : "Recall schedule is already clean."
+      );
+    }
+    return removed.length;
+  }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
   }
@@ -1673,23 +1766,16 @@ var QuickQAModal = class extends import_obsidian.Modal {
   }
   onOpen() {
     const { contentEl } = this;
-    contentEl.createEl("h2", { text: "Quick Q&A Toggle" });
+    this.setTitle("Quick Q&A toggle");
     contentEl.createEl("label", { text: "Question" });
-    this.questionEl = contentEl.createEl("textarea");
+    this.questionEl = contentEl.createEl("textarea", { cls: "ntt-modal-input" });
     this.questionEl.rows = 2;
-    this.questionEl.style.width = "100%";
-    this.questionEl.style.marginBottom = "12px";
     this.questionEl.placeholder = "Type the question...";
     contentEl.createEl("label", { text: "Answer" });
-    this.answerEl = contentEl.createEl("textarea");
+    this.answerEl = contentEl.createEl("textarea", { cls: "ntt-modal-input" });
     this.answerEl.rows = 4;
-    this.answerEl.style.width = "100%";
-    this.answerEl.style.marginBottom = "12px";
     this.answerEl.placeholder = "Type the answer...";
-    const buttonContainer = contentEl.createDiv();
-    buttonContainer.style.display = "flex";
-    buttonContainer.style.justifyContent = "flex-end";
-    buttonContainer.style.gap = "8px";
+    const buttonContainer = contentEl.createDiv({ cls: "ntt-modal-actions" });
     const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
     cancelBtn.onclick = () => this.close();
     const submitBtn = buttonContainer.createEl("button", { text: "Insert toggle", cls: "mod-cta" });
@@ -1712,7 +1798,7 @@ var ColorPickerModal = class extends import_obsidian.Modal {
   }
   onOpen() {
     const { contentEl } = this;
-    contentEl.createEl("h2", { text: "Toggle colour" });
+    this.setTitle("Toggle colour");
     const list = contentEl.createDiv({ cls: "notion-toggle-color-list" });
     for (const color of TOGGLE_COLORS) {
       if (!color.callout)
@@ -1736,6 +1822,7 @@ var NotionToggleSettingTab = class extends import_obsidian.PluginSettingTab {
     this.plugin = plugin;
   }
   display() {
+    var _a;
     const { containerEl } = this;
     containerEl.empty();
     new import_obsidian.Setting(containerEl).setName("Toggle colour").setDesc("Traffic-light colours for active recall: red = hard, yellow = revise, green = mastered. Plain = clean black Notion look.").addDropdown((dropdown) => {
@@ -1817,7 +1904,7 @@ var NotionToggleSettingTab = class extends import_obsidian.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    containerEl.createEl("h3", { text: "Recall timer (Pomodoro)" });
+    new import_obsidian.Setting(containerEl).setName("Recall timer (Pomodoro)").setHeading();
     new import_obsidian.Setting(containerEl).setName("Preset").setDesc("Pick a rhythm, or choose Custom and set your own minutes below.").addDropdown((dropdown) => {
       for (const p of POMODORO_PRESETS)
         dropdown.addOption(p.id, p.label);
@@ -1914,7 +2001,7 @@ var NotionToggleSettingTab = class extends import_obsidian.PluginSettingTab {
       () => this.plugin.settings.compactByDefault,
       (v) => this.plugin.settings.compactByDefault = v
     );
-    containerEl.createEl("h3", { text: "Timer focus guard (v1.0.6)" });
+    new import_obsidian.Setting(containerEl).setName("Timer focus guard (v1.0.6)").setHeading();
     boolSetting(
       "Auto-pause when you leave",
       "Pause the running timer when Obsidian goes to the background or you switch away.",
@@ -1946,7 +2033,7 @@ var NotionToggleSettingTab = class extends import_obsidian.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    containerEl.createEl("h3", { text: "Minimal mode & spaced repetition" });
+    new import_obsidian.Setting(containerEl).setName("Minimal mode & spaced repetition").setHeading();
     new import_obsidian.Setting(containerEl).setName("Minimal command names").setDesc(
       'Keep 4 primary commands (Toggle, Colour, Recall, Review) clean and prefix everything else with "Advanced:" so the toolbar stays uncluttered. Restart Obsidian to refresh names.'
     ).addToggle(
@@ -1961,11 +2048,22 @@ var NotionToggleSettingTab = class extends import_obsidian.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian.Setting(containerEl).setName("Clear recall schedule").setDesc("Forget all stored SM-2 intervals for every note.").addButton((btn) => {
-      btn.setButtonText("Clear").onClick(async () => {
+    new import_obsidian.Setting(containerEl).setName("Recall schedule").setDesc(
+      `${scheduleStoreSummary(Object.keys((_a = this.plugin.settings.srs) != null ? _a : {}).length)} Schedules follow a note when you rename or move it (v1.0.8).`
+    ).addButton((btn) => {
+      btn.setButtonText("Clean up").onClick(async () => {
+        const removed = await this.plugin.pruneSchedule();
+        new import_obsidian.Notice(
+          removed > 0 ? `Removed ${removed} schedule${removed === 1 ? "" : "s"} for missing notes.` : "Nothing to clean up."
+        );
+        this.display();
+      });
+    }).addButton((btn) => {
+      btn.setWarning().setButtonText("Clear all").onClick(async () => {
         this.plugin.settings.srs = {};
         await this.plugin.saveSettings();
         new import_obsidian.Notice("Recall schedule cleared.");
+        this.display();
       });
     });
     new import_obsidian.Setting(containerEl).setName("Reset timer position").setDesc("Bring the floating timer back to the top-left if it drifted off-screen.").addButton((btn) => {
@@ -2262,7 +2360,7 @@ var DueNotesModal = class extends import_obsidian.Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl("h3", { text: `Due for recall (${this.due.length})` });
+    this.setTitle(`Due for recall (${this.due.length})`);
     for (const { path, card } of this.due) {
       const row = contentEl.createDiv({ cls: "ntt-due-row" });
       const btn = row.createEl("button", { text: path.replace(/\.md$/, "") });
