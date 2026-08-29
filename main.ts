@@ -163,6 +163,7 @@ import {
   snapshotToggles,
   type ToggleSnapshot,
 } from "./src/quiz-visibility";
+import { healQuizEls, needsHeal, revealLanded } from "./src/quiz-heal";
 import { parseDeepLink } from "./src/deeplink";
 import {
   pruneCards,
@@ -2792,15 +2793,48 @@ export default class NotionTogglePlugin extends Plugin {
     this.applyQuizEvent(event);
   }
 
+  /**
+   * v1.3.2 — re-map the captured questions onto the elements that are in the
+   * document right now. Obsidian re-renders reading-view sections while the
+   * quiz scrolls; without this a re-rendered question is revealed on a
+   * detached node and looks skipped (the Q21 → Q23 report).
+   */
+  private ensureQuizEls(): void {
+    const container = this.quizContainer;
+    if (!container || !this.quizStops.length) return;
+    if (!needsHeal(this.quizStops.map((s) => s.el))) return;
+    const fresh = (
+      this.collectStops(container, this.quizFilterColors()) as (ToggleStop & {
+        el?: HTMLElement;
+      })[]
+    )
+      .map((s) => s.el)
+      .filter((el): el is HTMLElement => !!el);
+    const healed = healQuizEls(
+      this.quizStops.map((s) => s.el),
+      this.quizTitles,
+      fresh,
+      (el) => this.quizTitleOf(el)
+    );
+    this.quizStops = this.quizStops.map((s, i) => ({ ...s, el: healed[i] }));
+  }
+
   /** React to an engine event: open the answer, move on, or finish. */
   private applyQuizEvent(event: "reveal" | "next" | "done" | null) {
     if (!this.quizState) return;
     if (event === "reveal") {
+      this.ensureQuizEls();
       this.applyQuizVisibility(this.quizState.at, true);
+      // Safety net: if the class-only reveal did not land (re-rendered callout
+      // that came back with the theme's collapsed markup), open it for real so
+      // a question can never be silently skipped.
+      const el = this.quizStops[this.quizState.at]?.el;
+      if (el && el.isConnected && !revealLanded(el)) this.setToggleOpen(el, true);
       if (this.settings.quizBeepOnTimeUp && !this.settings.scrollQuiet) {
         new Notice("⏰ Time up — answer revealed.");
       }
     } else if (event === "next") {
+      this.ensureQuizEls();
       this.scrollQuizTo(this.quizState.at);
     } else if (event === "done") {
       const summary = quizSummary(this.quizState);
@@ -2832,17 +2866,23 @@ export default class NotionTogglePlugin extends Plugin {
     // element directly instead of re-scanning the whole note: that re-scan on
     // every question is what made the page jump mid-animation.
     const scroll = () => {
+      // The section may have re-rendered during the smooth scroll.
+      this.ensureQuizEls();
+      const live = this.quizStops[index]?.el ?? el;
       const top =
-        el && el.isConnected
-          ? el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop
+        live && live.isConnected
+          ? live.getBoundingClientRect().top -
+            container.getBoundingClientRect().top +
+            container.scrollTop
           : stop.top;
       container.scrollTo({ top: targetOffset(top, container.clientHeight), behavior: "smooth" });
-      if (el) this.quizRing?.mount(el);
+      if (live && live.isConnected) this.quizRing?.mount(live);
       this.renderQuizHud();
     };
     if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(scroll);
     else scroll();
   }
+
 
   private startQuizLoop() {
     if (this.quizInterval !== null) window.clearInterval(this.quizInterval);
@@ -2871,6 +2911,7 @@ export default class NotionTogglePlugin extends Plugin {
   private renderQuizHud() {
     const st = this.quizState;
     if (!st) return;
+    this.ensureQuizEls();
     const el = this.quizStops[st.at]?.el;
     if (el && el.isConnected) this.quizRing?.mount(el);
     this.quizRing?.render({
