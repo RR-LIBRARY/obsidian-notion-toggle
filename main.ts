@@ -42,6 +42,24 @@ import {
   type SrsCard,
 } from "./src/srs";
 import {
+  DEFAULT_AUTOSCROLL,
+  SPEED_STEP,
+  atEnd,
+  clampSpeed,
+  colorOf,
+  filterLabel,
+  firstStopFrom,
+  frameDelta,
+  planStops,
+  reachedTarget,
+  sessionLabel,
+  targetOffset,
+  type AutoScrollSettings,
+  type RecallColor,
+  type ToggleStop,
+} from "./src/autoscroll";
+import { ScrollBar } from "./src/autoscroll-ui";
+import {
   pruneCards,
   removeCardKey,
   renameCardKey,
@@ -53,7 +71,7 @@ import {
 
 type ToggleFormat = "callout" | "details";
 
-interface NotionToggleSettings extends PomodoroSettings {
+interface NotionToggleSettings extends PomodoroSettings, AutoScrollSettings {
   calloutType: string;
   defaultCollapsed: boolean;
   boldSummary: boolean;
@@ -80,6 +98,7 @@ interface NotionToggleSettings extends PomodoroSettings {
 
 const DEFAULT_SETTINGS: NotionToggleSettings = {
   ...DEFAULT_POMODORO,
+  ...DEFAULT_AUTOSCROLL,
   calloutType: "question",
   defaultCollapsed: true,
   boldSummary: true,
@@ -134,6 +153,15 @@ export default class NotionTogglePlugin extends Plugin {
   /* v1.0.7 review state */
   reviewOpen = false;
   reviewSuggestion: Grade = "good";
+  /* v1.0.9 auto-scroll state */
+  scrollBar: ScrollBar | null = null;
+  scrollRunning = false;
+  scrollPlan: ToggleStop[] = [];
+  scrollAt = -1;
+  scrollHoldUntil = 0;
+  scrollLastFrame = 0;
+  scrollRaf: number | null = null;
+  scrollContainer: HTMLElement | null = null;
 
   /**
    * v1.0.7: every command goes through here, so the toolbar list stays short.
@@ -498,6 +526,49 @@ export default class NotionTogglePlugin extends Plugin {
       icon: "square",
       name: "Timer: stop session",
       callback: () => this.stopTimerSession(),
+    });
+
+    // Primary 5: auto-scroll revision — scrolls the note and opens toggles for you.
+    this.addCommand({
+      id: "smart-autoscroll",
+      icon: "chevrons-down",
+      name: "Autoscroll (start / pause revision)",
+      callback: () => this.toggleAutoScroll(),
+    });
+
+    this.addCommand({
+      id: "autoscroll-reverse",
+      icon: "chevrons-up",
+      name: "Autoscroll: reverse direction",
+      callback: () => this.setScrollReverse(!this.settings.scrollReverse),
+    });
+
+    this.addCommand({
+      id: "autoscroll-filter",
+      icon: "filter",
+      name: "Autoscroll: choose colour filter",
+      callback: () => new ScrollFilterModal(this.app, this).open(),
+    });
+
+    this.addCommand({
+      id: "autoscroll-faster",
+      icon: "gauge",
+      name: "Autoscroll: faster",
+      callback: () => this.nudgeScrollSpeed(SPEED_STEP),
+    });
+
+    this.addCommand({
+      id: "autoscroll-slower",
+      icon: "gauge",
+      name: "Autoscroll: slower",
+      callback: () => this.nudgeScrollSpeed(-SPEED_STEP),
+    });
+
+    this.addCommand({
+      id: "autoscroll-stop",
+      icon: "square",
+      name: "Autoscroll: stop",
+      callback: () => this.stopAutoScroll(true),
     });
 
     this.addCommand({
@@ -1227,6 +1298,224 @@ export default class NotionTogglePlugin extends Plugin {
 
   onunload() {
     this.hideTimer();
+    this.stopAutoScroll(false);
+  }
+
+
+  /* ==================== v1.0.9: auto-scroll + auto-toggle ==================== */
+
+  /** The scroll container of the active markdown view (reading or live preview). */
+  private findScrollContainer(): HTMLElement | null {
+    const leaf = document.querySelector(".workspace-leaf.mod-active") ?? document;
+    return (leaf.querySelector(".markdown-preview-view") ??
+      leaf.querySelector(".cm-scroller") ??
+      document.querySelector(".markdown-preview-view") ??
+      document.querySelector(".cm-scroller")) as HTMLElement | null;
+  }
+
+  /** Every rendered toggle in the active note, with its offset and colour. */
+  private collectStops(container: HTMLElement): ToggleStop[] {
+    const nodes = Array.from(
+      container.querySelectorAll(".callout, details")
+    ) as HTMLElement[];
+    const base = container.getBoundingClientRect().top - container.scrollTop;
+    return nodes.map((el, index) => {
+      const type =
+        el.getAttribute("data-callout") ??
+        (el.className || (el.tagName.toLowerCase() === "details" ? "details" : ""));
+      return {
+        index,
+        top: Math.max(0, Math.round(el.getBoundingClientRect().top - base)),
+        color: colorOf(type),
+        el,
+      } as ToggleStop & { el: HTMLElement };
+    });
+  }
+
+  private setToggleOpen(el: HTMLElement, open: boolean) {
+    if (el.tagName.toLowerCase() === "details") {
+      (el as HTMLDetailsElement).open = open;
+      return;
+    }
+    const collapsed = el.classList.contains("is-collapsed");
+    if (collapsed === !open) return;
+    const title = el.querySelector(".callout-title") as HTMLElement | null;
+    title?.click();
+  }
+
+  toggleAutoScroll() {
+    if (this.scrollRunning) {
+      this.scrollRunning = false;
+      this.renderScrollBar();
+      new Notice("Autoscroll paused.");
+      return;
+    }
+    if (this.scrollPlan.length === 0) this.startAutoScroll();
+    else {
+      this.scrollRunning = true;
+      this.scrollLastFrame = performance.now();
+      this.scheduleScrollFrame();
+      this.renderScrollBar();
+    }
+  }
+
+  startAutoScroll() {
+    const container = this.findScrollContainer();
+    if (!container) {
+      new Notice("Open a note first — autoscroll needs a note view.");
+      return;
+    }
+    this.scrollContainer = container;
+    const stops = this.collectStops(container);
+    const plan = planStops(stops, this.settings.scrollFilter, this.settings.scrollReverse);
+    if (plan.length === 0) {
+      new Notice(`No toggles match the filter (${filterLabel(this.settings.scrollFilter)}).`);
+      return;
+    }
+    this.scrollPlan = plan;
+    this.scrollAt = firstStopFrom(plan, container.scrollTop, this.settings.scrollReverse);
+    this.scrollHoldUntil = 0;
+    this.scrollRunning = true;
+    this.scrollLastFrame = performance.now();
+    if (!this.scrollBar) {
+      this.scrollBar = new ScrollBar({
+        onToggleRun: () => this.toggleAutoScroll(),
+        onSlower: () => this.nudgeScrollSpeed(-SPEED_STEP),
+        onFaster: () => this.nudgeScrollSpeed(SPEED_STEP),
+        onReverse: () => this.setScrollReverse(!this.settings.scrollReverse),
+        onFilter: () => new ScrollFilterModal(this.app, this).open(),
+        onClose: () => this.stopAutoScroll(true),
+      });
+    }
+    new Notice(sessionLabel(this.settings, plan.length));
+    this.renderScrollBar();
+    this.scheduleScrollFrame();
+  }
+
+  stopAutoScroll(notify: boolean) {
+    this.scrollRunning = false;
+    if (this.scrollRaf !== null) {
+      window.cancelAnimationFrame(this.scrollRaf);
+      this.scrollRaf = null;
+    }
+    this.scrollPlan = [];
+    this.scrollAt = -1;
+    this.scrollBar?.destroy();
+    this.scrollBar = null;
+    if (notify) new Notice("Autoscroll stopped.");
+  }
+
+  async setScrollReverse(reverse: boolean) {
+    this.settings.scrollReverse = reverse;
+    await this.saveSettings();
+    if (this.scrollPlan.length && this.scrollContainer) {
+      const stops = this.collectStops(this.scrollContainer);
+      this.scrollPlan = planStops(stops, this.settings.scrollFilter, reverse);
+      this.scrollAt = firstStopFrom(
+        this.scrollPlan,
+        this.scrollContainer.scrollTop,
+        reverse
+      );
+    }
+    this.renderScrollBar();
+    new Notice(reverse ? "Autoscroll: reverse ↑" : "Autoscroll: forward ↓");
+  }
+
+  async setScrollFilter(filter: RecallColor[]) {
+    this.settings.scrollFilter = filter;
+    await this.saveSettings();
+    if (this.scrollContainer && this.scrollPlan.length) {
+      const stops = this.collectStops(this.scrollContainer);
+      this.scrollPlan = planStops(stops, filter, this.settings.scrollReverse);
+      this.scrollAt = firstStopFrom(
+        this.scrollPlan,
+        this.scrollContainer.scrollTop,
+        this.settings.scrollReverse
+      );
+    }
+    this.renderScrollBar();
+    new Notice(`Autoscroll filter: ${filterLabel(filter)}`);
+  }
+
+  async nudgeScrollSpeed(delta: number) {
+    this.settings.scrollSpeed = clampSpeed(this.settings.scrollSpeed + delta);
+    await this.saveSettings();
+    this.renderScrollBar();
+  }
+
+  private renderScrollBar() {
+    this.scrollBar?.render({
+      running: this.scrollRunning,
+      speed: this.settings.scrollSpeed,
+      reverse: this.settings.scrollReverse,
+      filterLabel: filterLabel(this.settings.scrollFilter),
+      progress: this.scrollPlan.length
+        ? `${Math.min(this.scrollAt + 1, this.scrollPlan.length)}/${this.scrollPlan.length}`
+        : "0/0",
+    });
+  }
+
+  private scheduleScrollFrame() {
+    if (this.scrollRaf !== null) window.cancelAnimationFrame(this.scrollRaf);
+    this.scrollRaf = window.requestAnimationFrame(() => this.autoScrollFrame());
+  }
+
+  private autoScrollFrame() {
+    this.scrollRaf = null;
+    if (!this.scrollRunning) return;
+    const container = this.scrollContainer;
+    if (!container || !container.isConnected) {
+      this.stopAutoScroll(false);
+      return;
+    }
+
+    const now = performance.now();
+    const dt = Math.min(200, now - this.scrollLastFrame);
+    this.scrollLastFrame = now;
+    const reverse = this.settings.scrollReverse;
+
+    // Holding on an open toggle: wait, then move to the next stop.
+    if (this.scrollHoldUntil > now) {
+      this.scheduleScrollFrame();
+      return;
+    }
+    if (this.scrollHoldUntil !== 0) {
+      this.scrollHoldUntil = 0;
+      const current = this.scrollPlan[this.scrollAt] as (ToggleStop & { el?: HTMLElement }) | undefined;
+      if (current?.el && this.settings.scrollAutoClose) this.setToggleOpen(current.el, false);
+      this.scrollAt += 1;
+      if (this.scrollAt >= this.scrollPlan.length) {
+        if (this.settings.scrollLoop) {
+          this.scrollAt = 0;
+          container.scrollTop = reverse ? container.scrollHeight : 0;
+        } else {
+          new Notice("Autoscroll finished — every selected toggle revised.");
+          this.stopAutoScroll(false);
+          return;
+        }
+      }
+      this.renderScrollBar();
+    }
+
+    const stop = this.scrollPlan[this.scrollAt] as (ToggleStop & { el?: HTMLElement }) | undefined;
+    if (!stop) {
+      this.stopAutoScroll(false);
+      return;
+    }
+
+    const target = targetOffset(stop.top, container.clientHeight);
+    container.scrollTop += frameDelta(this.settings.scrollSpeed, dt, reverse);
+
+    if (reachedTarget(container.scrollTop, target, reverse)) {
+      container.scrollTop = target;
+      if (stop.el && this.settings.scrollAutoOpen) this.setToggleOpen(stop.el, true);
+      this.scrollHoldUntil = now + Math.max(200, this.settings.scrollHold * 1000);
+    } else if (atEnd(container.scrollTop, container.scrollHeight, container.clientHeight, reverse)) {
+      if (stop.el && this.settings.scrollAutoOpen) this.setToggleOpen(stop.el, true);
+      this.scrollHoldUntil = now + Math.max(200, this.settings.scrollHold * 1000);
+    }
+
+    this.scheduleScrollFrame();
   }
 
   /**
@@ -1258,6 +1547,44 @@ export default class NotionTogglePlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
+  }
+}
+
+
+/* ---------- v1.0.9: autoscroll colour filter ---------- */
+
+class ScrollFilterModal extends Modal {
+  constructor(app: App, private plugin: NotionTogglePlugin) {
+    super(app);
+  }
+
+  onOpen() {
+    this.setTitle("Autoscroll — revise which toggles?");
+    const list = this.contentEl.createDiv({ cls: "notion-toggle-color-list" });
+    const options: { label: string; filter: RecallColor[] }[] = [
+      { label: "⚪ All toggles", filter: [] },
+      { label: "🔴 Red only", filter: ["red"] },
+      { label: "🟡 Yellow only", filter: ["yellow"] },
+      { label: "🟢 Green only", filter: ["green"] },
+      { label: "🔴🟡 Red + Yellow (weak spots)", filter: ["red", "yellow"] },
+      { label: "🔴🟡🟢 All graded toggles", filter: ["red", "yellow", "green"] },
+    ];
+    const active = filterLabel(this.plugin.settings.scrollFilter);
+    for (const opt of options) {
+      const btn = list.createEl("button", {
+        text: opt.label,
+        cls: "notion-toggle-color-btn",
+      });
+      if (filterLabel(opt.filter) === active) btn.addClass("is-suggested");
+      btn.onclick = async () => {
+        await this.plugin.setScrollFilter(opt.filter);
+        this.close();
+      };
+    }
+  }
+
+  onClose() {
+    this.contentEl.empty();
   }
 }
 
@@ -1695,6 +2022,89 @@ class NotionToggleSettingTab extends PluginSettingTab {
           this.display();
         });
       });
+
+
+    /* ---------- v1.0.9: auto-scroll revision ---------- */
+    new Setting(containerEl).setName("Auto-scroll revision").setHeading();
+
+    new Setting(containerEl)
+      .setName("Scroll speed")
+      .setDesc("Pixels per second while gliding to the next toggle.")
+      .addSlider((sl) =>
+        sl
+          .setLimits(SPEED_MIN, SPEED_MAX, SPEED_STEP)
+          .setValue(clampSpeed(this.plugin.settings.scrollSpeed))
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.scrollSpeed = clampSpeed(v);
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Hold time on each toggle")
+      .setDesc("Seconds the opened toggle stays visible before moving on.")
+      .addSlider((sl) =>
+        sl
+          .setLimits(0, 30, 1)
+          .setValue(clampHold(this.plugin.settings.scrollHold))
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.scrollHold = clampHold(v);
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Reverse direction")
+      .setDesc("Scroll bottom → top for fast backwards revision.")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.scrollReverse).onChange(async (v) => {
+          this.plugin.settings.scrollReverse = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Colour filter")
+      .setDesc(
+        `Stop only at these toggles — currently ${filterLabel(this.plugin.settings.scrollFilter)}.`
+      )
+      .addButton((btn) => {
+        btn.setButtonText("Choose colours").onClick(() => {
+          new ScrollFilterModal(this.app, this.plugin).open();
+          this.display();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Open the toggle automatically")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.scrollAutoOpen).onChange(async (v) => {
+          this.plugin.settings.scrollAutoOpen = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Close it again when leaving")
+      .setDesc("Keeps active recall honest: only one answer is visible at a time.")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.scrollAutoClose).onChange(async (v) => {
+          this.plugin.settings.scrollAutoClose = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Loop the note")
+      .setDesc("Start over from the other end instead of stopping.")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.scrollLoop).onChange(async (v) => {
+          this.plugin.settings.scrollLoop = v;
+          await this.plugin.saveSettings();
+        })
+      );
 
 
     new Setting(containerEl)

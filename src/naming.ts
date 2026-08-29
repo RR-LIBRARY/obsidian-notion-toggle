@@ -10,6 +10,7 @@ export const PRIMARY_IDS = [
   "smart-colour",
   "smart-recall",
   "smart-review",
+  "smart-autoscroll",
 ] as const;
 
 export type PrimaryId = (typeof PRIMARY_IDS)[number];
@@ -19,7 +20,9 @@ export const PRIMARY_NAMES: Record<PrimaryId, string> = {
   "smart-colour": "Colour (red → yellow → green)",
   "smart-recall": "Recall (start / pause session)",
   "smart-review": "Review (spaced repetition)",
+  "smart-autoscroll": "Autoscroll (start / pause revision)",
 };
+
 
 export function isPrimary(id: string): id is PrimaryId {
   return (PRIMARY_IDS as readonly string[]).includes(id);
