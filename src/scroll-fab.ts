@@ -1,42 +1,39 @@
 /**
  * v1.1.5 — floating launch button (plain DOM, no Obsidian imports).
  * v1.1.6 — added a small reverse chip so direction is also one tap.
+ * v1.2.0 — minimal UI: the chip is gone, there is exactly ONE floating button.
  *
- * Tap (main)   = start / pause autoscroll.
- * Tap (chip)   = flip direction (forward ↓ / reverse ↑).
- * Long-press (≥500 ms, touch or mouse) on the main button = autoscroll sheet.
+ * Tap        = start / pause autoscroll.
+ * Long-press (≥500 ms, touch or mouse) = autoscroll sheet (direction, quiz,
+ * speed, dwell — every other control lives there).
  */
 export interface ScrollFabCallbacks {
   onTap: () => void;
   onLongPress: () => void;
-  onReverse?: () => void;
+  /** v1.1.8 — idle delay before the button fades away (ms). */
+  hideAfterMs?: number;
 }
 
 export const FAB_LONG_PRESS_MS = 500;
 export const FAB_MOVE_TOLERANCE_PX = 12;
+/** v1.1.8 — minimal UI: the button hides itself 3s after the last activity. */
+export const FAB_AUTO_HIDE_MS = 3000;
 
 export class ScrollFab {
   private wrap: HTMLDivElement;
   private root: HTMLButtonElement;
-  private rev: HTMLButtonElement;
   private pressTimer: number | null = null;
   private startX = 0;
   private startY = 0;
   private longFired = false;
+  /* v1.1.8 auto-hide state (ported from the reader's useReaderChrome). */
+  private hideTimer: number | null = null;
+  private pinned = false;
+  private wake = () => this.show();
 
   constructor(private cb: ScrollFabCallbacks) {
     this.wrap = document.createElement("div");
     this.wrap.className = "ntt-fab-wrap";
-
-    this.rev = document.createElement("button");
-    this.rev.className = "ntt-fab-rev";
-    this.rev.textContent = "↓";
-    this.rev.setAttribute("aria-label", "Autoscroll direction — forward");
-    this.rev.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.cb.onReverse?.();
-    });
 
     this.root = document.createElement("button");
     this.root.className = "ntt-fab";
@@ -84,9 +81,13 @@ export class ScrollFab {
     this.root.addEventListener("click", (e) => e.preventDefault());
     this.root.addEventListener("contextmenu", (e) => e.preventDefault());
 
-    this.wrap.appendChild(this.rev);
     this.wrap.appendChild(this.root);
     document.body.appendChild(this.wrap);
+
+    // Any tap / scroll anywhere brings the button back for another 3 seconds.
+    document.addEventListener("pointerdown", this.wake, true);
+    document.addEventListener("scroll", this.wake, true);
+    this.arm();
   }
 
   private cancelTimer() {
@@ -106,18 +107,50 @@ export class ScrollFab {
     );
   }
 
-  /** v1.1.6 — reflect the current scroll direction on the chip. */
-  setReverse(reverse: boolean) {
-    this.rev.textContent = reverse ? "↑" : "↓";
-    this.rev.classList.toggle("is-reverse", reverse);
-    this.rev.setAttribute(
-      "aria-label",
-      reverse ? "Autoscroll direction — reverse (tap for forward)" : "Autoscroll direction — forward (tap for reverse)"
-    );
+  /* ---------- v1.1.8: auto-hide ---------- */
+
+  private clearHide() {
+    if (this.hideTimer !== null) {
+      window.clearTimeout(this.hideTimer);
+      this.hideTimer = null;
+    }
+  }
+
+  private arm() {
+    this.clearHide();
+    if (this.pinned) return;
+    this.hideTimer = window.setTimeout(() => {
+      this.hideTimer = null;
+      this.wrap.classList.add("is-hidden");
+    }, this.cb.hideAfterMs ?? FAB_AUTO_HIDE_MS);
+  }
+
+  /** Show the button and restart the idle timer. */
+  show() {
+    this.wrap.classList.remove("is-hidden");
+    this.arm();
+  }
+
+  /** Keep the button on screen regardless of the idle timer (e.g. when paused). */
+  setPinned(pinned: boolean) {
+    this.pinned = pinned;
+    if (pinned) {
+      this.clearHide();
+      this.wrap.classList.remove("is-hidden");
+    } else {
+      this.arm();
+    }
+  }
+
+  isHidden(): boolean {
+    return this.wrap.classList.contains("is-hidden");
   }
 
   destroy() {
     this.cancelTimer();
+    this.clearHide();
+    document.removeEventListener("pointerdown", this.wake, true);
+    document.removeEventListener("scroll", this.wake, true);
     this.wrap.remove();
   }
 }

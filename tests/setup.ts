@@ -14,6 +14,7 @@ class Stub {
 mock.module("obsidian", () => ({
   App: Stub,
   Editor: Stub,
+  MarkdownView: Stub,
   Modal: Stub,
   Notice: Stub,
   Plugin: Stub,

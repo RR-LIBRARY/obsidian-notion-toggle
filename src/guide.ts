@@ -76,7 +76,20 @@ export const TOOLBAR_COMMANDS: ToolbarCommand[] = [
     why: "Session poori tarah band kare (floating bar ka ✕ bhi yehi karta hai).",
     priority: 10,
   },
+  {
+    id: "smart-quiz",
+    name: "Quiz (timed question run)",
+    why: "Toolbar se ek tap me quiz mode — timer, auto reveal, auto next.",
+    priority: 11,
+  },
+  {
+    id: "quiz-pause",
+    name: "Quiz: pause / resume",
+    why: "Quiz ke beech me rukna ho to — wahi tap se resume.",
+    priority: 12,
+  },
 ];
+
 
 /** Toolbar steps shown at the top of the guide. */
 export const TOOLBAR_STEPS: string[] = [
@@ -84,8 +97,9 @@ export const TOOLBAR_STEPS: string[] = [
   "Mobile section me jao → Manage toolbar.",
   "Wahan + / Add command dabao aur neeche wali commands ek-ek karke add karo.",
   "Jo add ho gayi, us row par tap karke tick ✓ kar do — list yaad rehti hai.",
-  "Ab koi note kholo aur toolbar se ▶ Autoscroll dabao — bas!",
+  "Ab koi note kholo aur toolbar se ▶ Autoscroll ya ❓ Quiz dabao — bas!",
 ];
+
 
 /** Toggle one checklist entry; returns a new array (sorted by priority). */
 export function toggleGuideDone(done: string[], id: string): string[] {
@@ -126,6 +140,10 @@ export const MSG_NOT_RUNNING =
 /** Shown when the note has no toggles at all. */
 export const MSG_NO_TOGGLES =
   "Is note me koi toggle nahi mila — callout (> [!note]- …) ya <details> banao, phir autoscroll chalao.";
+
+/** v1.2.0 — no toggles at all: plain continuous scroll instead of an error. */
+export const MSG_PLAIN_SCROLL =
+  "Is note me koi toggle nahi mila — plain scroll chalu (koi stop nahi). Toggle chahiye to > [!note]- banao.";
 
 export interface HotkeyHint {
   id: string;

@@ -667,7 +667,7 @@ body.is-mobile .ntt-fab {
   color: var(--text-muted);
 }
 
-/* ---------- v1.1.6: floating button wrapper + reverse chip ---------- */
+/* ---------- v1.1.6: floating button wrapper (v1.2.0: single button) ---------- */
 .ntt-fab-wrap {
   position: fixed;
   right: 16px;
@@ -686,24 +686,21 @@ body.is-mobile .ntt-fab {
   right: auto;
   bottom: auto;
 }
-.ntt-fab-rev {
-  min-width: 44px;
-  min-height: 44px;
-  border-radius: 50%;
-  border: 1px solid var(--background-modifier-border);
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+/* ---------- v1.1.8: minimal autoscroll UI (FAB only + auto-hide) ---------- */
+.ntt-fab-wrap {
+  transition: opacity 220ms ease, transform 220ms ease;
 }
-.ntt-fab-rev.is-reverse {
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
+.ntt-fab-wrap.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px);
 }
-body.is-mobile .ntt-fab-rev {
-  min-width: 48px;
-  min-height: 48px;
-  font-size: 20px;
+/* Minimal layout: one button, sitting low and clean. */
+.ntt-fab-wrap.is-running {
+  bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+}
+.ntt-fab-wrap @media (prefers-reduced-motion: reduce) {
+  .ntt-fab-wrap {
+    transition: none;
+  }
 }

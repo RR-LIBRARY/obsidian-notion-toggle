@@ -1,4 +1,4 @@
-import { App, Editor, Modal, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
 import { Prec } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
 import {
@@ -65,11 +65,12 @@ import {
 import { ScrollDebugOverlay, type DebugFrame } from "./src/debug-overlay";
 import { orderExplainer, rowLabel, weakRows } from "./src/stats-panel";
 import { ScrollBar } from "./src/autoscroll-ui";
+import { HoldPause } from "./src/hold-pause";
 import { ScrollFab } from "./src/scroll-fab";
 import {
   HOTKEYS,
   MSG_NOT_RUNNING,
-  MSG_NO_TOGGLES,
+  MSG_PLAIN_SCROLL,
   TOOLBAR_COMMANDS,
   TOOLBAR_STEPS,
   fabShouldShow,
@@ -176,7 +177,12 @@ interface NotionToggleSettings extends PomodoroSettings, AutoScrollSettings, Qui
   srs: Record<string, SrsCard>;
   /** v1.0.7: ask for one grade when a focus phase ends. */
   autoReview: boolean;
-
+  /** v1.1.5: show the floating ▶ autoscroll button on open notes. */
+  scrollFab: boolean;
+  /** v1.1.5: persisted mobile-toolbar guide checklist (command ids ticked off). */
+  toolbarGuideDone: string[];
+  /** v1.1.8: show the old full control bar instead of the minimal FAB-only UI. */
+  scrollBarClassic: boolean;
 }
 
 const DEFAULT_SETTINGS: NotionToggleSettings = {
@@ -196,7 +202,9 @@ const DEFAULT_SETTINGS: NotionToggleSettings = {
   minimalNames: true,
   srs: {},
   autoReview: true,
-
+  scrollFab: true,
+  toolbarGuideDone: [],
+  scrollBarClassic: false,
 };
 
 const CALLOUT_TYPES = ["question", "info", "note", "abstract", "tip", "warning", "success"];
@@ -241,6 +249,8 @@ export default class NotionTogglePlugin extends Plugin {
   scrollBar: ScrollBar | null = null;
   scrollRunning = false;
   scrollPlan: ToggleStop[] = [];
+  /** v1.1.7 — true while a one-shot "view still rendering" retry is pending. */
+  scrollRetryPending = false;
   scrollAt = -1;
   scrollHoldUntil = 0;
   scrollLastFrame = 0;
@@ -277,6 +287,10 @@ export default class NotionTogglePlugin extends Plugin {
   scrollPrevBehavior: string | null = null;
   /** v1.1.5 floating launch button (tap = start, hold = sheet). */
   scrollFabBtn: ScrollFab | null = null;
+  /** v1.1.8 hold-anywhere-to-pause. */
+  holdPause: HoldPause | null = null;
+  scrollHoldPaused = false;
+  private scrollHoldAt = 0;
 
   /* v1.1.0 quiz mode state */
   quizHud: QuizHud | null = null;
@@ -286,6 +300,10 @@ export default class NotionTogglePlugin extends Plugin {
   quizContainer: HTMLElement | null = null;
   quizLastFrame = 0;
   quizInterval: number | null = null;
+  /** v1.1.9: one-shot re-scan guard when the view is still rendering. */
+  quizRetryPending = false;
+  /** v1.2.0 — open/closed state of each toggle before the quiz collapsed them. */
+  quizWasOpen: boolean[] = [];
 
 
   /**
@@ -782,7 +800,7 @@ export default class NotionTogglePlugin extends Plugin {
 
     this.addCommand({
       id: "smart-quiz",
-      icon: "help-circle",
+      icon: "list-checks",
       name: "Quiz (timed question run)",
       callback: () => this.toggleQuiz(),
     });
@@ -1561,6 +1579,8 @@ export default class NotionTogglePlugin extends Plugin {
     this.stopQuiz(false);
     this.scrollFabBtn?.destroy();
     this.scrollFabBtn = null;
+    this.holdPause?.detach();
+    this.holdPause = null;
   }
 
   /**
@@ -1583,11 +1603,12 @@ export default class NotionTogglePlugin extends Plugin {
       this.scrollFabBtn = new ScrollFab({
         onTap: () => this.toggleAutoScroll(),
         onLongPress: () => new ScrollSheetModal(this.app, this).open(),
-        onReverse: () => void this.setScrollReverse(!this.settings.scrollReverse),
       });
     }
     this.scrollFabBtn.setRunning(this.scrollRunning);
-    this.scrollFabBtn.setReverse(!!this.settings.scrollReverse);
+    // v1.1.8 — auto-hide only while it is actually scrolling; when idle or
+    // paused the button stays put so start / resume is one tap away.
+    this.scrollFabBtn.setPinned(!this.scrollRunning);
   }
 
   /**
@@ -1619,20 +1640,57 @@ export default class NotionTogglePlugin extends Plugin {
 
   /* ==================== v1.0.9: auto-scroll + auto-toggle ==================== */
 
-  /** The scroll container of the active markdown view (reading or live preview). */
+  /**
+   * The scroll container of the active markdown view (reading or live preview).
+   * v1.1.7 — go through the MarkdownView API first; the old document-wide
+   * querySelector could land on a hidden background-tab preview (or an
+   * unrendered view on mobile) and report "no toggles" while the note on
+   * screen clearly has them.
+   */
   private findScrollContainer(): HTMLElement | null {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (view) {
+      const fromView =
+        view.getMode() === "preview"
+          ? (view.previewMode?.containerEl as HTMLElement | undefined)
+          : (view.contentEl.querySelector(".cm-scroller") as HTMLElement | null);
+      if (fromView) return fromView;
+    }
+    const visible = (el: Element | null): el is HTMLElement =>
+      !!el && (el as HTMLElement).offsetParent !== null;
     const leaf = document.querySelector(".workspace-leaf.mod-active") ?? document;
-    return (leaf.querySelector(".markdown-preview-view") ??
-      leaf.querySelector(".cm-scroller") ??
-      document.querySelector(".markdown-preview-view") ??
-      document.querySelector(".cm-scroller")) as HTMLElement | null;
+    const candidates = [
+      leaf.querySelector(".markdown-preview-view"),
+      leaf.querySelector(".cm-scroller"),
+      document.querySelector(".workspace-leaf.mod-active .markdown-preview-view"),
+      ...Array.from(document.querySelectorAll(".markdown-preview-view")),
+      ...Array.from(document.querySelectorAll(".cm-scroller")),
+    ];
+    for (const el of candidates) if (visible(el)) return el;
+    return (candidates.find(Boolean) as HTMLElement | undefined) ?? null;
+  }
+
+  /**
+   * v1.1.7 — does the active note's *source* contain toggles? Used when the
+   * DOM scan finds nothing: if the source has toggles the view is probably
+   * still rendering (or showing a stale container), so we retry once.
+   */
+  private sourceHasToggles(): boolean {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    const text = view?.editor?.getValue?.() ?? "";
+    return /^>\s*\[![^\]]+\][+-]?/m.test(text) || /<details[\s>]/i.test(text);
   }
 
   /** Every rendered toggle in the active note, with its offset and colour. */
   private collectStops(container: HTMLElement): ToggleStop[] {
-    const nodes = Array.from(
-      container.querySelectorAll(".callout, details")
-    ) as HTMLElement[];
+    const nodes = (
+      Array.from(
+        container.querySelectorAll(".callout, details, [data-callout]")
+      ) as HTMLElement[]
+    ).filter(
+      // keep only outermost matches (a nested callout is part of its parent)
+      (el, _i, all) => !all.some((other) => other !== el && other.contains(el))
+    );
     const base = container.getBoundingClientRect().top - container.scrollTop;
     return nodes.map((el, index) => {
       const type =
@@ -1649,6 +1707,12 @@ export default class NotionTogglePlugin extends Plugin {
     });
   }
 
+  /** v1.2.0 — is this toggle currently expanded? */
+  private isToggleOpen(el: HTMLElement): boolean {
+    if (el.tagName.toLowerCase() === "details") return (el as HTMLDetailsElement).open;
+    return !el.classList.contains("is-collapsed");
+  }
+
   private setToggleOpen(el: HTMLElement, open: boolean) {
     if (el.tagName.toLowerCase() === "details") {
       (el as HTMLDetailsElement).open = open;
@@ -1658,6 +1722,55 @@ export default class NotionTogglePlugin extends Plugin {
     if (collapsed === !open) return;
     const title = el.querySelector(".callout-title") as HTMLElement | null;
     title?.click();
+  }
+
+  /**
+   * v1.1.8 — freeze the loop while a finger is held anywhere on the note.
+   * `scrollRunning` stays true, so this never touches the user's own pause.
+   */
+  holdPauseStart() {
+    if (!this.scrollRunning || this.scrollHoldPaused) return;
+    this.scrollHoldPaused = true;
+    this.scrollHoldAt = performance.now();
+    if (this.scrollRaf !== null) {
+      window.cancelAnimationFrame(this.scrollRaf);
+      this.scrollRaf = null;
+    }
+    this.scrollFabBtn?.setPinned(true);
+  }
+
+  /** Resume at exactly the same speed / direction / dwell state. */
+  holdPauseEnd() {
+    if (!this.scrollHoldPaused) return;
+    this.scrollHoldPaused = false;
+    // Shift the absolute dwell deadlines by the held time so a pause never
+    // silently eats a toggle's reading time.
+    const held = Math.max(0, performance.now() - this.scrollHoldAt);
+    if (this.scrollDwellUntil) this.scrollDwellUntil += held;
+    if (this.scrollHoldUntil) this.scrollHoldUntil += held;
+    if (this.scrollOpenedAt) this.scrollOpenedAt += held;
+    this.scrollHoldAt = 0;
+    this.scrollLastFrame = 0;
+    if (this.scrollContainer) this.scrollPos = this.scrollContainer.scrollTop;
+    this.scrollFabBtn?.setPinned(!this.scrollRunning);
+    if (this.scrollRunning) this.scheduleScrollFrame();
+  }
+
+  /** Attach / detach the document-level hold listener with the session. */
+  syncHoldPause() {
+    const want = this.scrollPlan.length > 0;
+    if (want && !this.holdPause) {
+      this.holdPause = new HoldPause({
+        isActive: () => this.scrollRunning,
+        onHold: () => this.holdPauseStart(),
+        onRelease: () => this.holdPauseEnd(),
+      });
+      this.holdPause.attach();
+    } else if (!want && this.holdPause) {
+      this.holdPause.detach();
+      this.holdPause = null;
+      this.scrollHoldPaused = false;
+    }
   }
 
   toggleAutoScroll() {
@@ -1816,16 +1929,31 @@ export default class NotionTogglePlugin extends Plugin {
     const plan = this.buildScrollPlan(container);
     if (plan.length === 0) {
       const anyToggle = this.collectStops(container).length > 0;
-      new Notice(
-        anyToggle
-          ? `No toggles match this selection (${filterLabel(this.settings.scrollFilter)} · ${modeLabel(
-              this.modeConfig()
-            )}) — filter ya pause-at mode badlo.`
-          : MSG_NO_TOGGLES,
-        6000
-      );
-      this.syncScrollFab();
-      return;
+      // v1.1.7 — the view may still be rendering (or we scanned a stale
+      // container). If the source clearly has toggles, retry once after a
+      // short delay instead of wrongly claiming the note has none.
+      if (!anyToggle && !this.scrollRetryPending && this.sourceHasToggles()) {
+        this.scrollRetryPending = true;
+        window.setTimeout(() => {
+          this.scrollRetryPending = false;
+          if (!this.scrollRunning && this.scrollPlan.length === 0) this.startAutoScroll();
+        }, 700);
+        return;
+      }
+      if (anyToggle || this.sourceHasToggles()) {
+        // Toggles exist, but the current filter / pause-at mode hides them all.
+        new Notice(
+          `No toggles match this selection (${filterLabel(this.settings.scrollFilter)} · ${modeLabel(
+            this.modeConfig()
+          )}) — filter ya pause-at mode badlo.`,
+          6000
+        );
+        this.syncScrollFab();
+        return;
+      }
+      // v1.2.0 — plain note (no toggles at all): still scroll it end to end
+      // instead of refusing to start. No stops, no dwell, just smooth reading.
+      new Notice(MSG_PLAIN_SCROLL, 4000);
     }
     this.scrollPlan = plan;
     const routed = this.settings.scrollMode === "route" || this.settings.scrollMode === "shuffle";
@@ -1850,7 +1978,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollOpenEl = null;
     this.scrollPrevBehavior = container.style.scrollBehavior;
     container.style.scrollBehavior = "auto";
-    if (!this.scrollBar) {
+    if (!this.scrollBar && this.settings.scrollBarClassic) {
       this.scrollBar = new ScrollBar({
         onToggleRun: () => this.toggleAutoScroll(),
         onSlower: () => this.nudgeScrollSpeed(-SPEED_STEP),
@@ -1870,6 +1998,7 @@ export default class NotionTogglePlugin extends Plugin {
     new Notice(sessionLabel(this.settings, plan.length));
     this.renderScrollBar();
     this.syncScrollFab();
+    this.syncHoldPause();
     this.scheduleScrollFrame();
   }
 
@@ -1936,7 +2065,9 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollBar = null;
     this.scrollDebugOverlay?.destroy();
     this.scrollDebugOverlay = null;
+    this.scrollHoldPaused = false;
     this.syncScrollFab();
+    this.syncHoldPause();
     if (notify) new Notice("Autoscroll stopped.");
   }
 
@@ -2159,6 +2290,7 @@ export default class NotionTogglePlugin extends Plugin {
   }
 
   private scheduleScrollFrame() {
+    if (this.scrollHoldPaused) return;
     if (this.scrollRaf !== null) window.cancelAnimationFrame(this.scrollRaf);
     this.scrollRaf = window.requestAnimationFrame((ts) => this.autoScrollFrame(ts));
   }
@@ -2170,7 +2302,7 @@ export default class NotionTogglePlugin extends Plugin {
    */
   private autoScrollFrame(ts: number) {
     this.scrollRaf = null;
-    if (!this.scrollRunning) return;
+    if (!this.scrollRunning || this.scrollHoldPaused) return;
     const container = this.scrollContainer;
     if (!container || !container.isConnected) {
       this.stopAutoScroll(false);
@@ -2362,14 +2494,31 @@ export default class NotionTogglePlugin extends Plugin {
       this.settings.scrollReverse
     ) as (ToggleStop & { el?: HTMLElement })[];
     if (stops.length === 0) {
+      // v1.1.9 — same one-shot retry as autoscroll: the reading view may still
+      // be rendering on mobile, so don't claim "no toggles" too early.
+      if (
+        this.collectStops(container).length === 0 &&
+        !this.quizRetryPending &&
+        this.sourceHasToggles()
+      ) {
+        this.quizRetryPending = true;
+        window.setTimeout(() => {
+          this.quizRetryPending = false;
+          if (!this.quizState) this.startQuizRun();
+        }, 700);
+        return;
+      }
       new Notice(`No toggles match the filter (${filterLabel(filter)}).`);
       return;
     }
 
+
     this.quizContainer = container;
     this.quizStops = stops;
     this.quizTitles = stops.map((s) => (s.el ? this.quizTitleOf(s.el) : ""));
-    // Active recall: everything starts closed.
+    // Active recall: everything starts closed — but remember what the reader
+    // had open so stopping the quiz gives the document back exactly as it was.
+    this.quizWasOpen = stops.map((s) => (s.el ? this.isToggleOpen(s.el) : false));
     for (const s of stops) if (s.el) this.setToggleOpen(s.el, false);
     this.quizState = startQuiz(this.quizTitles, this.settings);
 
@@ -2393,9 +2542,13 @@ export default class NotionTogglePlugin extends Plugin {
       this.quizInterval = null;
     }
     const summary = this.quizState ? quizSummary(this.quizState) : "";
-    const current = this.quizState ? this.quizStops[this.quizState.at] : undefined;
-    if (current?.el && this.settings.quizCloseAfterReveal) this.setToggleOpen(current.el, false);
+    // v1.2.0 — restore the note to its pre-quiz shape so the document stays
+    // readable after a run (previously every toggle was left collapsed).
+    this.quizStops.forEach((stop, i) => {
+      if (stop.el) this.setToggleOpen(stop.el, !!this.quizWasOpen[i]);
+    });
     this.quizState = null;
+    this.quizWasOpen = [];
     this.quizStops = [];
     this.quizTitles = [];
     this.quizContainer = null;
@@ -2826,16 +2979,91 @@ class ScrollSheetModal extends Modal {
     this.setTitle("Autoscroll — quick controls");
     const s = this.plugin.settings;
 
+    // v1.1.8 — the sheet itself is the on/off switch (long-press ▶ opens it).
     new Setting(this.contentEl)
-      .setName(this.plugin.scrollRunning ? "Pause autoscroll" : "Start autoscroll")
-      .setDesc("Tap the floating ▶ button for the same thing.")
-      .addButton((btn) =>
-        btn
-          .setButtonText(this.plugin.scrollRunning ? "⏸ Pause" : "▶ Start")
-          .setCta()
-          .onClick(() => {
-            this.close();
-            this.plugin.toggleAutoScroll();
+      .setName("Autoscroll")
+      .setDesc("ON = is note par autoscroll chalu, OFF = band. Screen ko dabaye rakho to jab tak hold hai scroll ruka rahega.")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.autoScrollActive() && this.plugin.scrollRunning).onChange(async (v) => {
+          await this.plugin.setAutoScrollEnabled(v);
+          tg.setValue(this.plugin.autoScrollActive() && this.plugin.scrollRunning);
+        })
+      );
+
+    // v1.1.9 — quiz mode is reachable from the same sheet (no toolbar needed).
+    new Setting(this.contentEl)
+      .setName("Quiz (timed question run)")
+      .setDesc("ON = timed quiz shuru — har toggle par timer, auto reveal, auto next.")
+      .addToggle((tg) =>
+        tg.setValue(!!this.plugin.quizState).onChange((v) => {
+          if (v) this.plugin.startQuizRun();
+          else this.plugin.stopQuiz(true);
+          tg.setValue(!!this.plugin.quizState);
+        })
+      );
+
+    // v1.2.1 — quiz timing + auto-next are tunable right here in the sheet.
+    new Setting(this.contentEl)
+      .setName("Quiz — time per question")
+      .setDesc("Seconds before the answer khud reveal ho. Toggle title me ⏱30 / [30s] likho to us question par wahi chalega.")
+      .addSlider((sl) =>
+        sl
+          .setLimits(QUIZ_SECONDS_MIN, 120, 1)
+          .setValue(clampQuizSeconds(s.quizSeconds))
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            s.quizSeconds = clampQuizSeconds(v);
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(this.contentEl)
+      .setName("Quiz — answer time")
+      .setDesc("Reveal hone ke baad answer kitne second khula rahe.")
+      .addSlider((sl) =>
+        sl
+          .setLimits(1, 60, 1)
+          .setValue(clampRevealSeconds(s.quizRevealSeconds))
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            s.quizRevealSeconds = clampRevealSeconds(v);
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(this.contentEl)
+      .setName("Quiz — auto next")
+      .setDesc("ON = answer ke baad agla question khud, OFF = wahin ruk jao.")
+      .addToggle((tg) =>
+        tg.setValue(s.quizAutoNext).onChange(async (v) => {
+          s.quizAutoNext = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(this.contentEl)
+      .setName("Quiz — loop")
+      .setDesc("Aakhri question ke baad phir se question 1 se shuru.")
+      .addToggle((tg) =>
+        tg.setValue(s.quizLoop).onChange(async (v) => {
+          s.quizLoop = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+
+
+    // v1.2.0 — direction moved off the FAB into the sheet (single button UI).
+    new Setting(this.contentEl)
+      .setName("Direction")
+      .setDesc("Forward = neeche ki taraf, Reverse = upar ki taraf scroll.")
+      .addToggle((tg) =>
+        tg
+          .setTooltip("Reverse (upar)")
+          .setValue(!!s.scrollReverse)
+          .onChange(async (v) => {
+            await this.plugin.setScrollReverse(v);
+            tg.setValue(!!this.plugin.settings.scrollReverse);
           })
       );
 
@@ -3721,6 +3949,18 @@ class NotionToggleSettingTab extends PluginSettingTab {
           this.plugin.settings.scrollFab = v;
           await this.plugin.saveSettings();
           this.plugin.syncScrollFab();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Classic control bar")
+      .setDesc(
+        "OFF (default) = minimal UI: sirf floating ▶ aur ↑/↓ button. ON = purani poori control bar (−, +, filter, mode, ⏱, ⤒, ✕) bhi dikhegi."
+      )
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.scrollBarClassic).onChange(async (v) => {
+          this.plugin.settings.scrollBarClassic = v;
+          await this.plugin.saveSettings();
         })
       );
 

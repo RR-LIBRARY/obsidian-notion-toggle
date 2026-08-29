@@ -957,9 +957,7 @@ var DEFAULT_AUTOSCROLL = {
   scrollNewMix: 0.35,
   scrollAutoGrade: true,
   scrollMemory: {},
-  scrollPerNote: {},
-  scrollFab: true,
-  toolbarGuideDone: []
+  scrollPerNote: {}
 };
 var SPEED_MIN = 1;
 var SPEED_MAX = 1200;
@@ -1440,9 +1438,101 @@ var ScrollBar = class {
   }
 };
 
+// src/hold-pause.ts
+var HOLD_PAUSE_MS = 250;
+var HOLD_MOVE_TOLERANCE_PX = 12;
+var HOLD_IGNORE_SELECTOR = ".ntt-fab-wrap, .ntt-scroll-bar, .modal, .modal-container, .menu, .notice, button, a, input, textarea, select";
+function isIgnoredHoldTarget(target) {
+  const el = target;
+  if (!el || typeof el.closest !== "function")
+    return false;
+  return !!el.closest(HOLD_IGNORE_SELECTOR);
+}
+function movedTooFar(dx, dy, tolerance = HOLD_MOVE_TOLERANCE_PX) {
+  return Math.abs(dx) > tolerance || Math.abs(dy) > tolerance;
+}
+var HoldPause = class {
+  constructor(cb) {
+    this.cb = cb;
+    this.timer = null;
+    this.held = false;
+    this.startX = 0;
+    this.startY = 0;
+    this.attached = false;
+    this.doc = null;
+    this.down = (e) => {
+      var _a;
+      if (!this.cb.isActive())
+        return;
+      if (isIgnoredHoldTarget(e.target))
+        return;
+      this.startX = e.clientX;
+      this.startY = e.clientY;
+      this.cancel();
+      this.timer = window.setTimeout(() => {
+        this.timer = null;
+        this.held = true;
+        this.cb.onHold();
+      }, (_a = this.cb.holdMs) != null ? _a : HOLD_PAUSE_MS);
+    };
+    this.move = (e) => {
+      if (this.timer === null)
+        return;
+      if (movedTooFar(e.clientX - this.startX, e.clientY - this.startY))
+        this.cancel();
+    };
+    this.up = () => {
+      this.cancel();
+      if (!this.held)
+        return;
+      this.held = false;
+      this.cb.onRelease();
+    };
+  }
+  attach(doc = document) {
+    if (this.attached)
+      return;
+    this.attached = true;
+    doc.addEventListener("pointerdown", this.down, true);
+    doc.addEventListener("pointermove", this.move, true);
+    doc.addEventListener("pointerup", this.up, true);
+    doc.addEventListener("pointercancel", this.up, true);
+    window.addEventListener("blur", this.up);
+    this.doc = doc;
+  }
+  detach() {
+    var _a;
+    if (!this.attached)
+      return;
+    this.attached = false;
+    const doc = (_a = this.doc) != null ? _a : document;
+    doc.removeEventListener("pointerdown", this.down, true);
+    doc.removeEventListener("pointermove", this.move, true);
+    doc.removeEventListener("pointerup", this.up, true);
+    doc.removeEventListener("pointercancel", this.up, true);
+    window.removeEventListener("blur", this.up);
+    this.cancel();
+    if (this.held) {
+      this.held = false;
+      this.cb.onRelease();
+    }
+  }
+  cancel() {
+    if (this.timer !== null) {
+      window.clearTimeout(this.timer);
+      this.timer = null;
+    }
+  }
+  /** Testing helper. */
+  isHolding() {
+    return this.held;
+  }
+};
+
 // src/scroll-fab.ts
 var FAB_LONG_PRESS_MS = 500;
 var FAB_MOVE_TOLERANCE_PX = 12;
+var FAB_AUTO_HIDE_MS = 3e3;
 var ScrollFab = class {
   constructor(cb) {
     this.cb = cb;
@@ -1450,18 +1540,12 @@ var ScrollFab = class {
     this.startX = 0;
     this.startY = 0;
     this.longFired = false;
+    /* v1.1.8 auto-hide state (ported from the reader's useReaderChrome). */
+    this.hideTimer = null;
+    this.pinned = false;
+    this.wake = () => this.show();
     this.wrap = document.createElement("div");
     this.wrap.className = "ntt-fab-wrap";
-    this.rev = document.createElement("button");
-    this.rev.className = "ntt-fab-rev";
-    this.rev.textContent = "\u2193";
-    this.rev.setAttribute("aria-label", "Autoscroll direction \u2014 forward");
-    this.rev.addEventListener("click", (e) => {
-      var _a, _b;
-      e.preventDefault();
-      e.stopPropagation();
-      (_b = (_a = this.cb).onReverse) == null ? void 0 : _b.call(_a);
-    });
     this.root = document.createElement("button");
     this.root.className = "ntt-fab";
     this.root.textContent = "\u25B6";
@@ -1504,9 +1588,11 @@ var ScrollFab = class {
     });
     this.root.addEventListener("click", (e) => e.preventDefault());
     this.root.addEventListener("contextmenu", (e) => e.preventDefault());
-    this.wrap.appendChild(this.rev);
     this.wrap.appendChild(this.root);
     document.body.appendChild(this.wrap);
+    document.addEventListener("pointerdown", this.wake, true);
+    document.addEventListener("scroll", this.wake, true);
+    this.arm();
   }
   cancelTimer() {
     if (this.pressTimer !== null) {
@@ -1523,17 +1609,46 @@ var ScrollFab = class {
       running ? "Autoscroll running \u2014 tap to pause" : "Autoscroll \u2014 tap to start, hold for settings"
     );
   }
-  /** v1.1.6 — reflect the current scroll direction on the chip. */
-  setReverse(reverse) {
-    this.rev.textContent = reverse ? "\u2191" : "\u2193";
-    this.rev.classList.toggle("is-reverse", reverse);
-    this.rev.setAttribute(
-      "aria-label",
-      reverse ? "Autoscroll direction \u2014 reverse (tap for forward)" : "Autoscroll direction \u2014 forward (tap for reverse)"
-    );
+  /* ---------- v1.1.8: auto-hide ---------- */
+  clearHide() {
+    if (this.hideTimer !== null) {
+      window.clearTimeout(this.hideTimer);
+      this.hideTimer = null;
+    }
+  }
+  arm() {
+    var _a;
+    this.clearHide();
+    if (this.pinned)
+      return;
+    this.hideTimer = window.setTimeout(() => {
+      this.hideTimer = null;
+      this.wrap.classList.add("is-hidden");
+    }, (_a = this.cb.hideAfterMs) != null ? _a : FAB_AUTO_HIDE_MS);
+  }
+  /** Show the button and restart the idle timer. */
+  show() {
+    this.wrap.classList.remove("is-hidden");
+    this.arm();
+  }
+  /** Keep the button on screen regardless of the idle timer (e.g. when paused). */
+  setPinned(pinned) {
+    this.pinned = pinned;
+    if (pinned) {
+      this.clearHide();
+      this.wrap.classList.remove("is-hidden");
+    } else {
+      this.arm();
+    }
+  }
+  isHidden() {
+    return this.wrap.classList.contains("is-hidden");
   }
   destroy() {
     this.cancelTimer();
+    this.clearHide();
+    document.removeEventListener("pointerdown", this.wake, true);
+    document.removeEventListener("scroll", this.wake, true);
     this.wrap.remove();
   }
 };
@@ -1599,6 +1714,18 @@ var TOOLBAR_COMMANDS = [
     name: "Autoscroll: stop",
     why: "Session poori tarah band kare (floating bar ka \u2715 bhi yehi karta hai).",
     priority: 10
+  },
+  {
+    id: "smart-quiz",
+    name: "Quiz (timed question run)",
+    why: "Toolbar se ek tap me quiz mode \u2014 timer, auto reveal, auto next.",
+    priority: 11
+  },
+  {
+    id: "quiz-pause",
+    name: "Quiz: pause / resume",
+    why: "Quiz ke beech me rukna ho to \u2014 wahi tap se resume.",
+    priority: 12
   }
 ];
 var TOOLBAR_STEPS = [
@@ -1606,7 +1733,7 @@ var TOOLBAR_STEPS = [
   "Mobile section me jao \u2192 Manage toolbar.",
   "Wahan + / Add command dabao aur neeche wali commands ek-ek karke add karo.",
   "Jo add ho gayi, us row par tap karke tick \u2713 kar do \u2014 list yaad rehti hai.",
-  "Ab koi note kholo aur toolbar se \u25B6 Autoscroll dabao \u2014 bas!"
+  "Ab koi note kholo aur toolbar se \u25B6 Autoscroll ya \u2753 Quiz dabao \u2014 bas!"
 ];
 function toggleGuideDone(done, id) {
   const set = new Set(done);
@@ -1625,7 +1752,7 @@ function fabShouldShow(enabled, noteOpen, _controlBarVisible = false) {
   return enabled && noteOpen;
 }
 var MSG_NOT_RUNNING = 'Autoscroll band hai \u2014 pehle "Autoscroll (start / pause revision)" chalao (Ctrl/Cmd+Shift+S), ya floating \u25B6 dabao.';
-var MSG_NO_TOGGLES = "Is note me koi toggle nahi mila \u2014 callout (> [!note]- \u2026) ya <details> banao, phir autoscroll chalao.";
+var MSG_PLAIN_SCROLL = "Is note me koi toggle nahi mila \u2014 plain scroll chalu (koi stop nahi). Toggle chahiye to > [!note]- banao.";
 var HOTKEYS = [
   { id: "smart-autoscroll", label: "Ctrl/Cmd+Shift+S" },
   { id: "autoscroll-reverse", label: "Ctrl/Cmd+Shift+R" },
@@ -2007,7 +2134,10 @@ var DEFAULT_SETTINGS = {
   addAnswerLine: true,
   minimalNames: true,
   srs: {},
-  autoReview: true
+  autoReview: true,
+  scrollFab: true,
+  toolbarGuideDone: [],
+  scrollBarClassic: false
 };
 var CALLOUT_TYPES = ["question", "info", "note", "abstract", "tip", "warning", "success"];
 var TOGGLE_COLORS = [
@@ -2045,6 +2175,8 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     this.scrollBar = null;
     this.scrollRunning = false;
     this.scrollPlan = [];
+    /** v1.1.7 — true while a one-shot "view still rendering" retry is pending. */
+    this.scrollRetryPending = false;
     this.scrollAt = -1;
     this.scrollHoldUntil = 0;
     this.scrollLastFrame = 0;
@@ -2081,6 +2213,10 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     this.scrollPrevBehavior = null;
     /** v1.1.5 floating launch button (tap = start, hold = sheet). */
     this.scrollFabBtn = null;
+    /** v1.1.8 hold-anywhere-to-pause. */
+    this.holdPause = null;
+    this.scrollHoldPaused = false;
+    this.scrollHoldAt = 0;
     /* v1.1.0 quiz mode state */
     this.quizHud = null;
     this.quizState = null;
@@ -2089,6 +2225,10 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     this.quizContainer = null;
     this.quizLastFrame = 0;
     this.quizInterval = null;
+    /** v1.1.9: one-shot re-scan guard when the view is still rendering. */
+    this.quizRetryPending = false;
+    /** v1.2.0 — open/closed state of each toggle before the quiz collapsed them. */
+    this.quizWasOpen = [];
   }
   /**
    * v1.0.7: every command goes through here, so the toolbar list stays short.
@@ -2503,7 +2643,7 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     });
     this.addCommand({
       id: "smart-quiz",
-      icon: "help-circle",
+      icon: "list-checks",
       name: "Quiz (timed question run)",
       callback: () => this.toggleQuiz()
     });
@@ -3217,12 +3357,14 @@ ${row}`, { line: cursor.line, ch: line.length });
     this.renderTimer();
   }
   onunload() {
-    var _a;
+    var _a, _b;
     this.hideTimer();
     this.stopAutoScroll(false);
     this.stopQuiz(false);
     (_a = this.scrollFabBtn) == null ? void 0 : _a.destroy();
     this.scrollFabBtn = null;
+    (_b = this.holdPause) == null ? void 0 : _b.detach();
+    this.holdPause = null;
   }
   /**
    * v1.1.5 — show / hide the floating launch button.
@@ -3244,12 +3386,11 @@ ${row}`, { line: cursor.line, ch: line.length });
     if (!this.scrollFabBtn) {
       this.scrollFabBtn = new ScrollFab({
         onTap: () => this.toggleAutoScroll(),
-        onLongPress: () => new ScrollSheetModal(this.app, this).open(),
-        onReverse: () => void this.setScrollReverse(!this.settings.scrollReverse)
+        onLongPress: () => new ScrollSheetModal(this.app, this).open()
       });
     }
     this.scrollFabBtn.setRunning(this.scrollRunning);
-    this.scrollFabBtn.setReverse(!!this.settings.scrollReverse);
+    this.scrollFabBtn.setPinned(!this.scrollRunning);
   }
   /**
    * v1.1.6 — guard for actions that only make sense mid-session.
@@ -3278,16 +3419,53 @@ ${row}`, { line: cursor.line, ch: line.length });
     return this.scrollRunning;
   }
   /* ==================== v1.0.9: auto-scroll + auto-toggle ==================== */
-  /** The scroll container of the active markdown view (reading or live preview). */
+  /**
+   * The scroll container of the active markdown view (reading or live preview).
+   * v1.1.7 — go through the MarkdownView API first; the old document-wide
+   * querySelector could land on a hidden background-tab preview (or an
+   * unrendered view on mobile) and report "no toggles" while the note on
+   * screen clearly has them.
+   */
   findScrollContainer() {
-    var _a, _b, _c, _d;
-    const leaf = (_a = document.querySelector(".workspace-leaf.mod-active")) != null ? _a : document;
-    return (_d = (_c = (_b = leaf.querySelector(".markdown-preview-view")) != null ? _b : leaf.querySelector(".cm-scroller")) != null ? _c : document.querySelector(".markdown-preview-view")) != null ? _d : document.querySelector(".cm-scroller");
+    var _a, _b, _c;
+    const view = this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
+    if (view) {
+      const fromView = view.getMode() === "preview" ? (_a = view.previewMode) == null ? void 0 : _a.containerEl : view.contentEl.querySelector(".cm-scroller");
+      if (fromView)
+        return fromView;
+    }
+    const visible = (el) => !!el && el.offsetParent !== null;
+    const leaf = (_b = document.querySelector(".workspace-leaf.mod-active")) != null ? _b : document;
+    const candidates = [
+      leaf.querySelector(".markdown-preview-view"),
+      leaf.querySelector(".cm-scroller"),
+      document.querySelector(".workspace-leaf.mod-active .markdown-preview-view"),
+      ...Array.from(document.querySelectorAll(".markdown-preview-view")),
+      ...Array.from(document.querySelectorAll(".cm-scroller"))
+    ];
+    for (const el of candidates)
+      if (visible(el))
+        return el;
+    return (_c = candidates.find(Boolean)) != null ? _c : null;
+  }
+  /**
+   * v1.1.7 — does the active note's *source* contain toggles? Used when the
+   * DOM scan finds nothing: if the source has toggles the view is probably
+   * still rendering (or showing a stale container), so we retry once.
+   */
+  sourceHasToggles() {
+    var _a, _b, _c;
+    const view = this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
+    const text = (_c = (_b = (_a = view == null ? void 0 : view.editor) == null ? void 0 : _a.getValue) == null ? void 0 : _b.call(_a)) != null ? _c : "";
+    return /^>\s*\[![^\]]+\][+-]?/m.test(text) || /<details[\s>]/i.test(text);
   }
   /** Every rendered toggle in the active note, with its offset and colour. */
   collectStops(container) {
     const nodes = Array.from(
-      container.querySelectorAll(".callout, details")
+      container.querySelectorAll(".callout, details, [data-callout]")
+    ).filter(
+      // keep only outermost matches (a nested callout is part of its parent)
+      (el, _i, all) => !all.some((other) => other !== el && other.contains(el))
     );
     const base = container.getBoundingClientRect().top - container.scrollTop;
     return nodes.map((el, index) => {
@@ -3303,6 +3481,12 @@ ${row}`, { line: cursor.line, ch: line.length });
       };
     });
   }
+  /** v1.2.0 — is this toggle currently expanded? */
+  isToggleOpen(el) {
+    if (el.tagName.toLowerCase() === "details")
+      return el.open;
+    return !el.classList.contains("is-collapsed");
+  }
   setToggleOpen(el, open) {
     if (el.tagName.toLowerCase() === "details") {
       el.open = open;
@@ -3313,6 +3497,59 @@ ${row}`, { line: cursor.line, ch: line.length });
       return;
     const title = el.querySelector(".callout-title");
     title == null ? void 0 : title.click();
+  }
+  /**
+   * v1.1.8 — freeze the loop while a finger is held anywhere on the note.
+   * `scrollRunning` stays true, so this never touches the user's own pause.
+   */
+  holdPauseStart() {
+    var _a;
+    if (!this.scrollRunning || this.scrollHoldPaused)
+      return;
+    this.scrollHoldPaused = true;
+    this.scrollHoldAt = performance.now();
+    if (this.scrollRaf !== null) {
+      window.cancelAnimationFrame(this.scrollRaf);
+      this.scrollRaf = null;
+    }
+    (_a = this.scrollFabBtn) == null ? void 0 : _a.setPinned(true);
+  }
+  /** Resume at exactly the same speed / direction / dwell state. */
+  holdPauseEnd() {
+    var _a;
+    if (!this.scrollHoldPaused)
+      return;
+    this.scrollHoldPaused = false;
+    const held = Math.max(0, performance.now() - this.scrollHoldAt);
+    if (this.scrollDwellUntil)
+      this.scrollDwellUntil += held;
+    if (this.scrollHoldUntil)
+      this.scrollHoldUntil += held;
+    if (this.scrollOpenedAt)
+      this.scrollOpenedAt += held;
+    this.scrollHoldAt = 0;
+    this.scrollLastFrame = 0;
+    if (this.scrollContainer)
+      this.scrollPos = this.scrollContainer.scrollTop;
+    (_a = this.scrollFabBtn) == null ? void 0 : _a.setPinned(!this.scrollRunning);
+    if (this.scrollRunning)
+      this.scheduleScrollFrame();
+  }
+  /** Attach / detach the document-level hold listener with the session. */
+  syncHoldPause() {
+    const want = this.scrollPlan.length > 0;
+    if (want && !this.holdPause) {
+      this.holdPause = new HoldPause({
+        isActive: () => this.scrollRunning,
+        onHold: () => this.holdPauseStart(),
+        onRelease: () => this.holdPauseEnd()
+      });
+      this.holdPause.attach();
+    } else if (!want && this.holdPause) {
+      this.holdPause.detach();
+      this.holdPause = null;
+      this.scrollHoldPaused = false;
+    }
   }
   toggleAutoScroll() {
     if (this.scrollRunning) {
@@ -3475,14 +3712,26 @@ ${deckSummary(
     const plan = this.buildScrollPlan(container);
     if (plan.length === 0) {
       const anyToggle = this.collectStops(container).length > 0;
-      new import_obsidian.Notice(
-        anyToggle ? `No toggles match this selection (${filterLabel(this.settings.scrollFilter)} \xB7 ${modeLabel(
-          this.modeConfig()
-        )}) \u2014 filter ya pause-at mode badlo.` : MSG_NO_TOGGLES,
-        6e3
-      );
-      this.syncScrollFab();
-      return;
+      if (!anyToggle && !this.scrollRetryPending && this.sourceHasToggles()) {
+        this.scrollRetryPending = true;
+        window.setTimeout(() => {
+          this.scrollRetryPending = false;
+          if (!this.scrollRunning && this.scrollPlan.length === 0)
+            this.startAutoScroll();
+        }, 700);
+        return;
+      }
+      if (anyToggle || this.sourceHasToggles()) {
+        new import_obsidian.Notice(
+          `No toggles match this selection (${filterLabel(this.settings.scrollFilter)} \xB7 ${modeLabel(
+            this.modeConfig()
+          )}) \u2014 filter ya pause-at mode badlo.`,
+          6e3
+        );
+        this.syncScrollFab();
+        return;
+      }
+      new import_obsidian.Notice(MSG_PLAIN_SCROLL, 4e3);
     }
     this.scrollPlan = plan;
     const routed = this.settings.scrollMode === "route" || this.settings.scrollMode === "shuffle";
@@ -3505,7 +3754,7 @@ ${deckSummary(
     this.scrollOpenEl = null;
     this.scrollPrevBehavior = container.style.scrollBehavior;
     container.style.scrollBehavior = "auto";
-    if (!this.scrollBar) {
+    if (!this.scrollBar && this.settings.scrollBarClassic) {
       this.scrollBar = new ScrollBar({
         onToggleRun: () => this.toggleAutoScroll(),
         onSlower: () => this.nudgeScrollSpeed(-SPEED_STEP),
@@ -3525,6 +3774,7 @@ ${deckSummary(
     new import_obsidian.Notice(sessionLabel(this.settings, plan.length));
     this.renderScrollBar();
     this.syncScrollFab();
+    this.syncHoldPause();
     this.scheduleScrollFrame();
   }
   /** Reader parity: speed / direction / hold are remembered per note. */
@@ -3595,7 +3845,9 @@ ${deckSummary(
     this.scrollBar = null;
     (_b = this.scrollDebugOverlay) == null ? void 0 : _b.destroy();
     this.scrollDebugOverlay = null;
+    this.scrollHoldPaused = false;
     this.syncScrollFab();
+    this.syncHoldPause();
     if (notify)
       new import_obsidian.Notice("Autoscroll stopped.");
   }
@@ -3816,6 +4068,8 @@ ${deckSummary(
     this.scrollPrevBehavior = null;
   }
   scheduleScrollFrame() {
+    if (this.scrollHoldPaused)
+      return;
     if (this.scrollRaf !== null)
       window.cancelAnimationFrame(this.scrollRaf);
     this.scrollRaf = window.requestAnimationFrame((ts) => this.autoScrollFrame(ts));
@@ -3827,7 +4081,7 @@ ${deckSummary(
    */
   autoScrollFrame(ts) {
     this.scrollRaf = null;
-    if (!this.scrollRunning)
+    if (!this.scrollRunning || this.scrollHoldPaused)
       return;
     const container = this.scrollContainer;
     if (!container || !container.isConnected) {
@@ -3999,12 +4253,22 @@ ${deckSummary(
       this.settings.scrollReverse
     );
     if (stops.length === 0) {
+      if (this.collectStops(container).length === 0 && !this.quizRetryPending && this.sourceHasToggles()) {
+        this.quizRetryPending = true;
+        window.setTimeout(() => {
+          this.quizRetryPending = false;
+          if (!this.quizState)
+            this.startQuizRun();
+        }, 700);
+        return;
+      }
       new import_obsidian.Notice(`No toggles match the filter (${filterLabel(filter)}).`);
       return;
     }
     this.quizContainer = container;
     this.quizStops = stops;
     this.quizTitles = stops.map((s) => s.el ? this.quizTitleOf(s.el) : "");
+    this.quizWasOpen = stops.map((s) => s.el ? this.isToggleOpen(s.el) : false);
     for (const s of stops)
       if (s.el)
         this.setToggleOpen(s.el, false);
@@ -4029,10 +4293,12 @@ ${deckSummary(
       this.quizInterval = null;
     }
     const summary = this.quizState ? quizSummary(this.quizState) : "";
-    const current = this.quizState ? this.quizStops[this.quizState.at] : void 0;
-    if ((current == null ? void 0 : current.el) && this.settings.quizCloseAfterReveal)
-      this.setToggleOpen(current.el, false);
+    this.quizStops.forEach((stop, i) => {
+      if (stop.el)
+        this.setToggleOpen(stop.el, !!this.quizWasOpen[i]);
+    });
     this.quizState = null;
+    this.quizWasOpen = [];
     this.quizStops = [];
     this.quizTitles = [];
     this.quizContainer = null;
@@ -4413,10 +4679,49 @@ var ScrollSheetModal = class extends import_obsidian.Modal {
     this.modalEl.addClass("ntt-sheet");
     this.setTitle("Autoscroll \u2014 quick controls");
     const s = this.plugin.settings;
-    new import_obsidian.Setting(this.contentEl).setName(this.plugin.scrollRunning ? "Pause autoscroll" : "Start autoscroll").setDesc("Tap the floating \u25B6 button for the same thing.").addButton(
-      (btn) => btn.setButtonText(this.plugin.scrollRunning ? "\u23F8 Pause" : "\u25B6 Start").setCta().onClick(() => {
-        this.close();
-        this.plugin.toggleAutoScroll();
+    new import_obsidian.Setting(this.contentEl).setName("Autoscroll").setDesc("ON = is note par autoscroll chalu, OFF = band. Screen ko dabaye rakho to jab tak hold hai scroll ruka rahega.").addToggle(
+      (tg) => tg.setValue(this.plugin.autoScrollActive() && this.plugin.scrollRunning).onChange(async (v) => {
+        await this.plugin.setAutoScrollEnabled(v);
+        tg.setValue(this.plugin.autoScrollActive() && this.plugin.scrollRunning);
+      })
+    );
+    new import_obsidian.Setting(this.contentEl).setName("Quiz (timed question run)").setDesc("ON = timed quiz shuru \u2014 har toggle par timer, auto reveal, auto next.").addToggle(
+      (tg) => tg.setValue(!!this.plugin.quizState).onChange((v) => {
+        if (v)
+          this.plugin.startQuizRun();
+        else
+          this.plugin.stopQuiz(true);
+        tg.setValue(!!this.plugin.quizState);
+      })
+    );
+    new import_obsidian.Setting(this.contentEl).setName("Quiz \u2014 time per question").setDesc("Seconds before the answer khud reveal ho. Toggle title me \u23F130 / [30s] likho to us question par wahi chalega.").addSlider(
+      (sl) => sl.setLimits(QUIZ_SECONDS_MIN, 120, 1).setValue(clampQuizSeconds(s.quizSeconds)).setDynamicTooltip().onChange(async (v) => {
+        s.quizSeconds = clampQuizSeconds(v);
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(this.contentEl).setName("Quiz \u2014 answer time").setDesc("Reveal hone ke baad answer kitne second khula rahe.").addSlider(
+      (sl) => sl.setLimits(1, 60, 1).setValue(clampRevealSeconds(s.quizRevealSeconds)).setDynamicTooltip().onChange(async (v) => {
+        s.quizRevealSeconds = clampRevealSeconds(v);
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(this.contentEl).setName("Quiz \u2014 auto next").setDesc("ON = answer ke baad agla question khud, OFF = wahin ruk jao.").addToggle(
+      (tg) => tg.setValue(s.quizAutoNext).onChange(async (v) => {
+        s.quizAutoNext = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(this.contentEl).setName("Quiz \u2014 loop").setDesc("Aakhri question ke baad phir se question 1 se shuru.").addToggle(
+      (tg) => tg.setValue(s.quizLoop).onChange(async (v) => {
+        s.quizLoop = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(this.contentEl).setName("Direction").setDesc("Forward = neeche ki taraf, Reverse = upar ki taraf scroll.").addToggle(
+      (tg) => tg.setTooltip("Reverse (upar)").setValue(!!s.scrollReverse).onChange(async (v) => {
+        await this.plugin.setScrollReverse(v);
+        tg.setValue(!!this.plugin.settings.scrollReverse);
       })
     );
     new import_obsidian.Setting(this.contentEl).setName("Speed").setDesc(`Currently ${multiplierFromSpeed(s.scrollSpeed)}x.`).addButton(
@@ -5025,6 +5330,14 @@ var NotionToggleSettingTab = class extends import_obsidian.PluginSettingTab {
         this.plugin.settings.scrollFab = v;
         await this.plugin.saveSettings();
         this.plugin.syncScrollFab();
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName("Classic control bar").setDesc(
+      "OFF (default) = minimal UI: sirf floating \u25B6 aur \u2191/\u2193 button. ON = purani poori control bar (\u2212, +, filter, mode, \u23F1, \u2912, \u2715) bhi dikhegi."
+    ).addToggle(
+      (tg) => tg.setValue(this.plugin.settings.scrollBarClassic).onChange(async (v) => {
+        this.plugin.settings.scrollBarClassic = v;
+        await this.plugin.saveSettings();
       })
     );
     new import_obsidian.Setting(containerEl).setName("Mobile toolbar guide").setDesc("Kaunsi commands Settings \u2192 Mobile \u2192 Manage toolbar me add karni hain \u2014 one-tap checklist ke saath.").addButton(

@@ -92,3 +92,11 @@ describe("v1.1.6 hotkeys + messages", () => {
     expect(fabShouldShow(false, true, false)).toBe(false);
   });
 });
+
+test("quiz commands are part of the mobile toolbar checklist", () => {
+  const ids = TOOLBAR_COMMANDS.map((c) => c.id);
+  expect(ids).toContain("smart-quiz");
+  expect(ids).toContain("quiz-pause");
+  expect(guideProgress(["smart-quiz"])).toBe(`1/${TOOLBAR_COMMANDS.length}`);
+  expect(toggleGuideDone([], "smart-quiz")).toEqual(["smart-quiz"]);
+});

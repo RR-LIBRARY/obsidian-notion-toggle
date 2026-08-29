@@ -1,10 +1,12 @@
 {
   "name": "obsidian-notion-toggle",
-  "version": "1.1.6",
+  "version": "1.2.0",
   "description": "Notion-style toggle plugin for Obsidian",
   "private": true,
   "scripts": {
-    "build": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs && node build-dist.mjs",
+    "build:dev": "node esbuild.config.mjs && node build-dist.mjs",
+    "dev": "node esbuild.config.mjs && node dev-server.mjs",
     "test": "bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
