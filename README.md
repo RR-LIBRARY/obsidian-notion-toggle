@@ -2,7 +2,7 @@
 
 Notion-style collapsible toggles for Obsidian, plus a recall workflow built on top of them: traffic-light grading, a floating Pomodoro timer, and SM-2 spaced repetition. You never type `<details>`, `<summary>` or `>` brackets by hand.
 
-Works on desktop and mobile. Version 1.1.3.
+Works on desktop and mobile. Version 1.1.4.
 
 Full guide: **[MANUAL.md](MANUAL.md)** — install, autoscroll, Quiz Mode, settings, troubleshooting.
 
@@ -15,7 +15,7 @@ Full guide: **[MANUAL.md](MANUAL.md)** — install, autoscroll, Quiz Mode, setti
 3. Enable **Notion Toggle** in *Settings → Community plugins*.
 4. Later updates: BRAT → *Check for updates*.
 
-> If BRAT reports *"A manifest.json file does not exist in the latest release"*, the release is missing its assets. The `v1.1.3` release ships `manifest.json`, `main.js` and `styles.css` as attached assets — remove and re-add the plugin in BRAT, then restart Obsidian.
+> If BRAT reports *"A manifest.json file does not exist in the latest release"*, the release is missing its assets. The `v1.1.4` release ships `manifest.json`, `main.js` and `styles.css` as attached assets — remove and re-add the plugin in BRAT, then restart Obsidian.
 
 ### Manual
 
@@ -179,7 +179,7 @@ The rules were already the reader's; now the **loop mechanics** are too (ported 
 - **Shuffle range, deck summary and 7-day due forecast** in the "pause at" sheet (`deckStats`, `forecastDue`).
 - **Per-note memory** of speed, direction and hold time (the reader's per-document keys).
 
-## v1.1.3 — settings, debug overlay, weak-toggle stats
+## v1.1.4 — settings, debug overlay, weak-toggle stats
 
 - **Autoscroll settings, all in one place** — Settings → Notion Toggle → *Auto-scroll revision*: speed slider + speed presets (0.02x–20x), pause-at mode (Odd / Even / Every / Custom / Route / Shuffle), pause-for duration, reverse, colour filter (🔴/🟡/🟢), auto-open / auto-close, loop note, loop route, tall-toggle screen-by-screen, shuffle range, auto-grade, new-toggle mix. Everything is stored in the plugin's own `data.json`, so it survives restarts, and speed / direction / hold are also remembered **per note**.
 - **Debug overlay** (toggle in settings) — a fixed read-out while autoscroll runs: float position and sub-pixel remainder, direction, `waypointReached` / `crossedTarget` events, the dwell guard key, the last dwell → FSRS grade, and route progress.
