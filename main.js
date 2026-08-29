@@ -1567,7 +1567,27 @@ var ScrollFab = class {
     this.icon.className = "ntt-fab-icon";
     this.icon.innerHTML = PLAY_ICON;
     this.root.appendChild(this.icon);
+    this.root.type = "button";
     this.root.setAttribute("aria-label", "Autoscroll \u2014 tap to start, hold for settings");
+    this.root.setAttribute("aria-pressed", "false");
+    this.root.setAttribute("aria-keyshortcuts", "Control+Shift+S");
+    this.root.title = "Autoscroll \u2014 tap to start, hold for settings";
+    this.sr = document.createElement("span");
+    this.sr.className = "ntt-fab-sr";
+    this.sr.setAttribute("aria-live", "polite");
+    this.sr.textContent = "Autoscroll stopped";
+    this.root.appendChild(this.sr);
+    this.root.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        if (e.shiftKey)
+          this.cb.onLongPress();
+        else
+          this.cb.onTap();
+        this.show();
+      }
+    });
+    this.root.addEventListener("focus", () => this.show());
     this.root.addEventListener("pointerdown", (e) => {
       this.longFired = false;
       this.startX = e.clientX;
@@ -1619,13 +1639,18 @@ var ScrollFab = class {
     }
   }
   setRunning(running) {
+    var _a;
     this.icon.innerHTML = running ? PAUSE_ICON : PLAY_ICON;
+    this.root.setAttribute("aria-pressed", running ? "true" : "false");
+    if (this.sr)
+      this.sr.textContent = running ? "Autoscroll running" : "Autoscroll stopped";
     this.root.classList.toggle("is-running", running);
     this.wrap.classList.toggle("is-running", running);
     this.root.setAttribute(
       "aria-label",
       running ? "Autoscroll running \u2014 tap to pause" : "Autoscroll \u2014 tap to start, hold for settings"
     );
+    this.root.title = (_a = this.root.getAttribute("aria-label")) != null ? _a : "";
   }
   /* ---------- v1.1.8: auto-hide ---------- */
   clearHide() {
@@ -1766,8 +1791,8 @@ function guideProgress(done) {
   const count = done.filter((id) => known.has(id)).length;
   return `${count}/${TOOLBAR_COMMANDS.length}`;
 }
-function fabShouldShow(enabled, noteOpen, _controlBarVisible = false) {
-  return enabled && noteOpen;
+function fabShouldShow(enabled, noteOpen, _controlBarVisible = false, markdownViewActive = true, overlayOpen = false) {
+  return enabled && noteOpen && markdownViewActive && !overlayOpen;
 }
 var MSG_NOT_RUNNING = 'Autoscroll band hai \u2014 pehle "Autoscroll (start / pause revision)" chalao (Ctrl/Cmd+Shift+S), ya floating \u25B6 dabao.';
 var MSG_PLAIN_SCROLL = "Is note me koi toggle nahi mila \u2014 plain scroll chalu (koi stop nahi). Toggle chahiye to > [!note]- banao.";
@@ -2795,7 +2820,11 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
       this.app.workspace.on("active-leaf-change", () => this.syncScrollFab())
     );
     this.registerEvent(this.app.workspace.on("file-open", () => this.syncScrollFab()));
+    this.registerEvent(this.app.workspace.on("layout-change", () => this.syncScrollFab()));
     this.app.workspace.onLayoutReady(() => this.syncScrollFab());
+    const overlayObserver = new MutationObserver(() => this.syncScrollFab());
+    overlayObserver.observe(document.body, { childList: true });
+    this.register(() => overlayObserver.disconnect());
     this.registerEditorExtension(
       import_state.Prec.highest(
         import_view.keymap.of([
@@ -3437,10 +3466,14 @@ ${row}`, { line: cursor.line, ch: line.length });
    */
   syncScrollFab() {
     var _a;
+    const mdView = this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
+    const overlayOpen = !this.scrollSheetOpen && !!document.body.querySelector(".modal-container, .modal-bg");
     const want = fabShouldShow(
       !!this.settings.scrollFab,
       !!this.app.workspace.getActiveFile(),
-      !!this.scrollBar
+      !!this.scrollBar,
+      !!mdView,
+      overlayOpen
     );
     if (!want) {
       (_a = this.scrollFabBtn) == null ? void 0 : _a.destroy();

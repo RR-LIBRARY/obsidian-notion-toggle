@@ -917,7 +917,14 @@ export default class NotionTogglePlugin extends Plugin {
       this.app.workspace.on("active-leaf-change", () => this.syncScrollFab())
     );
     this.registerEvent(this.app.workspace.on("file-open", () => this.syncScrollFab()));
+    this.registerEvent(this.app.workspace.on("layout-change", () => this.syncScrollFab()));
     this.app.workspace.onLayoutReady(() => this.syncScrollFab());
+    // v1.2.4 — Settings / any modal opens without a workspace event, so watch
+    // the DOM for overlay layers and re-evaluate visibility.
+    const overlayObserver = new MutationObserver(() => this.syncScrollFab());
+    overlayObserver.observe(document.body, { childList: true });
+    this.register(() => overlayObserver.disconnect());
+
 
 
 
@@ -1605,11 +1612,19 @@ export default class NotionTogglePlugin extends Plugin {
    * control bar is not on screen (tap = start/pause, long-press = sheet).
    */
   syncScrollFab() {
+    // v1.2.4 — only float over a real markdown note, never over Settings,
+    // Search, Graph, Canvas or any other modal layer.
+    const mdView = this.app.workspace.getActiveViewOfType(MarkdownView);
+    const overlayOpen =
+      !this.scrollSheetOpen && !!document.body.querySelector(".modal-container, .modal-bg");
     const want = fabShouldShow(
       !!this.settings.scrollFab,
       !!this.app.workspace.getActiveFile(),
-      !!this.scrollBar
+      !!this.scrollBar,
+      !!mdView,
+      overlayOpen
     );
+
     if (!want) {
       this.scrollFabBtn?.destroy();
       this.scrollFabBtn = null;

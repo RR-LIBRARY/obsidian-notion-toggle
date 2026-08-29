@@ -100,3 +100,23 @@ test("quiz commands are part of the mobile toolbar checklist", () => {
   expect(guideProgress(["smart-quiz"])).toBe(`1/${TOOLBAR_COMMANDS.length}`);
   expect(toggleGuideDone([], "smart-quiz")).toEqual(["smart-quiz"]);
 });
+
+/* ---------- v1.2.4: FAB only floats over real notes ---------- */
+describe("fabShouldShow — note-only surfaces (v1.2.4)", () => {
+  test("shows on an open markdown note with no overlay", () => {
+    expect(fabShouldShow(true, true, false, true, false)).toBe(true);
+  });
+  test("hides when the active view is not a markdown view (settings, graph, canvas)", () => {
+    expect(fabShouldShow(true, true, false, false, false)).toBe(false);
+  });
+  test("hides while a modal / settings overlay is open", () => {
+    expect(fabShouldShow(true, true, false, true, true)).toBe(false);
+  });
+  test("still hides when the feature is off or no file is open", () => {
+    expect(fabShouldShow(false, true, false, true, false)).toBe(false);
+    expect(fabShouldShow(true, false, false, true, false)).toBe(false);
+  });
+  test("defaults stay backwards compatible", () => {
+    expect(fabShouldShow(true, true)).toBe(true);
+  });
+});

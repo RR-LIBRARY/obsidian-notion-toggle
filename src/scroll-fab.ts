@@ -45,6 +45,7 @@ export class ScrollFab {
   private wrap: HTMLDivElement;
   private root: HTMLButtonElement;
   private icon: HTMLSpanElement;
+  private sr!: HTMLSpanElement;
   private pressTimer: number | null = null;
   private startX = 0;
   private startY = 0;
@@ -68,7 +69,27 @@ export class ScrollFab {
     this.icon.className = "ntt-fab-icon";
     this.icon.innerHTML = PLAY_ICON;
     this.root.appendChild(this.icon);
+    this.root.type = "button";
     this.root.setAttribute("aria-label", "Autoscroll — tap to start, hold for settings");
+    this.root.setAttribute("aria-pressed", "false");
+    this.root.setAttribute("aria-keyshortcuts", "Control+Shift+S");
+    this.root.title = "Autoscroll — tap to start, hold for settings";
+    // v1.2.4 — screen-reader text + live region for state changes.
+    this.sr = document.createElement("span");
+    this.sr.className = "ntt-fab-sr";
+    this.sr.setAttribute("aria-live", "polite");
+    this.sr.textContent = "Autoscroll stopped";
+    this.root.appendChild(this.sr);
+    // Keyboard parity: Enter/Space = tap, Shift+Enter or context key = sheet.
+    this.root.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        if (e.shiftKey) this.cb.onLongPress();
+        else this.cb.onTap();
+        this.show();
+      }
+    });
+    this.root.addEventListener("focus", () => this.show());
 
     this.root.addEventListener("pointerdown", (e) => {
       this.longFired = false;
@@ -129,12 +150,15 @@ export class ScrollFab {
 
   setRunning(running: boolean) {
     this.icon.innerHTML = running ? PAUSE_ICON : PLAY_ICON;
+    this.root.setAttribute("aria-pressed", running ? "true" : "false");
+    if (this.sr) this.sr.textContent = running ? "Autoscroll running" : "Autoscroll stopped";
     this.root.classList.toggle("is-running", running);
     this.wrap.classList.toggle("is-running", running);
     this.root.setAttribute(
       "aria-label",
       running ? "Autoscroll running — tap to pause" : "Autoscroll — tap to start, hold for settings"
     );
+    this.root.title = this.root.getAttribute("aria-label") ?? "";
   }
 
   /* ---------- v1.1.8: auto-hide ---------- */

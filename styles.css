@@ -619,8 +619,52 @@ body.is-mobile .ntt-quiz-time {
 .ntt-fab .ntt-fab-icon svg {
   display: block;
 }
+/* v1.2.4 — running = solid blue circle with a white icon (screenshot style). */
 .ntt-fab.is-running {
-  color: var(--interactive-accent, #7c3aed);
+  background: var(--interactive-accent, #2563eb);
+  border-color: var(--interactive-accent, #2563eb);
+  color: var(--text-on-accent, #fff);
+  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.42);
+}
+/* v1.2.4 — keyboard focus is always visible, on both themes. */
+.ntt-fab:focus-visible {
+  outline: 3px solid var(--interactive-accent, #2563eb);
+  outline-offset: 3px;
+}
+.ntt-fab.is-running:focus-visible {
+  outline-color: var(--text-on-accent, #fff);
+  outline-offset: -6px;
+}
+/* Screen-reader-only live text (state announcements). */
+.ntt-fab .ntt-fab-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+/* v1.2.4 — dark mode: lift the circle off the page and keep chevron contrast. */
+.theme-dark .ntt-fab {
+  background: var(--background-secondary-alt, #2a2a2e);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--text-normal, #f2f2f2);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+}
+.theme-dark .ntt-fab.is-running {
+  background: var(--interactive-accent, #3b82f6);
+  border-color: var(--interactive-accent, #3b82f6);
+  color: var(--text-on-accent, #fff);
+}
+@media (prefers-contrast: more) {
+  .ntt-fab {
+    border-width: 2px;
+    border-color: currentColor;
+  }
 }
 .ntt-fab.is-pressed {
   transform: scale(0.92);

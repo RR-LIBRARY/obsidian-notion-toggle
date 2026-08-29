@@ -118,18 +118,20 @@ export function guideProgress(done: string[]): string {
 
 /**
  * Should the floating autoscroll button be on screen?
- * Shown only when the user enabled it, a note is open, and the running
- * control bar (start/pause session) is not already visible.
+ * v1.2.4 — it must also be an actual markdown note view with no modal /
+ * settings layer on top, so the button never floats over Settings, Search,
+ * Graph, Canvas or any other non-note surface.
  */
 export function fabShouldShow(
   enabled: boolean,
   noteOpen: boolean,
-  _controlBarVisible = false
+  _controlBarVisible = false,
+  markdownViewActive = true,
+  overlayOpen = false
 ): boolean {
-  // v1.1.6 — the button now stays on screen during a running session too,
-  // so pause / reverse are always one tap away (CSS offsets it above the bar).
-  return enabled && noteOpen;
+  return enabled && noteOpen && markdownViewActive && !overlayOpen;
 }
+
 
 /* ---------- v1.1.6: shared messages + default hotkeys ---------- */
 

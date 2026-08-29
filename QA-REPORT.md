@@ -144,3 +144,34 @@ If a theme or a re-render swallowed that click, the toggle silently stayed in
 the wrong state. It now verifies the result and syncs `is-collapsed` itself.
 
 **Suite: 249 tests pass**, build clean (207 kb).
+
+## v1.2.4 — FAB colour, dark mode, a11y, note-only visibility + hardcoded-parameter audit
+
+**Tests:** 259 pass / 0 fail (new `tests/fab-a11y.test.ts`, extended `tests/guide.test.ts`).
+
+### Changes verified
+| Area | Behaviour | Evidence |
+|---|---|---|
+| Running colour | Running = solid blue circle (`--interactive-accent`) with white icon; idle = white circle, dark chevrons | `fab-a11y.test.ts` "running state uses the solid blue circle class" + `.ntt-fab.is-running` in styles.css |
+| Dark mode | `.theme-dark .ntt-fab` uses `--background-secondary-alt` + `--text-normal`, stronger shadow; running keeps `--text-on-accent`; `prefers-contrast: more` bumps the border | styles.css |
+| A11y | `type=button`, `aria-label`, `aria-pressed`, `title`, `aria-keyshortcuts`, sr-only `aria-live="polite"` state text, `:focus-visible` ring (inverted while running), Enter/Space = tap, Shift+Enter = sheet, focus wakes the button | `fab-a11y.test.ts` (5 cases) |
+| Note-only floating | FAB only renders when a **MarkdownView** is active and no modal/settings overlay is open; MutationObserver + `layout-change` re-evaluate | `fabShouldShow` (5 new cases) + `syncScrollFab()` |
+
+### Hardcoded parameter audit (top → bottom)
+| Value | Where | Rating | Note |
+|---|---|---|---|
+| `FAB_AUTO_HIDE_MS = 3000` | src/scroll-fab.ts | OK (overridable via `hideAfterMs`) | not user-facing yet — candidate setting |
+| `FAB_LONG_PRESS_MS = 500` | src/scroll-fab.ts | OK | matches platform long-press |
+| `FAB_MOVE_TOLERANCE_PX = 12` | src/scroll-fab.ts | OK | prevents scroll/long-press conflicts |
+| `FAB_PROGRAMMATIC_WINDOW_MS = 150` | src/scroll-fab.ts | OK | > one frame at 60fps, < human tap cadence |
+| `HOLD_PAUSE_MS = 250`, `HOLD_MOVE_TOLERANCE_PX = 12` | src/hold-pause.ts | OK | hold-to-pause feels immediate |
+| `BASE_SPEED = 60`, `MAX_SPEED_MULTIPLIER = 20` | src/scrollmode.ts | OK | derived from settings, clamped |
+| `SPEED_MAX = 1200`, `SPEED_STEP = 20` | src/autoscroll.ts | OK | slider bounds |
+| `QUIZ_SECONDS_MAX = 600` (min 3s) | src/quiz.ts | OK | clamp for parsed `⏱30` markers |
+| 400 ms scroll-container re-resolve | main.ts scroll loop | OK | self-healing, cheap |
+| 700 ms render retry | main.ts start/quiz | OK | mobile render delay |
+| `timerX = 24`, `timerY = 120` | main.ts settings reset | OK | reset-to-default only |
+| FAB size 64 / 68 px, bottom 96 px | styles.css | Minor | fine on phones; could become CSS vars |
+| Notice durations (6000 ms) | main.ts | Minor | consistent but not configurable |
+
+**Verdict:** no blocking hardcoded values; every timing constant is exported and unit-tested, the two "minor" rows are cosmetic-only.
