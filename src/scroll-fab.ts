@@ -2,6 +2,8 @@
  * v1.1.5 — floating launch button (plain DOM, no Obsidian imports).
  * v1.1.6 — added a small reverse chip so direction is also one tap.
  * v1.2.0 — minimal UI: the chip is gone, there is exactly ONE floating button.
+ * v1.2.1 — halo + rounded-square SVG icon, and the plugin's own programmatic
+ *          scrolling no longer counts as "user activity" for the idle timer.
  *
  * Tap        = start / pause autoscroll.
  * Long-press (≥500 ms, touch or mouse) = autoscroll sheet (direction, quiz,
@@ -18,10 +20,30 @@ export const FAB_LONG_PRESS_MS = 500;
 export const FAB_MOVE_TOLERANCE_PX = 12;
 /** v1.1.8 — minimal UI: the button hides itself 3s after the last activity. */
 export const FAB_AUTO_HIDE_MS = 3000;
+/** v1.2.1 — how long after a programmatic scroll we ignore `scroll` events. */
+export const FAB_PROGRAMMATIC_WINDOW_MS = 150;
+
+let programmaticUntil = 0;
+
+/** Call right before the autoscroll loop writes `scrollTop`. */
+export function markProgrammaticScroll(now = Date.now()) {
+  programmaticUntil = now + FAB_PROGRAMMATIC_WINDOW_MS;
+}
+
+/** Is this `scroll` event just our own loop moving the page? */
+export function isProgrammaticScroll(now = Date.now()): boolean {
+  return now < programmaticUntil;
+}
+
+const PLAY_ICON =
+  '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10-6.5a1 1 0 0 0 0-1.7l-10-6.5A1 1 0 0 0 8 5.5z" fill="currentColor"/></svg>';
+const PAUSE_ICON =
+  '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="6.5" y="5" width="4" height="14" rx="1.4" fill="currentColor"/><rect x="13.5" y="5" width="4" height="14" rx="1.4" fill="currentColor"/></svg>';
 
 export class ScrollFab {
   private wrap: HTMLDivElement;
   private root: HTMLButtonElement;
+  private icon: HTMLSpanElement;
   private pressTimer: number | null = null;
   private startX = 0;
   private startY = 0;
@@ -30,6 +52,10 @@ export class ScrollFab {
   private hideTimer: number | null = null;
   private pinned = false;
   private wake = () => this.show();
+  private wakeScroll = () => {
+    if (isProgrammaticScroll()) return;
+    this.show();
+  };
 
   constructor(private cb: ScrollFabCallbacks) {
     this.wrap = document.createElement("div");
@@ -37,7 +63,10 @@ export class ScrollFab {
 
     this.root = document.createElement("button");
     this.root.className = "ntt-fab";
-    this.root.textContent = "▶";
+    this.icon = document.createElement("span");
+    this.icon.className = "ntt-fab-icon";
+    this.icon.innerHTML = PLAY_ICON;
+    this.root.appendChild(this.icon);
     this.root.setAttribute("aria-label", "Autoscroll — tap to start, hold for settings");
 
     this.root.addEventListener("pointerdown", (e) => {
@@ -86,7 +115,7 @@ export class ScrollFab {
 
     // Any tap / scroll anywhere brings the button back for another 3 seconds.
     document.addEventListener("pointerdown", this.wake, true);
-    document.addEventListener("scroll", this.wake, true);
+    document.addEventListener("scroll", this.wakeScroll, true);
     this.arm();
   }
 
@@ -98,7 +127,7 @@ export class ScrollFab {
   }
 
   setRunning(running: boolean) {
-    this.root.textContent = running ? "⏸" : "▶";
+    this.icon.innerHTML = running ? PAUSE_ICON : PLAY_ICON;
     this.root.classList.toggle("is-running", running);
     this.wrap.classList.toggle("is-running", running);
     this.root.setAttribute(
@@ -150,7 +179,7 @@ export class ScrollFab {
     this.cancelTimer();
     this.clearHide();
     document.removeEventListener("pointerdown", this.wake, true);
-    document.removeEventListener("scroll", this.wake, true);
+    document.removeEventListener("scroll", this.wakeScroll, true);
     this.wrap.remove();
   }
 }

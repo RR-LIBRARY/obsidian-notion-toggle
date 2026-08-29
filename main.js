@@ -1533,6 +1533,16 @@ var HoldPause = class {
 var FAB_LONG_PRESS_MS = 500;
 var FAB_MOVE_TOLERANCE_PX = 12;
 var FAB_AUTO_HIDE_MS = 3e3;
+var FAB_PROGRAMMATIC_WINDOW_MS = 150;
+var programmaticUntil = 0;
+function markProgrammaticScroll(now = Date.now()) {
+  programmaticUntil = now + FAB_PROGRAMMATIC_WINDOW_MS;
+}
+function isProgrammaticScroll(now = Date.now()) {
+  return now < programmaticUntil;
+}
+var PLAY_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10-6.5a1 1 0 0 0 0-1.7l-10-6.5A1 1 0 0 0 8 5.5z" fill="currentColor"/></svg>';
+var PAUSE_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="6.5" y="5" width="4" height="14" rx="1.4" fill="currentColor"/><rect x="13.5" y="5" width="4" height="14" rx="1.4" fill="currentColor"/></svg>';
 var ScrollFab = class {
   constructor(cb) {
     this.cb = cb;
@@ -1544,11 +1554,19 @@ var ScrollFab = class {
     this.hideTimer = null;
     this.pinned = false;
     this.wake = () => this.show();
+    this.wakeScroll = () => {
+      if (isProgrammaticScroll())
+        return;
+      this.show();
+    };
     this.wrap = document.createElement("div");
     this.wrap.className = "ntt-fab-wrap";
     this.root = document.createElement("button");
     this.root.className = "ntt-fab";
-    this.root.textContent = "\u25B6";
+    this.icon = document.createElement("span");
+    this.icon.className = "ntt-fab-icon";
+    this.icon.innerHTML = PLAY_ICON;
+    this.root.appendChild(this.icon);
     this.root.setAttribute("aria-label", "Autoscroll \u2014 tap to start, hold for settings");
     this.root.addEventListener("pointerdown", (e) => {
       this.longFired = false;
@@ -1591,7 +1609,7 @@ var ScrollFab = class {
     this.wrap.appendChild(this.root);
     document.body.appendChild(this.wrap);
     document.addEventListener("pointerdown", this.wake, true);
-    document.addEventListener("scroll", this.wake, true);
+    document.addEventListener("scroll", this.wakeScroll, true);
     this.arm();
   }
   cancelTimer() {
@@ -1601,7 +1619,7 @@ var ScrollFab = class {
     }
   }
   setRunning(running) {
-    this.root.textContent = running ? "\u23F8" : "\u25B6";
+    this.icon.innerHTML = running ? PAUSE_ICON : PLAY_ICON;
     this.root.classList.toggle("is-running", running);
     this.wrap.classList.toggle("is-running", running);
     this.root.setAttribute(
@@ -1648,7 +1666,7 @@ var ScrollFab = class {
     this.cancelTimer();
     this.clearHide();
     document.removeEventListener("pointerdown", this.wake, true);
-    document.removeEventListener("scroll", this.wake, true);
+    document.removeEventListener("scroll", this.wakeScroll, true);
     this.wrap.remove();
   }
 };
@@ -2137,7 +2155,8 @@ var DEFAULT_SETTINGS = {
   autoReview: true,
   scrollFab: true,
   toolbarGuideDone: [],
-  scrollBarClassic: false
+  scrollBarClassic: false,
+  scrollQuiet: true
 };
 var CALLOUT_TYPES = ["question", "info", "note", "abstract", "tip", "warning", "success"];
 var TOGGLE_COLORS = [
@@ -2199,6 +2218,10 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     this.scrollDwellDir = 1;
     this.scrollBoxes = [];
     this.scrollBoxesAt = 0;
+    /** v1.2.1 — last time we tried to re-find a scrollable container. */
+    this.scrollRelocateAt = 0;
+    /** v1.2.1 — the quick-controls sheet is open (FAB stays pinned). */
+    this.scrollSheetOpen = false;
     this.scrollElByOrdinal = /* @__PURE__ */ new Map();
     this.scrollTargets = [];
     this.scrollTargetsKey = "";
@@ -3386,11 +3409,15 @@ ${row}`, { line: cursor.line, ch: line.length });
     if (!this.scrollFabBtn) {
       this.scrollFabBtn = new ScrollFab({
         onTap: () => this.toggleAutoScroll(),
-        onLongPress: () => new ScrollSheetModal(this.app, this).open()
+        onLongPress: () => {
+          this.scrollSheetOpen = true;
+          this.syncScrollFab();
+          new ScrollSheetModal(this.app, this).open();
+        }
       });
     }
     this.scrollFabBtn.setRunning(this.scrollRunning);
-    this.scrollFabBtn.setPinned(!this.scrollRunning);
+    this.scrollFabBtn.setPinned(!this.scrollRunning || this.scrollSheetOpen);
   }
   /**
    * v1.1.6 — guard for actions that only make sense mid-session.
@@ -3426,27 +3453,51 @@ ${row}`, { line: cursor.line, ch: line.length });
    * unrendered view on mobile) and report "no toggles" while the note on
    * screen clearly has them.
    */
+  /**
+   * v1.2.1 — status notice that respects "quiet mode". Errors keep using
+   * `new Notice(...)` directly so they are never swallowed.
+   */
+  say(message, ms = 3e3) {
+    if (this.settings.scrollQuiet)
+      return;
+    new import_obsidian.Notice(message, ms);
+  }
   findScrollContainer() {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
+    const scrollable = (el) => {
+      const h = el;
+      return !!h && h.scrollHeight - h.clientHeight > 2;
+    };
+    const visible = (el) => !!el && el.offsetParent !== null;
+    const candidates = [];
     const view = this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
     if (view) {
-      const fromView = view.getMode() === "preview" ? (_a = view.previewMode) == null ? void 0 : _a.containerEl : view.contentEl.querySelector(".cm-scroller");
-      if (fromView)
-        return fromView;
+      const root = (_b = (_a = view.previewMode) == null ? void 0 : _a.containerEl) != null ? _b : view.contentEl;
+      candidates.push(
+        root == null ? void 0 : root.querySelector(".markdown-preview-view"),
+        view.contentEl.querySelector(".markdown-preview-view"),
+        root,
+        view.contentEl.querySelector(".cm-scroller"),
+        view.contentEl
+      );
     }
-    const visible = (el) => !!el && el.offsetParent !== null;
-    const leaf = (_b = document.querySelector(".workspace-leaf.mod-active")) != null ? _b : document;
-    const candidates = [
+    const leaf = (_c = document.querySelector(".workspace-leaf.mod-active")) != null ? _c : document;
+    candidates.push(
       leaf.querySelector(".markdown-preview-view"),
       leaf.querySelector(".cm-scroller"),
-      document.querySelector(".workspace-leaf.mod-active .markdown-preview-view"),
       ...Array.from(document.querySelectorAll(".markdown-preview-view")),
       ...Array.from(document.querySelectorAll(".cm-scroller"))
-    ];
+    );
     for (const el of candidates)
-      if (visible(el))
+      if (scrollable(el) && visible(el))
         return el;
-    return (_c = candidates.find(Boolean)) != null ? _c : null;
+    for (const el of candidates)
+      if (scrollable(el))
+        return el;
+    for (const el of candidates)
+      if (visible(el != null ? el : null))
+        return el;
+    return (_d = candidates.find(Boolean)) != null ? _d : null;
   }
   /**
    * v1.1.7 — does the active note's *source* contain toggles? Used when the
@@ -3731,7 +3782,7 @@ ${deckSummary(
         this.syncScrollFab();
         return;
       }
-      new import_obsidian.Notice(MSG_PLAIN_SCROLL, 4e3);
+      this.say(MSG_PLAIN_SCROLL, 4e3);
     }
     this.scrollPlan = plan;
     const routed = this.settings.scrollMode === "route" || this.settings.scrollMode === "shuffle";
@@ -3771,7 +3822,7 @@ ${deckSummary(
     this.scrollLastEvent = "";
     this.scrollLastGrade = "";
     this.syncScrollDebugOverlay();
-    new import_obsidian.Notice(sessionLabel(this.settings, plan.length));
+    this.say(sessionLabel(this.settings, plan.length));
     this.renderScrollBar();
     this.syncScrollFab();
     this.syncHoldPause();
@@ -3849,7 +3900,7 @@ ${deckSummary(
     this.syncScrollFab();
     this.syncHoldPause();
     if (notify)
-      new import_obsidian.Notice("Autoscroll stopped.");
+      this.say("Autoscroll stopped.");
   }
   async setScrollReverse(reverse) {
     this.settings.scrollReverse = reverse;
@@ -3860,7 +3911,7 @@ ${deckSummary(
     await this.rememberPerNoteScrollPrefs();
     this.renderScrollBar();
     this.syncScrollFab();
-    new import_obsidian.Notice(reverse ? "Autoscroll: reverse \u2191" : "Autoscroll: forward \u2193");
+    this.say(reverse ? "Autoscroll: reverse \u2191" : "Autoscroll: forward \u2193");
   }
   async setScrollFilter(filter) {
     this.settings.scrollFilter = filter;
@@ -3869,7 +3920,7 @@ ${deckSummary(
       this.refreshScrollPlan();
     }
     this.renderScrollBar();
-    new import_obsidian.Notice(`Autoscroll filter: ${filterLabel(filter)}`);
+    this.say(`Autoscroll filter: ${filterLabel(filter)}`);
   }
   async nudgeScrollSpeed(delta) {
     this.settings.scrollSpeed = clampSpeed(this.settings.scrollSpeed + delta);
@@ -4110,6 +4161,7 @@ ${deckSummary(
       this.renderScrollBar();
     }
     const max = container.scrollHeight - container.clientHeight;
+    markProgrammaticScroll();
     if (max > 2) {
       if (Math.abs(container.scrollTop - this.scrollPos) > 2)
         this.scrollPos = container.scrollTop;
@@ -4213,10 +4265,23 @@ ${deckSummary(
           container.scrollTop = Math.floor(this.scrollPos);
           this.scrollDwellKey = null;
         } else {
-          new import_obsidian.Notice("Autoscroll finished \u2014 every selected toggle revised.");
+          this.say("Autoscroll finished \u2014 every selected toggle revised.");
           this.stopAutoScroll(false);
           return;
         }
+      }
+    } else if (ts - this.scrollRelocateAt > 400) {
+      this.scrollRelocateAt = ts;
+      const better = this.findScrollContainer();
+      if (better && better !== container && better.scrollHeight - better.clientHeight > 2) {
+        this.restoreScrollSmoothing();
+        this.scrollContainer = better;
+        this.scrollPrevBehavior = better.style.scrollBehavior;
+        better.style.scrollBehavior = "auto";
+        this.scrollPos = better.scrollTop;
+        this.scrollBoxes = [];
+        this.scrollBoxesAt = 0;
+        this.scrollSmoothEl = null;
       }
     }
     if (this.scrollDebugOverlay)
@@ -4675,6 +4740,11 @@ var ScrollSheetModal = class extends import_obsidian.Modal {
     super(app);
     this.plugin = plugin;
   }
+  onClose() {
+    this.contentEl.empty();
+    this.plugin.scrollSheetOpen = false;
+    this.plugin.syncScrollFab();
+  }
   onOpen() {
     this.modalEl.addClass("ntt-sheet");
     this.setTitle("Autoscroll \u2014 quick controls");
@@ -4773,6 +4843,12 @@ var ScrollSheetModal = class extends import_obsidian.Modal {
         this.plugin.syncScrollDebugOverlay();
       })
     );
+    new import_obsidian.Setting(this.contentEl).setName("Quiet mode (no popups)").setDesc("ON = speed / direction / plain-scroll wale notice nahi dikhenge.").addToggle(
+      (tg) => tg.setValue(s.scrollQuiet).onChange(async (v) => {
+        this.plugin.settings.scrollQuiet = v;
+        await this.plugin.saveSettings();
+      })
+    );
     new import_obsidian.Setting(this.contentEl).setName("More").addButton(
       (btn) => btn.setButtonText("Go to first").onClick(() => {
         this.close();
@@ -4783,9 +4859,6 @@ var ScrollSheetModal = class extends import_obsidian.Modal {
     ).addButton(
       (btn) => btn.setButtonText("Toolbar guide").onClick(() => new MobileToolbarGuideModal(this.app, this.plugin).open())
     );
-  }
-  onClose() {
-    this.contentEl.empty();
   }
 };
 var MobileToolbarGuideModal = class extends import_obsidian.Modal {
@@ -5337,6 +5410,14 @@ var NotionToggleSettingTab = class extends import_obsidian.PluginSettingTab {
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.scrollBarClassic).onChange(async (v) => {
         this.plugin.settings.scrollBarClassic = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName("Quiet mode").setDesc(
+      "ON (default) = autoscroll ke status popup (speed/direction/filter/plain-scroll) nahi dikhenge; sirf zaroori error notices aayenge."
+    ).addToggle(
+      (tg) => tg.setValue(this.plugin.settings.scrollQuiet).onChange(async (v) => {
+        this.plugin.settings.scrollQuiet = v;
         await this.plugin.saveSettings();
       })
     );

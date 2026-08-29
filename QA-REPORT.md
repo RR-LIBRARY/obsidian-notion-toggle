@@ -78,3 +78,18 @@ single-button FAB.
   fully collapsed after stopping; the second floating chip is gone.
 - **Note:** the classic control bar stays off by default — Settings → "Classic
   control bar" restores the old scrubber if you want it back.
+
+## v1.2.1 — autoscroll fix, new FAB, quiet notices
+
+| Area | Result |
+| --- | --- |
+| Autoscroll actually moves the page | FIXED — `findScrollContainer()` now picks an element that can really scroll (`scrollHeight - clientHeight > 2`). Reading mode was returning `previewMode.containerEl`, a wrapper, so `scrollTop` writes were no-ops. |
+| Self-healing container | The frame loop re-resolves the scroller after 400 ms if the current one cannot scroll (lazy render / view swap). |
+| Floating button UI | Single circular halo button with an orange rounded-square SVG icon (▶ / ⏸), matching the screenshot. |
+| Auto-hide | Fades 3 s after the last real user activity; the plugin's own programmatic scrolling no longer keeps it awake; pinned while paused or while the sheet is open. |
+| Popup spam | New "Quiet mode" (default ON, in Settings and in the sheet): status notices (session label, plain-scroll, direction, filter, stop, finish) are suppressed. Errors still show. |
+| Pause-at modes | every / odd / even / custom / route / shuffle + A4 tall-page chunking covered by `tests/scrollmode.test.ts` and `tests/planner.test.ts`. |
+| Toggle types | `!note`, `!question`, `!info`, custom types, raw `<details>`, nested outermost-only — `tests/verify-v120.test.ts`. |
+| Quiz timing | Per-question duration, `⏱30` override, auto-next, pause/resume, skip, post-quiz toggle restore — `tests/verify-v120.test.ts`. |
+| New regression test | `tests/scroll-loop.test.ts` proves frames advance `scrollTop` and that a non-scrollable wrapper is skipped. |
+| Suite | 231 tests pass, typecheck clean, bundle 207 kb. |

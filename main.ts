@@ -66,7 +66,7 @@ import { ScrollDebugOverlay, type DebugFrame } from "./src/debug-overlay";
 import { orderExplainer, rowLabel, weakRows } from "./src/stats-panel";
 import { ScrollBar } from "./src/autoscroll-ui";
 import { HoldPause } from "./src/hold-pause";
-import { ScrollFab } from "./src/scroll-fab";
+import { ScrollFab, markProgrammaticScroll } from "./src/scroll-fab";
 import {
   HOTKEYS,
   MSG_NOT_RUNNING,
@@ -183,6 +183,8 @@ interface NotionToggleSettings extends PomodoroSettings, AutoScrollSettings, Qui
   toolbarGuideDone: string[];
   /** v1.1.8: show the old full control bar instead of the minimal FAB-only UI. */
   scrollBarClassic: boolean;
+  /** v1.2.1: quiet mode — only errors pop up, no status notices. */
+  scrollQuiet: boolean;
 }
 
 const DEFAULT_SETTINGS: NotionToggleSettings = {
@@ -205,6 +207,7 @@ const DEFAULT_SETTINGS: NotionToggleSettings = {
   scrollFab: true,
   toolbarGuideDone: [],
   scrollBarClassic: false,
+  scrollQuiet: true,
 };
 
 const CALLOUT_TYPES = ["question", "info", "note", "abstract", "tip", "warning", "success"];
@@ -273,6 +276,11 @@ export default class NotionTogglePlugin extends Plugin {
   scrollDwellDir = 1;
   scrollBoxes: PageBox[] = [];
   scrollBoxesAt = 0;
+  /** v1.2.1 — last time we tried to re-find a scrollable container. */
+  scrollRelocateAt = 0;
+  /** v1.2.1 — the quick-controls sheet is open (FAB stays pinned). */
+  scrollSheetOpen = false;
+
   scrollElByOrdinal: Map<number, HTMLElement> = new Map();
   scrollTargets: DwellTarget[] = [];
   scrollTargetsKey = "";
@@ -1602,13 +1610,18 @@ export default class NotionTogglePlugin extends Plugin {
     if (!this.scrollFabBtn) {
       this.scrollFabBtn = new ScrollFab({
         onTap: () => this.toggleAutoScroll(),
-        onLongPress: () => new ScrollSheetModal(this.app, this).open(),
+        onLongPress: () => {
+          // v1.2.1 — keep the button on screen while the sheet is open.
+          this.scrollSheetOpen = true;
+          this.syncScrollFab();
+          new ScrollSheetModal(this.app, this).open();
+        },
       });
     }
     this.scrollFabBtn.setRunning(this.scrollRunning);
     // v1.1.8 — auto-hide only while it is actually scrolling; when idle or
     // paused the button stays put so start / resume is one tap away.
-    this.scrollFabBtn.setPinned(!this.scrollRunning);
+    this.scrollFabBtn.setPinned(!this.scrollRunning || this.scrollSheetOpen);
   }
 
   /**
@@ -1647,28 +1660,52 @@ export default class NotionTogglePlugin extends Plugin {
    * unrendered view on mobile) and report "no toggles" while the note on
    * screen clearly has them.
    */
+  /**
+   * v1.2.1 — status notice that respects "quiet mode". Errors keep using
+   * `new Notice(...)` directly so they are never swallowed.
+   */
+  say(message: string, ms = 3000) {
+    if (this.settings.scrollQuiet) return;
+    new Notice(message, ms);
+  }
+
   private findScrollContainer(): HTMLElement | null {
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (view) {
-      const fromView =
-        view.getMode() === "preview"
-          ? (view.previewMode?.containerEl as HTMLElement | undefined)
-          : (view.contentEl.querySelector(".cm-scroller") as HTMLElement | null);
-      if (fromView) return fromView;
-    }
+    // v1.2.1 — only an element that can actually scroll is useful: in reading
+    // mode `previewMode.containerEl` is a wrapper, and writing `scrollTop` on
+    // it silently does nothing (autoscroll "runs" but the page never moves).
+    const scrollable = (el: Element | null | undefined): el is HTMLElement => {
+      const h = el as HTMLElement | null | undefined;
+      return !!h && h.scrollHeight - h.clientHeight > 2;
+    };
     const visible = (el: Element | null): el is HTMLElement =>
       !!el && (el as HTMLElement).offsetParent !== null;
+
+    const candidates: (Element | null | undefined)[] = [];
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (view) {
+      const root = (view.previewMode?.containerEl as HTMLElement | undefined) ?? view.contentEl;
+      candidates.push(
+        root?.querySelector(".markdown-preview-view"),
+        view.contentEl.querySelector(".markdown-preview-view"),
+        root,
+        view.contentEl.querySelector(".cm-scroller"),
+        view.contentEl
+      );
+    }
     const leaf = document.querySelector(".workspace-leaf.mod-active") ?? document;
-    const candidates = [
+    candidates.push(
       leaf.querySelector(".markdown-preview-view"),
       leaf.querySelector(".cm-scroller"),
-      document.querySelector(".workspace-leaf.mod-active .markdown-preview-view"),
       ...Array.from(document.querySelectorAll(".markdown-preview-view")),
-      ...Array.from(document.querySelectorAll(".cm-scroller")),
-    ];
-    for (const el of candidates) if (visible(el)) return el;
+      ...Array.from(document.querySelectorAll(".cm-scroller"))
+    );
+
+    for (const el of candidates) if (scrollable(el) && visible(el)) return el;
+    for (const el of candidates) if (scrollable(el)) return el;
+    for (const el of candidates) if (visible(el ?? null)) return el as HTMLElement;
     return (candidates.find(Boolean) as HTMLElement | undefined) ?? null;
   }
+
 
   /**
    * v1.1.7 — does the active note's *source* contain toggles? Used when the
@@ -1953,7 +1990,7 @@ export default class NotionTogglePlugin extends Plugin {
       }
       // v1.2.0 — plain note (no toggles at all): still scroll it end to end
       // instead of refusing to start. No stops, no dwell, just smooth reading.
-      new Notice(MSG_PLAIN_SCROLL, 4000);
+      this.say(MSG_PLAIN_SCROLL, 4000);
     }
     this.scrollPlan = plan;
     const routed = this.settings.scrollMode === "route" || this.settings.scrollMode === "shuffle";
@@ -1995,7 +2032,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollLastEvent = "";
     this.scrollLastGrade = "";
     this.syncScrollDebugOverlay();
-    new Notice(sessionLabel(this.settings, plan.length));
+    this.say(sessionLabel(this.settings, plan.length));
     this.renderScrollBar();
     this.syncScrollFab();
     this.syncHoldPause();
@@ -2068,7 +2105,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollHoldPaused = false;
     this.syncScrollFab();
     this.syncHoldPause();
-    if (notify) new Notice("Autoscroll stopped.");
+    if (notify) this.say("Autoscroll stopped.");
   }
 
   async setScrollReverse(reverse: boolean) {
@@ -2080,7 +2117,7 @@ export default class NotionTogglePlugin extends Plugin {
     await this.rememberPerNoteScrollPrefs();
     this.renderScrollBar();
     this.syncScrollFab();
-    new Notice(reverse ? "Autoscroll: reverse ↑" : "Autoscroll: forward ↓");
+    this.say(reverse ? "Autoscroll: reverse ↑" : "Autoscroll: forward ↓");
   }
 
   async setScrollFilter(filter: RecallColor[]) {
@@ -2090,7 +2127,7 @@ export default class NotionTogglePlugin extends Plugin {
       this.refreshScrollPlan();
     }
     this.renderScrollBar();
-    new Notice(`Autoscroll filter: ${filterLabel(filter)}`);
+    this.say(`Autoscroll filter: ${filterLabel(filter)}`);
   }
 
   async nudgeScrollSpeed(delta: number) {
@@ -2333,6 +2370,9 @@ export default class NotionTogglePlugin extends Plugin {
     }
 
     const max = container.scrollHeight - container.clientHeight;
+    // v1.2.1 — our own writes must not wake the auto-hiding FAB.
+    markProgrammaticScroll();
+
     if (max > 2) {
       // The user scrolled out from under us — re-seed instead of fighting them.
       if (Math.abs(container.scrollTop - this.scrollPos) > 2) this.scrollPos = container.scrollTop;
@@ -2447,12 +2487,28 @@ export default class NotionTogglePlugin extends Plugin {
           container.scrollTop = Math.floor(this.scrollPos);
           this.scrollDwellKey = null;
         } else {
-          new Notice("Autoscroll finished — every selected toggle revised.");
+          this.say("Autoscroll finished — every selected toggle revised.");
           this.stopAutoScroll(false);
           return;
         }
       }
+    } else if (ts - this.scrollRelocateAt > 400) {
+      // v1.2.1 — the container we latched onto cannot scroll (wrapper element,
+      // or the view re-rendered). Look for the real scroller and carry on.
+      this.scrollRelocateAt = ts;
+      const better = this.findScrollContainer();
+      if (better && better !== container && better.scrollHeight - better.clientHeight > 2) {
+        this.restoreScrollSmoothing();
+        this.scrollContainer = better;
+        this.scrollPrevBehavior = better.style.scrollBehavior;
+        better.style.scrollBehavior = "auto";
+        this.scrollPos = better.scrollTop;
+        this.scrollBoxes = [];
+        this.scrollBoxesAt = 0;
+        this.scrollSmoothEl = null;
+      }
     }
+
 
     if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
     this.scheduleScrollFrame();
@@ -2974,6 +3030,12 @@ class ScrollSheetModal extends Modal {
     super(app);
   }
 
+  onClose() {
+    this.contentEl.empty();
+    this.plugin.scrollSheetOpen = false;
+    this.plugin.syncScrollFab();
+  }
+
   onOpen() {
     this.modalEl.addClass("ntt-sheet");
     this.setTitle("Autoscroll — quick controls");
@@ -3142,6 +3204,18 @@ class ScrollSheetModal extends Modal {
       })
     );
 
+    // v1.2.1 — silence the status popups straight from the sheet.
+    new Setting(this.contentEl)
+      .setName("Quiet mode (no popups)")
+      .setDesc("ON = speed / direction / plain-scroll wale notice nahi dikhenge.")
+      .addToggle((tg) =>
+        tg.setValue(s.scrollQuiet).onChange(async (v) => {
+          this.plugin.settings.scrollQuiet = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+
     new Setting(this.contentEl)
       .setName("More")
       .addButton((btn) =>
@@ -3162,9 +3236,8 @@ class ScrollSheetModal extends Modal {
       );
   }
 
-  onClose() {
-    this.contentEl.empty();
-  }
+
+
 }
 
 /* ---------- v1.1.5: in-app guide — which mobile toolbar commands to add ---------- */
@@ -3963,6 +4036,20 @@ class NotionToggleSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         })
       );
+
+    new Setting(containerEl)
+      .setName("Quiet mode")
+      .setDesc(
+        "ON (default) = autoscroll ke status popup (speed/direction/filter/plain-scroll) nahi dikhenge; sirf zaroori error notices aayenge."
+      )
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.scrollQuiet).onChange(async (v) => {
+          this.plugin.settings.scrollQuiet = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+
 
     new Setting(containerEl)
       .setName("Mobile toolbar guide")
