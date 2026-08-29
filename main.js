@@ -957,7 +957,9 @@ var DEFAULT_AUTOSCROLL = {
   scrollNewMix: 0.35,
   scrollAutoGrade: true,
   scrollMemory: {},
-  scrollPerNote: {}
+  scrollPerNote: {},
+  scrollFab: true,
+  toolbarGuideDone: []
 };
 var SPEED_MIN = 1;
 var SPEED_MAX = 1200;
@@ -1438,6 +1440,202 @@ var ScrollBar = class {
   }
 };
 
+// src/scroll-fab.ts
+var FAB_LONG_PRESS_MS = 500;
+var FAB_MOVE_TOLERANCE_PX = 12;
+var ScrollFab = class {
+  constructor(cb) {
+    this.cb = cb;
+    this.pressTimer = null;
+    this.startX = 0;
+    this.startY = 0;
+    this.longFired = false;
+    this.wrap = document.createElement("div");
+    this.wrap.className = "ntt-fab-wrap";
+    this.rev = document.createElement("button");
+    this.rev.className = "ntt-fab-rev";
+    this.rev.textContent = "\u2193";
+    this.rev.setAttribute("aria-label", "Autoscroll direction \u2014 forward");
+    this.rev.addEventListener("click", (e) => {
+      var _a, _b;
+      e.preventDefault();
+      e.stopPropagation();
+      (_b = (_a = this.cb).onReverse) == null ? void 0 : _b.call(_a);
+    });
+    this.root = document.createElement("button");
+    this.root.className = "ntt-fab";
+    this.root.textContent = "\u25B6";
+    this.root.setAttribute("aria-label", "Autoscroll \u2014 tap to start, hold for settings");
+    this.root.addEventListener("pointerdown", (e) => {
+      this.longFired = false;
+      this.startX = e.clientX;
+      this.startY = e.clientY;
+      this.cancelTimer();
+      this.pressTimer = window.setTimeout(() => {
+        this.pressTimer = null;
+        this.longFired = true;
+        this.root.classList.add("is-pressed");
+        this.cb.onLongPress();
+      }, FAB_LONG_PRESS_MS);
+    });
+    this.root.addEventListener("pointermove", (e) => {
+      if (this.pressTimer === null)
+        return;
+      const dx = Math.abs(e.clientX - this.startX);
+      const dy = Math.abs(e.clientY - this.startY);
+      if (dx > FAB_MOVE_TOLERANCE_PX || dy > FAB_MOVE_TOLERANCE_PX) {
+        this.cancelTimer();
+      }
+    });
+    const finish = (e) => {
+      this.root.classList.remove("is-pressed");
+      if (this.pressTimer !== null) {
+        this.cancelTimer();
+        if (!this.longFired) {
+          e.preventDefault();
+          this.cb.onTap();
+        }
+      }
+    };
+    this.root.addEventListener("pointerup", finish);
+    this.root.addEventListener("pointercancel", () => {
+      this.cancelTimer();
+      this.root.classList.remove("is-pressed");
+    });
+    this.root.addEventListener("click", (e) => e.preventDefault());
+    this.root.addEventListener("contextmenu", (e) => e.preventDefault());
+    this.wrap.appendChild(this.rev);
+    this.wrap.appendChild(this.root);
+    document.body.appendChild(this.wrap);
+  }
+  cancelTimer() {
+    if (this.pressTimer !== null) {
+      window.clearTimeout(this.pressTimer);
+      this.pressTimer = null;
+    }
+  }
+  setRunning(running) {
+    this.root.textContent = running ? "\u23F8" : "\u25B6";
+    this.root.classList.toggle("is-running", running);
+    this.wrap.classList.toggle("is-running", running);
+    this.root.setAttribute(
+      "aria-label",
+      running ? "Autoscroll running \u2014 tap to pause" : "Autoscroll \u2014 tap to start, hold for settings"
+    );
+  }
+  /** v1.1.6 — reflect the current scroll direction on the chip. */
+  setReverse(reverse) {
+    this.rev.textContent = reverse ? "\u2191" : "\u2193";
+    this.rev.classList.toggle("is-reverse", reverse);
+    this.rev.setAttribute(
+      "aria-label",
+      reverse ? "Autoscroll direction \u2014 reverse (tap for forward)" : "Autoscroll direction \u2014 forward (tap for reverse)"
+    );
+  }
+  destroy() {
+    this.cancelTimer();
+    this.wrap.remove();
+  }
+};
+
+// src/guide.ts
+var TOOLBAR_COMMANDS = [
+  {
+    id: "smart-autoscroll",
+    name: "Autoscroll (start / pause revision)",
+    why: "Ek tap se autoscroll shuru ya pause \u2014 sabse zaroori.",
+    priority: 1
+  },
+  {
+    id: "autoscroll-sheet",
+    name: "Autoscroll: sheet (all controls)",
+    why: "Saare controls \u2014 speed, pause, filter, mode \u2014 ek sheet me.",
+    priority: 2
+  },
+  {
+    id: "autoscroll-reverse",
+    name: "Autoscroll: reverse direction",
+    why: "Fast revision ke liye neeche \u2192 upar scroll.",
+    priority: 3
+  },
+  {
+    id: "autoscroll-filter",
+    name: "Autoscroll: choose colour filter",
+    why: "Sirf \u{1F534} / \u{1F7E1} / \u{1F7E2} toggles par rukna ho to.",
+    priority: 4
+  },
+  {
+    id: "autoscroll-mode",
+    name: "Autoscroll: pause at (odd / even / custom / route / shuffle)",
+    why: "Kaunse toggles par rukna hai \u2014 odd/even/route/shuffle.",
+    priority: 5
+  },
+  {
+    id: "autoscroll-dwell",
+    name: "Autoscroll: pause for (hold time)",
+    why: "Har toggle par kitni der ruke (5s \u2026 1h).",
+    priority: 6
+  },
+  {
+    id: "autoscroll-speed-presets",
+    name: "Autoscroll: speed presets (0.02x \u2026 20x)",
+    why: "Reader wali speed chips \u2014 0.02x se 20x tak.",
+    priority: 7
+  },
+  {
+    id: "autoscroll-top",
+    name: "Autoscroll: go to first toggle",
+    why: "Wapas note ke shuruaat / aakhir par jump.",
+    priority: 8
+  },
+  {
+    id: "scroll-stats",
+    name: "Autoscroll: revision stats (weak toggles)",
+    why: "Shuffle kis ko pehle laata hai aur kyun \u2014 FSRS stats.",
+    priority: 9
+  },
+  {
+    id: "autoscroll-stop",
+    name: "Autoscroll: stop",
+    why: "Session poori tarah band kare (floating bar ka \u2715 bhi yehi karta hai).",
+    priority: 10
+  }
+];
+var TOOLBAR_STEPS = [
+  "Obsidian me Settings \u2699\uFE0F kholo.",
+  "Mobile section me jao \u2192 Manage toolbar.",
+  "Wahan + / Add command dabao aur neeche wali commands ek-ek karke add karo.",
+  "Jo add ho gayi, us row par tap karke tick \u2713 kar do \u2014 list yaad rehti hai.",
+  "Ab koi note kholo aur toolbar se \u25B6 Autoscroll dabao \u2014 bas!"
+];
+function toggleGuideDone(done, id) {
+  const set = new Set(done);
+  if (set.has(id))
+    set.delete(id);
+  else
+    set.add(id);
+  return TOOLBAR_COMMANDS.filter((c) => set.has(c.id)).map((c) => c.id);
+}
+function guideProgress(done) {
+  const known = new Set(TOOLBAR_COMMANDS.map((c) => c.id));
+  const count = done.filter((id) => known.has(id)).length;
+  return `${count}/${TOOLBAR_COMMANDS.length}`;
+}
+function fabShouldShow(enabled, noteOpen, _controlBarVisible = false) {
+  return enabled && noteOpen;
+}
+var MSG_NOT_RUNNING = 'Autoscroll band hai \u2014 pehle "Autoscroll (start / pause revision)" chalao (Ctrl/Cmd+Shift+S), ya floating \u25B6 dabao.';
+var MSG_NO_TOGGLES = "Is note me koi toggle nahi mila \u2014 callout (> [!note]- \u2026) ya <details> banao, phir autoscroll chalao.";
+var HOTKEYS = [
+  { id: "smart-autoscroll", label: "Ctrl/Cmd+Shift+S" },
+  { id: "autoscroll-reverse", label: "Ctrl/Cmd+Shift+R" },
+  { id: "autoscroll-sheet", label: "Ctrl/Cmd+Shift+A" }
+];
+function hotkeyLabel(id) {
+  var _a, _b;
+  return (_b = (_a = HOTKEYS.find((h) => h.id === id)) == null ? void 0 : _a.label) != null ? _b : "";
+}
+
 // src/reader/shuffleDeck.ts
 var MAX_DECK_PAGES = 500;
 var isFinitePositive = (n) => typeof n === "number" && Number.isFinite(n) && n > 0;
@@ -1881,6 +2079,8 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     this.scrollSmoothEl = null;
     this.scrollPrevTransform = null;
     this.scrollPrevBehavior = null;
+    /** v1.1.5 floating launch button (tap = start, hold = sheet). */
+    this.scrollFabBtn = null;
     /* v1.1.0 quiz mode state */
     this.quizHud = null;
     this.quizState = null;
@@ -2199,13 +2399,15 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     this.addCommand({
       id: "smart-autoscroll",
       icon: "chevrons-down",
-      name: "Autoscroll (start / pause revision)",
+      name: `Autoscroll (start / pause revision) \u2014 ${hotkeyLabel("smart-autoscroll")}`,
+      hotkeys: [{ modifiers: ["Mod", "Shift"], key: "S" }],
       callback: () => this.toggleAutoScroll()
     });
     this.addCommand({
       id: "autoscroll-reverse",
       icon: "chevrons-up",
-      name: "Autoscroll: reverse direction",
+      name: `Autoscroll: reverse direction \u2014 ${hotkeyLabel("autoscroll-reverse")}`,
+      hotkeys: [{ modifiers: ["Mod", "Shift"], key: "R" }],
       callback: () => this.setScrollReverse(!this.settings.scrollReverse)
     });
     this.addCommand({
@@ -2218,19 +2420,44 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
       id: "autoscroll-faster",
       icon: "gauge",
       name: "Autoscroll: faster",
-      callback: () => this.nudgeScrollSpeed(SPEED_STEP)
+      callback: () => {
+        if (!this.requireScrollRunning())
+          return;
+        this.nudgeScrollSpeed(SPEED_STEP);
+      }
     });
     this.addCommand({
       id: "autoscroll-slower",
       icon: "gauge",
       name: "Autoscroll: slower",
-      callback: () => this.nudgeScrollSpeed(-SPEED_STEP)
+      callback: () => {
+        if (!this.requireScrollRunning())
+          return;
+        this.nudgeScrollSpeed(-SPEED_STEP);
+      }
     });
     this.addCommand({
       id: "autoscroll-stop",
       icon: "square",
       name: "Autoscroll: stop",
-      callback: () => this.stopAutoScroll(true)
+      callback: () => {
+        if (!this.requireScrollRunning())
+          return;
+        this.stopAutoScroll(true);
+      }
+    });
+    this.addCommand({
+      id: "autoscroll-sheet",
+      icon: "sliders-horizontal",
+      name: `Autoscroll: sheet (all controls) \u2014 ${hotkeyLabel("autoscroll-sheet")}`,
+      hotkeys: [{ modifiers: ["Mod", "Shift"], key: "A" }],
+      callback: () => new ScrollSheetModal(this.app, this).open()
+    });
+    this.addCommand({
+      id: "autoscroll-toolbar-guide",
+      icon: "smartphone",
+      name: "Autoscroll: mobile toolbar guide",
+      callback: () => new MobileToolbarGuideModal(this.app, this).open()
     });
     this.addCommand({
       id: "autoscroll-mode",
@@ -2360,6 +2587,11 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     void this.pruneSchedule(true);
     if (this.settings.showOnStartup)
       this.showTimer();
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", () => this.syncScrollFab())
+    );
+    this.registerEvent(this.app.workspace.on("file-open", () => this.syncScrollFab()));
+    this.app.workspace.onLayoutReady(() => this.syncScrollFab());
     this.registerEditorExtension(
       import_state.Prec.highest(
         import_view.keymap.of([
@@ -2985,9 +3217,65 @@ ${row}`, { line: cursor.line, ch: line.length });
     this.renderTimer();
   }
   onunload() {
+    var _a;
     this.hideTimer();
     this.stopAutoScroll(false);
     this.stopQuiz(false);
+    (_a = this.scrollFabBtn) == null ? void 0 : _a.destroy();
+    this.scrollFabBtn = null;
+  }
+  /**
+   * v1.1.5 — show / hide the floating launch button.
+   * Visible only when the setting is on, a note is open and the running
+   * control bar is not on screen (tap = start/pause, long-press = sheet).
+   */
+  syncScrollFab() {
+    var _a;
+    const want = fabShouldShow(
+      !!this.settings.scrollFab,
+      !!this.app.workspace.getActiveFile(),
+      !!this.scrollBar
+    );
+    if (!want) {
+      (_a = this.scrollFabBtn) == null ? void 0 : _a.destroy();
+      this.scrollFabBtn = null;
+      return;
+    }
+    if (!this.scrollFabBtn) {
+      this.scrollFabBtn = new ScrollFab({
+        onTap: () => this.toggleAutoScroll(),
+        onLongPress: () => new ScrollSheetModal(this.app, this).open(),
+        onReverse: () => void this.setScrollReverse(!this.settings.scrollReverse)
+      });
+    }
+    this.scrollFabBtn.setRunning(this.scrollRunning);
+    this.scrollFabBtn.setReverse(!!this.settings.scrollReverse);
+  }
+  /**
+   * v1.1.6 — guard for actions that only make sense mid-session.
+   * Shows the exact command to run instead of failing silently.
+   */
+  requireScrollRunning() {
+    if (this.scrollPlan.length > 0)
+      return true;
+    new import_obsidian.Notice(MSG_NOT_RUNNING, 6e3);
+    return false;
+  }
+  /** v1.1.6 — settings ON/OFF switch: start or stop the session. */
+  async setAutoScrollEnabled(on) {
+    if (on) {
+      if (this.scrollPlan.length === 0)
+        this.startAutoScroll();
+      else if (!this.scrollRunning)
+        this.toggleAutoScroll();
+    } else if (this.scrollPlan.length > 0) {
+      this.stopAutoScroll(true);
+    }
+    this.syncScrollFab();
+  }
+  /** Is a session currently live (running or paused)? */
+  autoScrollActive() {
+    return this.scrollRunning;
   }
   /* ==================== v1.0.9: auto-scroll + auto-toggle ==================== */
   /** The scroll container of the active markdown view (reading or live preview). */
@@ -3030,7 +3318,8 @@ ${row}`, { line: cursor.line, ch: line.length });
     if (this.scrollRunning) {
       this.scrollRunning = false;
       this.renderScrollBar();
-      new import_obsidian.Notice("Autoscroll paused.");
+      this.syncScrollFab();
+      new import_obsidian.Notice(`Autoscroll paused \u2014 ${hotkeyLabel("smart-autoscroll")} se resume.`);
       return;
     }
     if (this.scrollPlan.length === 0)
@@ -3040,6 +3329,7 @@ ${row}`, { line: cursor.line, ch: line.length });
       this.scrollLastFrame = 0;
       this.scheduleScrollFrame();
       this.renderScrollBar();
+      this.syncScrollFab();
     }
   }
   /** v1.1.1 — the current pause-at configuration. */
@@ -3184,11 +3474,14 @@ ${deckSummary(
     this.applyPerNoteScrollPrefs();
     const plan = this.buildScrollPlan(container);
     if (plan.length === 0) {
+      const anyToggle = this.collectStops(container).length > 0;
       new import_obsidian.Notice(
-        `No toggles match this selection (${filterLabel(this.settings.scrollFilter)} \xB7 ${modeLabel(
+        anyToggle ? `No toggles match this selection (${filterLabel(this.settings.scrollFilter)} \xB7 ${modeLabel(
           this.modeConfig()
-        )}).`
+        )}) \u2014 filter ya pause-at mode badlo.` : MSG_NO_TOGGLES,
+        6e3
       );
+      this.syncScrollFab();
       return;
     }
     this.scrollPlan = plan;
@@ -3231,6 +3524,7 @@ ${deckSummary(
     this.syncScrollDebugOverlay();
     new import_obsidian.Notice(sessionLabel(this.settings, plan.length));
     this.renderScrollBar();
+    this.syncScrollFab();
     this.scheduleScrollFrame();
   }
   /** Reader parity: speed / direction / hold are remembered per note. */
@@ -3301,6 +3595,7 @@ ${deckSummary(
     this.scrollBar = null;
     (_b = this.scrollDebugOverlay) == null ? void 0 : _b.destroy();
     this.scrollDebugOverlay = null;
+    this.syncScrollFab();
     if (notify)
       new import_obsidian.Notice("Autoscroll stopped.");
   }
@@ -3312,6 +3607,7 @@ ${deckSummary(
     }
     await this.rememberPerNoteScrollPrefs();
     this.renderScrollBar();
+    this.syncScrollFab();
     new import_obsidian.Notice(reverse ? "Autoscroll: reverse \u2191" : "Autoscroll: forward \u2193");
   }
   async setScrollFilter(filter) {
@@ -4108,6 +4404,150 @@ var ScrollSpeedModal = class extends import_obsidian.Modal {
     this.contentEl.empty();
   }
 };
+var ScrollSheetModal = class extends import_obsidian.Modal {
+  constructor(app, plugin) {
+    super(app);
+    this.plugin = plugin;
+  }
+  onOpen() {
+    this.modalEl.addClass("ntt-sheet");
+    this.setTitle("Autoscroll \u2014 quick controls");
+    const s = this.plugin.settings;
+    new import_obsidian.Setting(this.contentEl).setName(this.plugin.scrollRunning ? "Pause autoscroll" : "Start autoscroll").setDesc("Tap the floating \u25B6 button for the same thing.").addButton(
+      (btn) => btn.setButtonText(this.plugin.scrollRunning ? "\u23F8 Pause" : "\u25B6 Start").setCta().onClick(() => {
+        this.close();
+        this.plugin.toggleAutoScroll();
+      })
+    );
+    new import_obsidian.Setting(this.contentEl).setName("Speed").setDesc(`Currently ${multiplierFromSpeed(s.scrollSpeed)}x.`).addButton(
+      (btn) => btn.setButtonText("Choose").onClick(() => new ScrollSpeedModal(this.app, this.plugin).open())
+    );
+    new import_obsidian.Setting(this.contentEl).setName("Pause for").setDesc(`Hold time \u2014 currently ${formatDwell(clampHold(s.scrollHold))}.`).addButton(
+      (btn) => btn.setButtonText("Choose").onClick(() => new ScrollDwellModal(this.app, this.plugin).open())
+    );
+    new import_obsidian.Setting(this.contentEl).setName("Pause at").setDesc(`Currently ${modeLabel(this.plugin.modeConfig())}.`).addButton(
+      (btn) => btn.setButtonText("Choose").onClick(() => new ScrollModeModal(this.app, this.plugin).open())
+    );
+    new import_obsidian.Setting(this.contentEl).setName("Colour filter").setDesc(`Currently ${filterLabel(s.scrollFilter)}.`).addButton(
+      (btn) => btn.setButtonText("Choose").onClick(() => new ScrollFilterModal(this.app, this.plugin).open())
+    );
+    new import_obsidian.Setting(this.contentEl).setName("Reverse direction \u2191").addToggle(
+      (tg) => tg.setValue(s.scrollReverse).onChange(async (v) => {
+        await this.plugin.setScrollReverse(v);
+      })
+    );
+    new import_obsidian.Setting(this.contentEl).setName("Loop the note").addToggle(
+      (tg) => tg.setValue(s.scrollLoop).onChange(async (v) => {
+        this.plugin.settings.scrollLoop = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(this.contentEl).setName("Open toggles automatically").addToggle(
+      (tg) => tg.setValue(s.scrollAutoOpen).onChange(async (v) => {
+        this.plugin.settings.scrollAutoOpen = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(this.contentEl).setName("Close them when leaving").addToggle(
+      (tg) => tg.setValue(s.scrollAutoClose).onChange(async (v) => {
+        this.plugin.settings.scrollAutoClose = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(this.contentEl).setName("Tall toggles screen-by-screen").addToggle(
+      (tg) => tg.setValue(s.scrollChunkTall).onChange(async (v) => {
+        this.plugin.settings.scrollChunkTall = v;
+        await this.plugin.saveSettings();
+        this.plugin.refreshScrollPlan();
+      })
+    );
+    new import_obsidian.Setting(this.contentEl).setName("Debug overlay").addToggle(
+      (tg) => tg.setValue(s.scrollDebug).onChange(async (v) => {
+        this.plugin.settings.scrollDebug = v;
+        await this.plugin.saveSettings();
+        this.plugin.syncScrollDebugOverlay();
+      })
+    );
+    new import_obsidian.Setting(this.contentEl).setName("More").addButton(
+      (btn) => btn.setButtonText("Go to first").onClick(() => {
+        this.close();
+        this.plugin.scrollToStart();
+      })
+    ).addButton(
+      (btn) => btn.setButtonText("Stats").onClick(() => new ScrollStatsModal(this.app, this.plugin).open())
+    ).addButton(
+      (btn) => btn.setButtonText("Toolbar guide").onClick(() => new MobileToolbarGuideModal(this.app, this.plugin).open())
+    );
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+var MobileToolbarGuideModal = class extends import_obsidian.Modal {
+  constructor(app, plugin) {
+    super(app);
+    this.plugin = plugin;
+  }
+  onOpen() {
+    var _a, _b;
+    this.modalEl.addClass("ntt-guide");
+    this.setTitle("Mobile toolbar \u2014 Autoscroll setup");
+    const progress = this.contentEl.createDiv({ cls: "ntt-guide-progress" });
+    progress.setText(
+      `Checklist: ${guideProgress((_a = this.plugin.settings.toolbarGuideDone) != null ? _a : [])} added`
+    );
+    const steps = this.contentEl.createEl("ol", { cls: "ntt-guide-steps" });
+    for (const step of TOOLBAR_STEPS)
+      steps.createEl("li", { text: step });
+    new import_obsidian.Setting(this.contentEl).setName("Open Obsidian settings").setDesc("Mobile \u2192 Manage toolbar me seedha jump (agar version support kare).").addButton(
+      (btn) => btn.setButtonText("Open settings").onClick(() => {
+        var _a2, _b2;
+        try {
+          const setting = this.app.setting;
+          (_a2 = setting == null ? void 0 : setting.open) == null ? void 0 : _a2.call(setting);
+          (_b2 = setting == null ? void 0 : setting.openTabById) == null ? void 0 : _b2.call(setting, "mobile");
+        } catch (e) {
+          new import_obsidian.Notice("Settings manually kholo: \u2699\uFE0F \u2192 Mobile \u2192 Manage toolbar");
+        }
+      })
+    ).addButton(
+      (btn) => btn.setButtonText("Reset checklist").onClick(async () => {
+        this.plugin.settings.toolbarGuideDone = [];
+        await this.plugin.saveSettings();
+        this.contentEl.empty();
+        this.onOpen();
+        this.contentEl.scrollTop = 0;
+      })
+    );
+    this.contentEl.createEl("h3", { text: "Ye commands add karo (tap = tick \u2713)" });
+    const done = new Set((_b = this.plugin.settings.toolbarGuideDone) != null ? _b : []);
+    for (const cmd of [...TOOLBAR_COMMANDS].sort((a, b) => a.priority - b.priority)) {
+      const row = new import_obsidian.Setting(this.contentEl).setName(cmd.name).setDesc(cmd.why).addToggle(
+        (tg) => tg.setValue(done.has(cmd.id)).onChange(async () => {
+          var _a2;
+          this.plugin.settings.toolbarGuideDone = toggleGuideDone(
+            (_a2 = this.plugin.settings.toolbarGuideDone) != null ? _a2 : [],
+            cmd.id
+          );
+          await this.plugin.saveSettings();
+          progress.setText(
+            `Checklist: ${guideProgress(this.plugin.settings.toolbarGuideDone)} added`
+          );
+        })
+      );
+      row.settingEl.addClass("ntt-guide-row");
+      if (done.has(cmd.id))
+        row.settingEl.addClass("is-done");
+    }
+    this.contentEl.createDiv({
+      cls: "ntt-guide-tip",
+      text: "Tip: floating \u25B6 button pe long-press karne se bhi Autoscroll sheet khul jaati hai \u2014 toolbar me sirf start/pause wali command kaafi hai."
+    });
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
 var QuizSecondsModal = class extends import_obsidian.Modal {
   constructor(app, plugin) {
     super(app);
@@ -4461,6 +4901,19 @@ var NotionToggleSettingTab = class extends import_obsidian.PluginSettingTab {
       });
     });
     new import_obsidian.Setting(containerEl).setName("Auto-scroll revision").setHeading();
+    new import_obsidian.Setting(containerEl).setName("Autoscroll running").setDesc(
+      `ON = active note par autoscroll start, OFF = stop. Hotkey: ${hotkeyLabel(
+        "smart-autoscroll"
+      )} \xB7 reverse: ${hotkeyLabel("autoscroll-reverse")} \xB7 sheet: ${hotkeyLabel("autoscroll-sheet")}.`
+    ).addToggle(
+      (tg) => tg.setValue(this.plugin.autoScrollActive()).onChange(async (v) => {
+        await this.plugin.setAutoScrollEnabled(v);
+        tg.setValue(this.plugin.autoScrollActive());
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName("Hotkeys").setDesc(
+      HOTKEYS.map((h) => `${h.id} \u2192 ${h.label}`).join("  \xB7  ") + "  \u2014 Settings \u2192 Hotkeys me badal sakte ho."
+    );
     new import_obsidian.Setting(containerEl).setName("Scroll speed").setDesc("Pixels per second while gliding to the next toggle.").addSlider(
       (sl) => sl.setLimits(SPEED_MIN, SPEED_MAX, SPEED_STEP).setValue(clampSpeed(this.plugin.settings.scrollSpeed)).setDynamicTooltip().onChange(async (v) => {
         this.plugin.settings.scrollSpeed = clampSpeed(v);
@@ -4563,6 +5016,20 @@ var NotionToggleSettingTab = class extends import_obsidian.PluginSettingTab {
     new import_obsidian.Setting(containerEl).setName("Revision memory").setDesc("Forget what this note's shuffle learned about you.").addButton(
       (btn) => btn.setButtonText("Reset for this note").onClick(async () => {
         await this.plugin.resetScrollMemory();
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName("Floating autoscroll button").setDesc(
+      "Note khulte hi bottom-right me \u25B6 button \u2014 tap = start / pause, chhota \u2191/\u2193 chip = reverse, long-press = autoscroll sheet. Session chalne par bhi screen par rehta hai."
+    ).addToggle(
+      (tg) => tg.setValue(this.plugin.settings.scrollFab).onChange(async (v) => {
+        this.plugin.settings.scrollFab = v;
+        await this.plugin.saveSettings();
+        this.plugin.syncScrollFab();
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName("Mobile toolbar guide").setDesc("Kaunsi commands Settings \u2192 Mobile \u2192 Manage toolbar me add karni hain \u2014 one-tap checklist ke saath.").addButton(
+      (btn) => btn.setButtonText("Open guide").onClick(() => {
+        new MobileToolbarGuideModal(this.app, this.plugin).open();
       })
     );
     new import_obsidian.Setting(containerEl).setName("Quiz mode").setHeading();

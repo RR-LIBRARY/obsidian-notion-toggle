@@ -65,6 +65,18 @@ import {
 import { ScrollDebugOverlay, type DebugFrame } from "./src/debug-overlay";
 import { orderExplainer, rowLabel, weakRows } from "./src/stats-panel";
 import { ScrollBar } from "./src/autoscroll-ui";
+import { ScrollFab } from "./src/scroll-fab";
+import {
+  HOTKEYS,
+  MSG_NOT_RUNNING,
+  MSG_NO_TOGGLES,
+  TOOLBAR_COMMANDS,
+  TOOLBAR_STEPS,
+  fabShouldShow,
+  guideProgress,
+  hotkeyLabel,
+  toggleGuideDone,
+} from "./src/guide";
 import {
   DWELL_PRESETS,
   SPEED_MULTIPLIERS,
@@ -263,6 +275,8 @@ export default class NotionTogglePlugin extends Plugin {
   scrollSmoothEl: HTMLElement | null = null;
   scrollPrevTransform: string | null = null;
   scrollPrevBehavior: string | null = null;
+  /** v1.1.5 floating launch button (tap = start, hold = sheet). */
+  scrollFabBtn: ScrollFab | null = null;
 
   /* v1.1.0 quiz mode state */
   quizHud: QuizHud | null = null;
@@ -643,14 +657,16 @@ export default class NotionTogglePlugin extends Plugin {
     this.addCommand({
       id: "smart-autoscroll",
       icon: "chevrons-down",
-      name: "Autoscroll (start / pause revision)",
+      name: `Autoscroll (start / pause revision) — ${hotkeyLabel("smart-autoscroll")}`,
+      hotkeys: [{ modifiers: ["Mod", "Shift"], key: "S" }],
       callback: () => this.toggleAutoScroll(),
     });
 
     this.addCommand({
       id: "autoscroll-reverse",
       icon: "chevrons-up",
-      name: "Autoscroll: reverse direction",
+      name: `Autoscroll: reverse direction — ${hotkeyLabel("autoscroll-reverse")}`,
+      hotkeys: [{ modifiers: ["Mod", "Shift"], key: "R" }],
       callback: () => this.setScrollReverse(!this.settings.scrollReverse),
     });
 
@@ -665,21 +681,47 @@ export default class NotionTogglePlugin extends Plugin {
       id: "autoscroll-faster",
       icon: "gauge",
       name: "Autoscroll: faster",
-      callback: () => this.nudgeScrollSpeed(SPEED_STEP),
+      callback: () => {
+        if (!this.requireScrollRunning()) return;
+        this.nudgeScrollSpeed(SPEED_STEP);
+      },
     });
 
     this.addCommand({
       id: "autoscroll-slower",
       icon: "gauge",
       name: "Autoscroll: slower",
-      callback: () => this.nudgeScrollSpeed(-SPEED_STEP),
+      callback: () => {
+        if (!this.requireScrollRunning()) return;
+        this.nudgeScrollSpeed(-SPEED_STEP);
+      },
     });
 
     this.addCommand({
       id: "autoscroll-stop",
       icon: "square",
       name: "Autoscroll: stop",
-      callback: () => this.stopAutoScroll(true),
+      callback: () => {
+        if (!this.requireScrollRunning()) return;
+        this.stopAutoScroll(true);
+      },
+    });
+
+    /* ---------- v1.1.5: floating button, sheet, toolbar guide ---------- */
+
+    this.addCommand({
+      id: "autoscroll-sheet",
+      icon: "sliders-horizontal",
+      name: `Autoscroll: sheet (all controls) — ${hotkeyLabel("autoscroll-sheet")}`,
+      hotkeys: [{ modifiers: ["Mod", "Shift"], key: "A" }],
+      callback: () => new ScrollSheetModal(this.app, this).open(),
+    });
+
+    this.addCommand({
+      id: "autoscroll-toolbar-guide",
+      icon: "smartphone",
+      name: "Autoscroll: mobile toolbar guide",
+      callback: () => new MobileToolbarGuideModal(this.app, this).open(),
     });
 
     /* ---------- v1.1.1: pause-at modes, dwell, speed presets, memory ---------- */
@@ -835,6 +877,13 @@ export default class NotionTogglePlugin extends Plugin {
     void this.pruneSchedule(true);
 
     if (this.settings.showOnStartup) this.showTimer();
+
+    /* ---------- v1.1.5: floating autoscroll button follows the active note ---------- */
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", () => this.syncScrollFab())
+    );
+    this.registerEvent(this.app.workspace.on("file-open", () => this.syncScrollFab()));
+    this.app.workspace.onLayoutReady(() => this.syncScrollFab());
 
 
 
@@ -1510,6 +1559,61 @@ export default class NotionTogglePlugin extends Plugin {
     this.hideTimer();
     this.stopAutoScroll(false);
     this.stopQuiz(false);
+    this.scrollFabBtn?.destroy();
+    this.scrollFabBtn = null;
+  }
+
+  /**
+   * v1.1.5 — show / hide the floating launch button.
+   * Visible only when the setting is on, a note is open and the running
+   * control bar is not on screen (tap = start/pause, long-press = sheet).
+   */
+  syncScrollFab() {
+    const want = fabShouldShow(
+      !!this.settings.scrollFab,
+      !!this.app.workspace.getActiveFile(),
+      !!this.scrollBar
+    );
+    if (!want) {
+      this.scrollFabBtn?.destroy();
+      this.scrollFabBtn = null;
+      return;
+    }
+    if (!this.scrollFabBtn) {
+      this.scrollFabBtn = new ScrollFab({
+        onTap: () => this.toggleAutoScroll(),
+        onLongPress: () => new ScrollSheetModal(this.app, this).open(),
+        onReverse: () => void this.setScrollReverse(!this.settings.scrollReverse),
+      });
+    }
+    this.scrollFabBtn.setRunning(this.scrollRunning);
+    this.scrollFabBtn.setReverse(!!this.settings.scrollReverse);
+  }
+
+  /**
+   * v1.1.6 — guard for actions that only make sense mid-session.
+   * Shows the exact command to run instead of failing silently.
+   */
+  requireScrollRunning(): boolean {
+    if (this.scrollPlan.length > 0) return true;
+    new Notice(MSG_NOT_RUNNING, 6000);
+    return false;
+  }
+
+  /** v1.1.6 — settings ON/OFF switch: start or stop the session. */
+  async setAutoScrollEnabled(on: boolean) {
+    if (on) {
+      if (this.scrollPlan.length === 0) this.startAutoScroll();
+      else if (!this.scrollRunning) this.toggleAutoScroll();
+    } else if (this.scrollPlan.length > 0) {
+      this.stopAutoScroll(true);
+    }
+    this.syncScrollFab();
+  }
+
+  /** Is a session currently live (running or paused)? */
+  autoScrollActive(): boolean {
+    return this.scrollRunning;
   }
 
 
@@ -1560,7 +1664,8 @@ export default class NotionTogglePlugin extends Plugin {
     if (this.scrollRunning) {
       this.scrollRunning = false;
       this.renderScrollBar();
-      new Notice("Autoscroll paused.");
+      this.syncScrollFab();
+      new Notice(`Autoscroll paused — ${hotkeyLabel("smart-autoscroll")} se resume.`);
       return;
     }
     if (this.scrollPlan.length === 0) this.startAutoScroll();
@@ -1569,6 +1674,7 @@ export default class NotionTogglePlugin extends Plugin {
       this.scrollLastFrame = 0;
       this.scheduleScrollFrame();
       this.renderScrollBar();
+      this.syncScrollFab();
     }
   }
 
@@ -1709,11 +1815,16 @@ export default class NotionTogglePlugin extends Plugin {
     this.applyPerNoteScrollPrefs();
     const plan = this.buildScrollPlan(container);
     if (plan.length === 0) {
+      const anyToggle = this.collectStops(container).length > 0;
       new Notice(
-        `No toggles match this selection (${filterLabel(this.settings.scrollFilter)} · ${modeLabel(
-          this.modeConfig()
-        )}).`
+        anyToggle
+          ? `No toggles match this selection (${filterLabel(this.settings.scrollFilter)} · ${modeLabel(
+              this.modeConfig()
+            )}) — filter ya pause-at mode badlo.`
+          : MSG_NO_TOGGLES,
+        6000
       );
+      this.syncScrollFab();
       return;
     }
     this.scrollPlan = plan;
@@ -1758,6 +1869,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.syncScrollDebugOverlay();
     new Notice(sessionLabel(this.settings, plan.length));
     this.renderScrollBar();
+    this.syncScrollFab();
     this.scheduleScrollFrame();
   }
 
@@ -1824,6 +1936,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollBar = null;
     this.scrollDebugOverlay?.destroy();
     this.scrollDebugOverlay = null;
+    this.syncScrollFab();
     if (notify) new Notice("Autoscroll stopped.");
   }
 
@@ -1835,6 +1948,7 @@ export default class NotionTogglePlugin extends Plugin {
     }
     await this.rememberPerNoteScrollPrefs();
     this.renderScrollBar();
+    this.syncScrollFab();
     new Notice(reverse ? "Autoscroll: reverse ↑" : "Autoscroll: forward ↓");
   }
 
@@ -2700,6 +2814,207 @@ class ScrollSpeedModal extends Modal {
   }
 }
 
+/* ---------- v1.1.5: one sheet with every autoscroll control ---------- */
+
+class ScrollSheetModal extends Modal {
+  constructor(app: App, private plugin: NotionTogglePlugin) {
+    super(app);
+  }
+
+  onOpen() {
+    this.modalEl.addClass("ntt-sheet");
+    this.setTitle("Autoscroll — quick controls");
+    const s = this.plugin.settings;
+
+    new Setting(this.contentEl)
+      .setName(this.plugin.scrollRunning ? "Pause autoscroll" : "Start autoscroll")
+      .setDesc("Tap the floating ▶ button for the same thing.")
+      .addButton((btn) =>
+        btn
+          .setButtonText(this.plugin.scrollRunning ? "⏸ Pause" : "▶ Start")
+          .setCta()
+          .onClick(() => {
+            this.close();
+            this.plugin.toggleAutoScroll();
+          })
+      );
+
+    new Setting(this.contentEl)
+      .setName("Speed")
+      .setDesc(`Currently ${multiplierFromSpeed(s.scrollSpeed)}x.`)
+      .addButton((btn) =>
+        btn.setButtonText("Choose").onClick(() => new ScrollSpeedModal(this.app, this.plugin).open())
+      );
+
+    new Setting(this.contentEl)
+      .setName("Pause for")
+      .setDesc(`Hold time — currently ${formatDwell(clampHold(s.scrollHold))}.`)
+      .addButton((btn) =>
+        btn.setButtonText("Choose").onClick(() => new ScrollDwellModal(this.app, this.plugin).open())
+      );
+
+    new Setting(this.contentEl)
+      .setName("Pause at")
+      .setDesc(`Currently ${modeLabel(this.plugin.modeConfig())}.`)
+      .addButton((btn) =>
+        btn.setButtonText("Choose").onClick(() => new ScrollModeModal(this.app, this.plugin).open())
+      );
+
+    new Setting(this.contentEl)
+      .setName("Colour filter")
+      .setDesc(`Currently ${filterLabel(s.scrollFilter)}.`)
+      .addButton((btn) =>
+        btn
+          .setButtonText("Choose")
+          .onClick(() => new ScrollFilterModal(this.app, this.plugin).open())
+      );
+
+    new Setting(this.contentEl).setName("Reverse direction ↑").addToggle((tg) =>
+      tg.setValue(s.scrollReverse).onChange(async (v) => {
+        await this.plugin.setScrollReverse(v);
+      })
+    );
+
+    new Setting(this.contentEl).setName("Loop the note").addToggle((tg) =>
+      tg.setValue(s.scrollLoop).onChange(async (v) => {
+        this.plugin.settings.scrollLoop = v;
+        await this.plugin.saveSettings();
+      })
+    );
+
+    new Setting(this.contentEl).setName("Open toggles automatically").addToggle((tg) =>
+      tg.setValue(s.scrollAutoOpen).onChange(async (v) => {
+        this.plugin.settings.scrollAutoOpen = v;
+        await this.plugin.saveSettings();
+      })
+    );
+
+    new Setting(this.contentEl).setName("Close them when leaving").addToggle((tg) =>
+      tg.setValue(s.scrollAutoClose).onChange(async (v) => {
+        this.plugin.settings.scrollAutoClose = v;
+        await this.plugin.saveSettings();
+      })
+    );
+
+    new Setting(this.contentEl)
+      .setName("Tall toggles screen-by-screen")
+      .addToggle((tg) =>
+        tg.setValue(s.scrollChunkTall).onChange(async (v) => {
+          this.plugin.settings.scrollChunkTall = v;
+          await this.plugin.saveSettings();
+          this.plugin.refreshScrollPlan();
+        })
+      );
+
+    new Setting(this.contentEl).setName("Debug overlay").addToggle((tg) =>
+      tg.setValue(s.scrollDebug).onChange(async (v) => {
+        this.plugin.settings.scrollDebug = v;
+        await this.plugin.saveSettings();
+        this.plugin.syncScrollDebugOverlay();
+      })
+    );
+
+    new Setting(this.contentEl)
+      .setName("More")
+      .addButton((btn) =>
+        btn.setButtonText("Go to first").onClick(() => {
+          this.close();
+          this.plugin.scrollToStart();
+        })
+      )
+      .addButton((btn) =>
+        btn
+          .setButtonText("Stats")
+          .onClick(() => new ScrollStatsModal(this.app, this.plugin).open())
+      )
+      .addButton((btn) =>
+        btn
+          .setButtonText("Toolbar guide")
+          .onClick(() => new MobileToolbarGuideModal(this.app, this.plugin).open())
+      );
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+/* ---------- v1.1.5: in-app guide — which mobile toolbar commands to add ---------- */
+
+class MobileToolbarGuideModal extends Modal {
+  constructor(app: App, private plugin: NotionTogglePlugin) {
+    super(app);
+  }
+
+  onOpen() {
+    this.modalEl.addClass("ntt-guide");
+    this.setTitle("Mobile toolbar — Autoscroll setup");
+
+    const progress = this.contentEl.createDiv({ cls: "ntt-guide-progress" });
+    progress.setText(
+      `Checklist: ${guideProgress(this.plugin.settings.toolbarGuideDone ?? [])} added`
+    );
+
+    const steps = this.contentEl.createEl("ol", { cls: "ntt-guide-steps" });
+    for (const step of TOOLBAR_STEPS) steps.createEl("li", { text: step });
+
+    new Setting(this.contentEl)
+      .setName("Open Obsidian settings")
+      .setDesc("Mobile → Manage toolbar me seedha jump (agar version support kare).")
+      .addButton((btn) =>
+        btn.setButtonText("Open settings").onClick(() => {
+          try {
+            const setting = (this.app as unknown as { setting?: { open?: () => void; openTabById?: (id: string) => void } }).setting;
+            setting?.open?.();
+            setting?.openTabById?.("mobile");
+          } catch {
+            new Notice("Settings manually kholo: ⚙️ → Mobile → Manage toolbar");
+          }
+        })
+      )
+      .addButton((btn) =>
+        btn.setButtonText("Reset checklist").onClick(async () => {
+          this.plugin.settings.toolbarGuideDone = [];
+          await this.plugin.saveSettings();
+          this.contentEl.empty();
+          this.onOpen();
+          this.contentEl.scrollTop = 0;
+        })
+      );
+
+    this.contentEl.createEl("h3", { text: "Ye commands add karo (tap = tick ✓)" });
+    const done = new Set(this.plugin.settings.toolbarGuideDone ?? []);
+    for (const cmd of [...TOOLBAR_COMMANDS].sort((a, b) => a.priority - b.priority)) {
+      const row = new Setting(this.contentEl)
+        .setName(cmd.name)
+        .setDesc(cmd.why)
+        .addToggle((tg) =>
+          tg.setValue(done.has(cmd.id)).onChange(async () => {
+            this.plugin.settings.toolbarGuideDone = toggleGuideDone(
+              this.plugin.settings.toolbarGuideDone ?? [],
+              cmd.id
+            );
+            await this.plugin.saveSettings();
+            progress.setText(
+              `Checklist: ${guideProgress(this.plugin.settings.toolbarGuideDone)} added`
+            );
+          })
+        );
+      row.settingEl.addClass("ntt-guide-row");
+      if (done.has(cmd.id)) row.settingEl.addClass("is-done");
+    }
+
+    this.contentEl.createDiv({
+      cls: "ntt-guide-tip",
+      text: "Tip: floating ▶ button pe long-press karne se bhi Autoscroll sheet khul jaati hai — toolbar me sirf start/pause wali command kaafi hai.",
+    });
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
 /* ---------- v1.1.0: quiz time picker ---------- */
 
 class QuizSecondsModal extends Modal {
@@ -3188,6 +3503,28 @@ class NotionToggleSettingTab extends PluginSettingTab {
     /* ---------- v1.0.9: auto-scroll revision ---------- */
     new Setting(containerEl).setName("Auto-scroll revision").setHeading();
 
+    /* ---------- v1.1.6: explicit ON / OFF switch ---------- */
+    new Setting(containerEl)
+      .setName("Autoscroll running")
+      .setDesc(
+        `ON = active note par autoscroll start, OFF = stop. Hotkey: ${hotkeyLabel(
+          "smart-autoscroll"
+        )} · reverse: ${hotkeyLabel("autoscroll-reverse")} · sheet: ${hotkeyLabel("autoscroll-sheet")}.`
+      )
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.autoScrollActive()).onChange(async (v) => {
+          await this.plugin.setAutoScrollEnabled(v);
+          tg.setValue(this.plugin.autoScrollActive());
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Hotkeys")
+      .setDesc(
+        HOTKEYS.map((h) => `${h.id} → ${h.label}`).join("  ·  ") +
+          "  — Settings → Hotkeys me badal sakte ho."
+      );
+
     new Setting(containerEl)
       .setName("Scroll speed")
       .setDesc("Pixels per second while gliding to the next toggle.")
@@ -3369,6 +3706,30 @@ class NotionToggleSettingTab extends PluginSettingTab {
       .addButton((btn) =>
         btn.setButtonText("Reset for this note").onClick(async () => {
           await this.plugin.resetScrollMemory();
+        })
+      );
+
+    /* ---------- v1.1.5: floating button + mobile guide ---------- */
+
+    new Setting(containerEl)
+      .setName("Floating autoscroll button")
+      .setDesc(
+        "Note khulte hi bottom-right me ▶ button — tap = start / pause, chhota ↑/↓ chip = reverse, long-press = autoscroll sheet. Session chalne par bhi screen par rehta hai."
+      )
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.scrollFab).onChange(async (v) => {
+          this.plugin.settings.scrollFab = v;
+          await this.plugin.saveSettings();
+          this.plugin.syncScrollFab();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Mobile toolbar guide")
+      .setDesc("Kaunsi commands Settings → Mobile → Manage toolbar me add karni hain — one-tap checklist ke saath.")
+      .addButton((btn) =>
+        btn.setButtonText("Open guide").onClick(() => {
+          new MobileToolbarGuideModal(this.app, this.plugin).open();
         })
       );
 

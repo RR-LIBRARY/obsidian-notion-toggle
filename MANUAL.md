@@ -1,169 +1,542 @@
-# Notion Toggle — User Manual (v1.1.4)
+# Notion Toggle — Poora Manual (v1.1.6)
 
-Complete guide for install, autoscroll revision, Quiz Mode, settings, and troubleshooting.
+Ye manual me **har ek setting** ka matlab, use karne ka tarika aur recommended value hai —
+exactly usi order me jaisa Obsidian ke settings tab me dikhta hai.
+
+Format har setting ke liye:
+
+- **Kya hai** — setting karta kya hai
+- **Kaise use karo** — kab on/off karo, kya value rakho
+- **Default** — plugin ka default
 
 ---
 
-## 1. Install
+## 1. Install aur enable
 
-### 1.1 BRAT (recommended, auto-updates)
+### 1.1 BRAT se (recommended, auto-update)
 
-1. Install the community plugin **BRAT** (Beta Reviewers Auto-update Tool).
-2. BRAT → **Add a beta plugin** → paste:
+1. Community plugin **BRAT** install karo.
+2. BRAT → **Add a beta plugin** → paste karo:
    ```
    RR-LIBRARY/obsidian-notion-toggle
    ```
-3. Keep *Enable after installing the plugin* checked → **Add plugin**.
-4. Updates later: BRAT → **Check for updates**.
+3. *Enable after installing the plugin* checked rakho → **Add plugin**.
+4. Baad me update: BRAT → **Check for updates**.
 
-> **If BRAT says "A manifest.json file does not exist in the latest release"**
-> The latest GitHub release must carry `manifest.json`, `main.js` and `styles.css`
-> as *release assets* (not just repo files). Fixed in v1.1.4 — the release
-> `v1.1.4` has all three attached. If you still see it: BRAT → remove the entry →
-> add it again, then restart Obsidian.
+> **Agar BRAT bole "A manifest.json file does not exist in the latest release"**
+> Latest GitHub release me `manifest.json`, `main.js`, `styles.css` **release assets**
+> ke roop me hone chahiye (sirf repo file kaafi nahi). v1.1.4 me teeno attached hain.
+> Phir bhi error aaye: BRAT → entry remove karo → dobara add karo → Obsidian restart.
 
 ### 1.2 Manual install
 
-1. Download `main.js`, `manifest.json`, `styles.css` from the
-   [latest release](https://github.com/RR-LIBRARY/obsidian-notion-toggle/releases/latest).
-2. Copy into `<vault>/.obsidian/plugins/notion-toggle/` (create the folder).
-3. Obsidian → **Settings → Community plugins → Reload** → enable **Notion Toggle**.
+1. [Latest release](https://github.com/RR-LIBRARY/obsidian-notion-toggle/releases/latest)
+   se `main.js`, `manifest.json`, `styles.css` download karo.
+2. Copy karo `<vault>/.obsidian/plugins/notion-toggle/` me (folder bana lo).
+3. Obsidian → **Settings → Community plugins → Reload** → **Notion Toggle** ON.
 
-Mobile: same folder path works; use any file manager or sync the vault.
+Mobile par bhi wahi folder path chalta hai (file manager ya vault sync se).
+
+### 1.3 Settings kahan khulti hai
+
+`Settings ⚙ → Community plugins → Installed plugins → Notion Toggle` ke saamne
+**⚙ Options** button → wahi plugin ka poora settings page hai.
+
+Sab kuch `.obsidian/plugins/notion-toggle/data.json` me save hota hai.
+Autoscroll ka **speed / direction / hold** har note ke liye alag bhi yaad rehta hai.
+
+### 1.4 Settings page ka map (6 sections)
+
+1. Toggle basics (heading nahi hai — page ke top par)
+2. **Recall timer (Pomodoro)**
+3. **Timer focus guard (v1.0.6)**
+4. **Minimal mode & spaced repetition**
+5. **Auto-scroll revision**
+6. **Quiz mode**
 
 ---
 
-## 2. Where the settings live
+## 2. Toggle basics (page ka top hissa)
 
-`Settings (⚙) → Community plugins → Notion Toggle`
+### Toggle colour
+- **Kya hai:** naya toggle kis rang me banega. Traffic-light system: 🔴 red = hard,
+  🟡 yellow = revise, 🟢 green = mastered. Extra: 🔵 concept, 🟣 theory, 🟠 formula,
+  ⚪ extra, ⬛ plain (clean black Notion look).
+- **Kaise use karo:** "Default (callout type below)" rakho to niche wala *Default callout type*
+  use hoga. Agar aap sab notes colour-code karte ho to seedha red/yellow/green choose karo.
+- **Default:** Default (callout type below)
 
-Two headings:
+### Auto-numbering
+- **Kya hai:** naye toggles ko `1.`, `2.`, `3.` … automatic number milta hai.
+- **Kaise use karo:** ON rakho — number khud type karne ki zarurat nahi. Gap aa jaye to
+  command **Renumber toggles in note** chalao.
+- **Default:** OFF
 
-- **Toggles / recall** — toggle authoring, colour grading, Pomodoro, spaced repetition.
-- **Auto-scroll revision** — everything in section 3 below.
+### MCQ options
+- **Kya hai:** naye MCQ toggle me kitne checkbox options banenge (2–6).
+- **Kaise use karo:** exam pattern ke hisab se — 4 standard hai.
+- **Default:** 4
 
-Settings persist in `.obsidian/plugins/notion-toggle/data.json`.
-Speed, direction and hold time are also remembered **per note**.
+### Match the following rows
+- **Kya hai:** naye "Match the following" table me kitni rows aayengi (2–8).
+- **Kaise use karo:** 4 se shuru karo; zarurat pade to row command se add kar lo.
+- **Default:** 4
+
+### Auto-add Answer line
+- **Kya hai:** naye MCQ / match toggle ke andar `**Answer:** ` line khud add ho jati hai.
+- **Kaise use karo:** ON rakho — answer key likhne ki jagah ready milti hai.
+- **Default:** ON
+
+### Default callout type
+- **Kya hai:** toggle insert/wrap karte waqt kaun sa callout type use hoga (`question`,
+  `note`, `tip`, …).
+- **Kaise use karo:** revision ke liye `question` best hai.
+- **Default:** question
+
+### Default collapsed
+- **Kya hai:** ON = toggle band (answer chhupa) start hota hai. OFF = khula.
+- **Kaise use karo:** active recall ke liye ON hi rakho.
+- **Default:** ON
+
+### Auto-continue on Enter
+- **Kya hai:** toggle ke andar Enter dabao to answer likhna continue hota hai; khali toggle
+  line par Enter dabao to **agla** toggle shuru ho jata hai.
+- **Kaise use karo:** ON — tez typing ke liye sabse kaam ki setting.
+- **Default:** ON
+
+### Toggle format
+- **Kya hai:** `Native callout (> [!question]-)` ya `HTML <details>`.
+- **Kaise use karo:** Native callout hi rakho (Obsidian me properly fold hota hai).
+  `<details>` sirf tab jab aapko web/Notion export chahiye.
+- **Default:** Native callout
+
+### Bold the question/summary
+- **Kya hai:** toggle ka title automatic `**bold**` ho jata hai (already bold ho to skip).
+- **Kaise use karo:** ON karo agar aapko question headings mote chahiye.
+- **Default:** OFF
 
 ---
 
-## 3. Autoscroll revision
+## 3. Recall timer (Pomodoro)
 
-Start: command palette → **Autoscroll: start / stop**. A floating bar appears
-(44 px targets, safe-area aware on mobile).
+### Preset
+- **Kya hai:** ready rhythm — jaise "Classic 25 / 5". Custom choose karke apne minutes set kar sakte ho.
+- **Kaise use karo:** Classic 25/5 se shuru karo; koi bhi minute slider hilaya to preset khud
+  "Custom" ho jata hai.
+- **Default:** Classic 25 / 5
 
-### 3.1 Floating bar controls
+### Focus minutes
+- **Kya hai:** ek focus/recall session ki length (5–90 min).
+- **Kaise use karo:** 25 standard; heavy revision ke liye 45–50.
+- **Default:** 25
 
-| Control | Action |
+### Short break minutes
+- **Kya hai:** har focus session ke baad chhota break (1–30 min).
+- **Default:** 5
+
+### Long break minutes
+- **Kya hai:** poora cycle khatam hone par bada break (5–60 min).
+- **Default:** 15
+
+### Sessions before long break
+- **Kya hai:** kitne focus sessions se ek cycle banti hai (1–8).
+- **Default:** 4
+
+### Auto-start next phase
+- **Kya hai:** ek phase khatam hone par next phase khud shuru ho jata hai.
+- **Kaise use karo:** ON = non-stop study rhythm. OFF = aap manually start karoge.
+- **Default:** ON
+
+### Notice on phase end
+- **Kya hai:** phase end par notice, jisme aapke 🔴/🟡/🟢 toggle counts dikhte hain.
+- **Kaise use karo:** ON — session ka instant report card milta hai.
+- **Default:** ON
+
+### Vibrate / buzz on phase end
+- **Kya hai:** mobile par chhoti vibration jab phase khatam ho.
+- **Default:** ON
+
+### Show timer on startup
+- **Kya hai:** Obsidian khulte hi floating timer dikh jata hai.
+- **Kaise use karo:** OFF rakho agar screen clean chahiye; ON rakho agar roz timer se padhte ho.
+- **Default:** OFF
+
+### Compact timer by default
+- **Kya hai:** sirf ghadi (chhoti pill) dikhati hai — mobile par handy.
+- **Default:** ON
+
+### Reset timer position (page ke sabse niche)
+- **Kya hai:** floating timer screen se bahar chala gaya ho to use wapas top-left le aata hai.
+- **Kaise use karo:** timer gayab lage to "Reset position" dabao.
+
+---
+
+## 4. Timer focus guard (v1.0.6)
+
+### Auto-pause when you leave
+- **Kya hai:** Obsidian background me jaye ya aap switch karo to timer pause ho jata hai.
+- **Kaise use karo:** ON — focus time honest rehta hai.
+- **Default:** ON
+
+### Pin session to its note
+- **Kya hai:** sirf wahi note focus time count karta hai jahan session shuru hua tha.
+- **Kaise use karo:** ON agar ek subject ek session me padhte ho.
+- **Default:** ON
+
+### Auto-resume when you return
+- **Kya hai:** session note par wapas aate hi timer khud continue ho jata hai.
+- **Kaise use karo:** ON agar aap tab switch bahut karte ho.
+- **Default:** OFF
+
+### Collapse toggles on break
+- **Kya hai:** focus phase khatam hone par saare answers dobara chhup jate hain.
+- **Kaise use karo:** ON — next round fresh active recall banta hai.
+- **Default:** OFF
+
+### Idle pause (minutes)
+- **Kya hai:** itni der inactivity ke baad focus phase pause. `0` = feature off.
+- **Kaise use karo:** 2 theek hai; 0 karo agar aap reading me scroll nahi karte.
+- **Default:** 2
+
+---
+
+## 5. Minimal mode & spaced repetition
+
+### Minimal command names
+- **Kya hai:** 4 primary commands (Toggle, Colour, Recall, Review) clean rehte hain, baaki sab
+  `Advanced:` prefix ke saath — toolbar clutter-free.
+- **Kaise use karo:** ON rakho (mobile toolbar ke liye best). Naam refresh hone ke liye Obsidian restart karo.
+- **Default:** ON
+
+### Ask for a grade after each focus phase
+- **Kya hai:** timer par Again / Hard / Good / Easy dikhta hai; SM-2 aapki next recall date khud calculate karta hai.
+- **Kaise use karo:** ON — spaced repetition tabhi kaam karega.
+- **Default:** ON
+
+### Recall schedule
+- **Kya hai:** kaun se notes recall ke liye scheduled hain. Note rename/move karne par schedule saath chalta hai.
+- **Kaise use karo:**
+  - **Clean up** — delete ho chuke notes ke schedules hata deta hai.
+  - **Clear all** — poora schedule wipe (dhyan se, undo nahi hai).
+- Due notes dekhne ka command: **Show notes due for recall**.
+
+---
+
+## 6. Auto-scroll revision (main feature)
+
+Start karne ke 4 tareeke:
+
+1. **Settings switch (v1.1.6)** — `Settings → Community plugins → Notion Toggle → Options → Auto-scroll revision` → sabse pehla toggle **Autoscroll running**. ON = start, OFF = stop. Command palette ki zaroorat nahi.
+2. **Hotkey (v1.1.6)** — `Ctrl/Cmd + Shift + S` = start / pause, `Ctrl/Cmd + Shift + R` = reverse, `Ctrl/Cmd + Shift + A` = autoscroll sheet. Clash ho to `Settings → Hotkeys` me badal lo.
+3. **Floating ▶ button** — neeche 6.0 dekho.
+4. **Command** — *Autoscroll (start / pause revision)*.
+
+Session chalu hone par ek floating bar aata hai (44px buttons, mobile safe-area aware).
+
+### 6.0.-1 Agar kuch na ho (v1.1.6 messages)
+
+| Message | Matlab |
 |---|---|
-| ▶ / ⏸ | Start / pause the scroll |
-| − / + | Speed down / up (0.02x … 20x) |
-| ↑ / ↓ | Reverse direction |
-| 🔴🟡🟢 | Colour filter — scroll only through graded toggles |
-| ⤒ | Jump to first toggle |
-| ✕ | Stop and clean up |
+| `Autoscroll band hai — pehle "Autoscroll (start / pause revision)" chalao (Ctrl/Cmd+Shift+S), ya floating ▶ dabao.` | Aapne reverse / faster / slower / stop chalaya par session start hi nahi hua tha. |
+| `Is note me koi toggle nahi mila — callout (> [!note]- …) ya <details> banao, phir autoscroll chalao.` | Note me koi toggle hi nahi hai. |
+| `No toggles match this selection (… · …) — filter ya pause-at mode badlo.` | Toggle hain, par colour filter / pause-at mode sabko chhod raha hai. |
 
-### 3.2 Settings reference
+### 6.0 Floating ▶ button (v1.1.5, v1.1.6 me upgrade) — sabse aasaan tareeka
 
-| Setting | Meaning |
+Note khulte hi **bottom-right me ek gol ▶ button** dikhta hai (mobile par safe-area aware):
+
+| Gesture | Kaam |
 |---|---|
-| **Scroll speed** | 0.02x–20x. Sub-pixel float positioning, so even 0.02x really creeps. |
-| **Hold time** | Pause duration at each stop (1 s … 1 hour). |
-| **Reverse direction** | Scroll upward instead of downward. |
-| **Colour filter** | All / 🔴 only / 🟡 only / 🟢 only / 🔴+🟡 / all graded. |
-| **Auto-open / auto-close** | Open the toggle on arrival, close it on leaving. |
-| **Loop the note** | Restart from the top when the end is reached. |
-| **Pause at** | Every toggle · Odd · Even · Custom list · Route · Shuffle. |
-| **Tall toggle: screen-by-screen** | A long/A4 toggle is split into viewport-sized chunks — the next page shows only after the current one is fully read. |
-| **Loop route** | Repeat the route (down → up → down …) per-leg direction. |
-| **Auto-grade** | Dwell time on a toggle feeds the FSRS scheduler automatically. |
-| **New-toggle mix** | How many never-revised toggles get interleaved into shuffle order. |
-| **Shuffle range** | Limit shuffle to a toggle-number range. |
-| **Weak toggles / priority → Show stats** | Opens the stats panel (section 5). |
-| **Debug overlay** | Turns on the developer overlay (section 4). Default: off. |
-| **Reset revision memory** | Clears FSRS cards / visit history for the note. |
+| **Tap** | Autoscroll start / pause |
+| **Long-press (aadha second dabaye rakho)** | **Autoscroll sheet** khulti hai — saare controls ek jagah |
+| **Chhote ↑/↓ chip par tap (v1.1.6)** | Direction turant flip — ↓ forward, ↑ reverse (chip accent colour me highlight hota hai) |
 
-### 3.3 Pause-at modes
+- v1.1.6 se ye button **session chalne par bhi screen par rehta hai** (floating bar ke thoda upar) — pause aur reverse ek tap me, toolbar icon dobara khole bina.
+- Band karna ho to: Settings → Notion Toggle → *Auto-scroll revision* → **Floating autoscroll button** toggle OFF.
 
-- **Every / Odd / Even** — numeric selection over toggles.
-- **Custom** — comma list, e.g. `1,4,7-12`.
-- **Route** — an explicit ordered path; with *Loop route* it walks
-  down → up → down with correct per-leg direction.
-- **Shuffle** — FSRS-weighted order: due and weak toggles first,
-  fresh toggles interleaved, deterministic within a session.
+**Autoscroll sheet me kya-kya milta hai:** Start/Pause button, Speed (0.02x–20x), Pause for, Pause at (odd/even/custom/route/shuffle), Colour filter, Reverse ↑, Loop the note, Auto-open / Auto-close, Tall toggles screen-by-screen, Debug overlay, aur neeche *Go to first* / *Stats* / *Toolbar guide* shortcuts. Yehi sheet command se bhi khulti hai: **Autoscroll: sheet (all controls)**.
+
+### 6.0.1 Mobile toolbar guide (v1.1.5) — kaunsi commands add karni hain
+
+Command palette ya settings se **Autoscroll: mobile toolbar guide** kholo. Isme:
+
+1. Seedhe steps likhe hain: **Settings ⚙️ → Mobile → Manage toolbar → Add command**.
+2. **One-tap checklist** — jis command ko toolbar me add kar liya, us row ka toggle ON kar do (✓). List `data.json` me save rehti hai, baad me wapas kholo to progress wahi se dikhti hai.
+3. **Open settings** button Obsidian settings kholne ki koshish karta hai (version support kare to seedha Mobile tab).
+4. **Reset checklist** se list dobara shuru.
+
+Sabse zaroori command sirf ek hai — **Autoscroll (start / pause revision)**; baaki (sheet, reverse, filter, pause at, pause for, speed presets, go to first, stats, stop) zaroorat ke hisaab se add karo. Guide me har command ke saamne uska reason bhi likha hai.
+
+### 6.1 Floating bar
+
+| Control | Kaam |
+|---|---|
+| ▶ / ⏸ | Scroll start / pause |
+| − / + | Speed kam / zyada (0.02x … 20x) |
+| ↑ / ↓ | Direction reverse |
+| 🔴🟡🟢 | Colour filter |
+| ⤒ | Pehle toggle par jump |
+| ✕ | Stop + cleanup |
+
+### 6.2 Settings ek-ek karke
+
+#### Scroll speed
+- **Kya hai:** pixels-per-second jis speed se page next toggle tak glide karta hai (1 … 1200 px/s).
+- **Kaise use karo:** slider mote adjustment ke liye; exact multiplier chahiye to niche
+  *Speed presets* use karo. Mobile par 40–80 comfortable hai.
+- **Default:** 60 px/s (= 1x)
+
+#### Hold time on each toggle
+- **Kya hai:** khula toggle kitne second dikhta rahe uske baad aage badhe (0–30 s slider).
+- **Kaise use karo:** short Q&A = 3–5 s; long theory = 10–15 s.
+- **Default:** 4 s
+
+#### Reverse direction
+- **Kya hai:** bottom → top scroll, fast backwards revision ke liye.
+- **Kaise use karo:** last-minute revision me ON — aapko chapter ulta dikhta hai to recall strong hota hai.
+- **Default:** OFF
+
+#### Colour filter → "Choose colours"
+- **Kya hai:** autoscroll sirf chuni hui colour wale toggles par rukega.
+- **Options:** ⚪ All toggles · 🔴 Red only · 🟡 Yellow only · 🟢 Green only ·
+  🔴🟡 Red + Yellow (weak spots) · 🔴🟡🟢 All graded toggles.
+- **Kaise use karo:** exam se pehle **Red + Yellow** — sirf weak spots revise honge.
+- **Default:** All toggles
+
+#### Open the toggle automatically
+- **Kya hai:** toggle par pahunchte hi wo khud khul jata hai (answer dikh jata hai).
+- **Kaise use karo:** ON = hands-free reading. OFF karo agar pehle khud soch kar phir kholna ho.
+- **Default:** ON
+
+#### Close it again when leaving
+- **Kya hai:** toggle chhodte waqt wapas band ho jata hai — ek time par ek hi answer visible.
+- **Kaise use karo:** ON — active recall honest rehta hai.
+- **Default:** ON
+
+#### Loop the note
+- **Kya hai:** note khatam hone par rukne ke bajaye doosre end se dobara shuru.
+- **Kaise use karo:** ON for endless revision loop (background revision ke liye).
+- **Default:** OFF
+
+#### Pause at → "Choose mode"
+- **Kya hai:** autoscroll kaun se toggles par rukega.
+- **Modes:**
+  - **∞ Every toggle** — sab par.
+  - **1️⃣ Odd toggles** — 1, 3, 5 …
+  - **2️⃣ Even toggles** — 2, 4, 6 …
+  - **✍️ Custom list** — apne numbers, e.g. `2, 5, 9`.
+  - **🧭 Route (my own order)** — apna visit order, e.g. `7, 2, 9, 2`. Har leg ka direction
+    khud calculate hota hai (neeche → upar → neeche).
+  - **🔀 Shuffle (weakest first)** — FSRS-weighted order: due aur weak toggles pehle,
+    naye toggles beech me mix, session ke andar deterministic.
+- Isi modal ke andar milta hai:
+  - **Custom list** text box
+  - **Route** text box
+  - **Loop the route** toggle
+  - **Shuffle range** — `from` / `to` toggle numbers (`0` = poora note)
+  - **Deck summary** + **Due next 7 days** forecast
+  - **Tall toggles screen-by-screen** toggle
+- **Default:** Every toggle
+
+#### Pause for → "Choose time"
+- **Kya hai:** har stop par hold time, 1 second se 1 hour tak ladder me
+  (1–10s, 12/15/20/25/30/40/45/50/60s, 90s … 30min … 1h).
+- **Kaise use karo:** MCQ drill = 3–5s; long answer padhna = 60–120s;
+  "poori page padhne do" = 5–10 min.
+- **Default:** 4 s
+
+#### Speed presets → "Choose speed"
+- **Kya hai:** reading speed ka multiplier — chips:
+  `0.02x, 0.05x, 0.1x, 0.2x, 0.5x, 0.75x, 1x, 1.5x, 2x, 3x, 5x, 7x, 10x, 20x`.
+- **Kaise use karo:** 0.02x–0.2x = sach me dheere padhne wala creep (sub-pixel movement);
+  1x = normal; 5x–20x = fast skim/revise.
+- **Default:** 1x
+
+#### Tall toggles screen-by-screen
+- **Kya hai:** bade/A4-size answers viewport ke hisab se chunks me tootte hain — ek screen
+  poori padhne ke baad hi agli screen aati hai.
+- **Kaise use karo:** ON rakho, warna lamba answer beech se skip ho sakta hai.
+- **Default:** ON
+
+#### Loop the route
+- **Kya hai:** route / shuffle run khatam hone par rukne ki jagah shuru se restart.
+- **Default:** OFF
+
+#### Auto-grade during shuffle
+- **Kya hai:** jis toggle par aap zyada der ruke wo jaldi wapas aata hai; jo turant chhoda
+  wo door chala jata hai (dwell time → FSRS grade).
+- **Kaise use karo:** ON — shuffle khud aapki weakness seekhta hai.
+- **Default:** ON
+
+#### New toggles mixed into shuffle
+- **Kya hai:** shuffle me naye (kabhi revise na kiye) toggles ka share. `0` = sirf purane
+  revise, `1` = naye pehle.
+- **Kaise use karo:** naya chapter likha hai to 0.5–0.7; exam-revision me 0.1–0.2.
+- **Default:** 0.35
+
+#### Weak toggles / priority → "Show stats"
+- **Kya hai:** stats panel — shuffle kis logic se pick karta hai (recall %, difficulty, lapses).
+- Command se bhi khulta hai: **Autoscroll: revision stats (weak toggles)**. Detail section 8 me.
+
+#### Debug overlay
+- **Kya hai:** autoscroll chalne ke waqt live loop state screen par: position, direction,
+  `waypointReached` / `crossedTarget`, dwell key aur grade.
+- **Kaise use karo:** normally OFF. Tuning/bug dhundhne ke waqt ON. Detail section 7 me.
+- **Default:** OFF
+
+#### Revision memory → "Reset for this note"
+- **Kya hai:** is note ka shuffle memory (FSRS cards, visit history) wipe.
+- **Kaise use karo:** stats galat lagen ya note pura rewrite kiya ho to reset karo.
 
 ---
 
-## 4. Debug overlay
+## 7. Debug overlay kaise padhein
 
-Enable in settings, or leave off for normal use. It shows the live loop state:
+ON karke autoscroll chalao — top-right me kuch aisa aayega:
 
 ```
-pos 120.40 → top 120 / 2000   dir ↓  frac 0.40
-route leg 2/5 → target #7     waypointReached ✓
-dwellKey #7  pause 3.4s
-event crossedTarget            grade good
+pos 120.40 → top 120 / 2000    dir ↓  frac 0.40
+leg 2/3 → target 880 · screen 2/2
+dwellKey 3:1 · paused 2.5s
+event crossedTarget 3:1
+grade toggle 3 · 6.2s → Good (3)
 progress 7/18
 ```
 
-Use it to confirm `waypointReached`, `crossedTarget`, dwell countdown,
-grade writes, and route progress while tuning speed.
+- `pos` — float scroll position (sub-pixel), `top` — actual DOM scrollTop.
+- `dir` / `frac` — direction aur frame ka fractional movement (slow speeds isi se chalti hain).
+- `leg` — route/shuffle ka konsa leg, target pixel, aur tall-toggle ka screen number.
+- `dwellKey` — kis stop par ruke hain aur kitna time bacha.
+- `event` — `waypointReached` / `crossedTarget` fire hua ya nahi.
+- `grade` — dwell se banaya gaya FSRS grade.
 
 ---
 
-## 5. Weak-toggle stats panel
+## 8. Weak-toggle stats panel
 
-Command: **Autoscroll: revision stats (weak toggles)** (or settings → *Show stats*).
+Command: **Autoscroll: revision stats (weak toggles)** (ya settings → *Show stats*).
 
-Shows:
+Dikhata hai:
 
-- Deck summary — total / due / new / learned counts.
-- 7-day due forecast.
-- One row per weak toggle:
-  `#7 · 42% recall · D 7.4 · S 3.1d · 2 lapses`
-- A plain-language reason: *"forgotten 2× — kept close"*,
+- **Deck summary** — total / due / new / learned counts.
+- **Due next 7 days** — 7 din ka forecast.
+- Har weak toggle ki row: `#7 · 42% recall · D 7.4 · S 3.1d · 2 lapses`
+- Aur plain-language reason: *"forgotten 2× — kept close"*,
   *"never revised — new toggles get mixed in first"*.
 
-Priority comes from the FSRS scheduler (recall probability, difficulty,
-stability, reps, lapses) — the same engine the Naveen Bharat reader uses.
+Priority FSRS scheduler se aati hai (recall probability, difficulty, stability, reps, lapses).
 
 ---
 
-## 6. Quiz Mode
+## 9. Quiz mode
 
-Command: **Quiz: start / stop**. HUD: `00:14 · Q 3/12` with
-pause / 👁 reveal now / ⏭ next / ✕ stop.
+Command: **Quiz (timed question run)**.
+HUD: `00:14 · Q 3/12` + pause / 👁 reveal now / ⏭ next / ✕ stop.
 
-Flow: countdown per question → time up → answer auto-reveals →
-after the reveal duration the toggle auto-closes → next question,
-auto-scrolled into view.
+Flow: question par countdown → time up → answer auto-reveal → reveal time ke baad toggle
+auto-close → agla question auto-scroll ke saath.
 
-- Defaults: 20 s per question, 5 s reveal.
-- Change globally: **Quiz: set time per question** (10/15/20/30/45/60/90/custom)
-  or in settings.
-- Per-question override: put a marker in the toggle title —
-  `⏱30`, `[30s]`, `(30s)` or `@20s`.
+### Time per question
+- **Kya hai:** answer reveal hone se pehle kitne second (3 … 600 s; slider 3–120).
+- **Kaise use karo:** MCQ = 15–20 s; long answer = 45–90 s.
+  Toggle ke title me `⏱30` / `[30s]` / `(30s)` / `@20s` likho to us question ka apna time.
+- **Default:** 20 s
+
+### Answer time
+- **Kya hai:** reveal hua answer kitne second khula rahe (1–60 s).
+- **Kaise use karo:** 5 s quick check ke liye; 15 s agar answer lamba hai.
+- **Default:** 5 s
+
+### Go to the next question automatically
+- **Kya hai:** answer ke baad khud agla question.
+- **Kaise use karo:** ON = hands-free exam drill. OFF = aap ⏭ se manually badhoge.
+- **Default:** ON
+
+### Close the toggle after the answer
+- **Kya hai:** ek time par ek hi answer visible rehta hai.
+- **Default:** ON
+
+### Use the colour filter
+- **Kya hai:** quiz sirf autoscroll ke chune hue colours par chalega (🔴/🟡/🟢).
+- **Kaise use karo:** ON + filter Red+Yellow = weak-spot quiz.
+- **Default:** ON
+
+### Loop the quiz
+- **Kya hai:** khatam hone par pehle question se dobara.
+- **Default:** OFF
+
+### Notify when the time is up
+- **Kya hai:** time up par notice/buzz.
+- **Default:** ON
+
+Time badalne ka fast tarika: command **Quiz: set time per question**
+(presets 10 / 15 / 20 / 30 / 45 / 60 / 90 + custom).
 
 ---
 
-## 7. Troubleshooting
+## 10. Commands (mobile toolbar me add karne layak)
 
-| Symptom | Fix |
+Mobile: `Settings → Mobile → Manage toolbar` → ye commands add karo.
+
+| Group | Command |
 |---|---|
-| BRAT: "no manifest.json in latest release" | Latest release now has assets; re-add the plugin in BRAT and restart. |
-| Nothing scrolls | The note has no toggles, or the colour filter excludes all of them. Set filter to *All*. |
-| Scroll too fast on mobile | Drop speed to 0.05x–0.2x; enable *Tall toggle: screen-by-screen*. |
-| Toggles don't reopen | Enable *Auto-open*; check the toggle is a supported `<details>`/callout block. |
-| Stats look wrong | Settings → *Reset revision memory* for that note. |
-| Reduced-motion systems | Animation is skipped automatically; stepping still works. |
+| Primary | Toggle (smart add) · Colour (red → yellow → green) · Recall (start / pause session) · Review (spaced repetition) |
+| Authoring | Insert toggle (empty) · Wrap selection as toggle · Quick Q&A toggle (prompt) · New toggle below · Insert numbered toggle · Renumber toggles in note |
+| MCQ / Match | Insert MCQ toggle · Add MCQ option · Toggle option checkbox · Insert Match the following toggle · Insert answer key line |
+| Convert | Convert `<details>` blocks to callouts · Convert callouts to `<details>` blocks |
+| Colour | Set toggle colour · Cycle toggle colour · Toggle auto-numbering |
+| Timer | Timer: show / hide · start / pause · reset phase · skip phase · start recall session on this note · stop session |
+| Autoscroll | Autoscroll (start / pause revision) · reverse direction · choose colour filter · faster · slower · stop · pause at · pause for · speed presets · go to first toggle · smart shuffle · reset revision memory · revision stats |
+| Quiz | Quiz (timed question run) · pause / resume · reveal the answer now · next question · stop · set time per question |
+| SRS | Show notes due for recall |
+
+*Minimal command names* ON hone par advanced commands `Advanced:` prefix ke saath dikhte hain.
 
 ---
 
-## 8. Release / dev notes
+## 11. Ready-made recipes
 
-- Build: `bun install && bun run build` → `main.js`.
-- Tests: `bun test` (197 tests), typecheck: `bun run typecheck`.
-- Real-vault checklist: `SMOKE-TEST.md` (18 steps).
-- Releases must attach `manifest.json`, `main.js`, `styles.css`; the
-  `Package Obsidian plugin release` GitHub Action does this on tag push or
-  manual dispatch, and resolves both `1.1.4` and `v1.1.4` style tags.
+**A. Fast revise (exam se ek din pehle)**
+Speed presets `5x` · Pause for `3s` · Colour filter `Red + Yellow` ·
+Auto-open ON · Auto-close ON · Tall toggles ON.
+
+**B. Slow deep read (naya chapter)**
+Speed presets `0.1x` · Pause for `60s` · Pause at `Every toggle` ·
+Tall toggles screen-by-screen ON · Loop the note OFF.
+
+**C. Weak-only shuffle drill**
+Pause at → `Shuffle (weakest first)` · Auto-grade ON · New-toggle mix `0.15` ·
+Shuffle range `0/0` (poora note) · Loop the route ON.
+
+**D. Exam-style quiz run**
+Quiz: Time per question `20s` · Answer time `5s` · Auto next ON ·
+Close after answer ON · Use colour filter ON (Red+Yellow) · Notify ON.
+Lambe questions ke titles me `⏱60` laga do.
+
+---
+
+## 12. Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| BRAT: "no manifest.json in latest release" | Latest release me assets attached hain; BRAT me plugin remove karke dobara add karo, phir restart. |
+| Settings dikh hi nahi rahi | Community plugins → Notion Toggle ke saamne ⚙ **Options** dabao (plugin ON hona chahiye). |
+| "Autoscroll band hai …" notice | Reverse/speed/stop se pehle session start karo — settings ka **Autoscroll running** switch, `Ctrl/Cmd+Shift+S`, ya floating ▶. |
+| Hotkey kaam nahi kar raha | `Settings → Hotkeys` → "Autoscroll" search karo; kisi aur plugin se clash ho to naya hotkey assign karo. |
+| Autoscroll kuch nahi karta | Note me toggle nahi hai, ya colour filter sabko exclude kar raha hai → filter `All toggles` karo. |
+| Mobile par bahut fast | Speed presets `0.05x`–`0.2x`, aur Tall toggles screen-by-screen ON. |
+| Toggle khulta nahi | *Open the toggle automatically* ON karo; toggle native callout / `<details>` hona chahiye. |
+| Stats galat lag rahe | Auto-scroll revision → **Revision memory → Reset for this note**. |
+| Timer screen se gayab | Quiz mode section ke niche **Reset timer position**. |
+| Reduced-motion system | Animation skip ho jati hai, stepping phir bhi chalta hai. |
+
+---
+
+## 13. Dev / release notes
+
+- Build: `bun install && bun run build` → `main.js`
+- Tests: `bun test` (197 tests) · Typecheck: `bun run typecheck`
+- Real-vault checklist: `SMOKE-TEST.md` (18 steps)
+- Release me `manifest.json`, `main.js`, `styles.css` attach hone chahiye —
+  `Package Obsidian plugin release` GitHub Action tag push / manual dispatch par ye karta hai
+  aur `1.1.4` + `v1.1.4` dono tag styles handle karta hai.

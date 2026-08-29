@@ -585,3 +585,125 @@ body.is-mobile .ntt-quiz-time {
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
 }
+
+/* ---------- v1.1.5: floating launch button (FAB) ---------- */
+.ntt-fab {
+  position: fixed;
+  right: 16px;
+  bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 22px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  z-index: 45;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+.ntt-fab.is-pressed {
+  transform: scale(0.9);
+}
+.ntt-fab.is-running {
+  outline: 2px solid var(--text-on-accent);
+  outline-offset: 2px;
+}
+body.is-mobile .ntt-fab {
+  width: 60px;
+  height: 60px;
+  font-size: 24px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ntt-fab {
+    transition: none;
+  }
+}
+
+/* ---------- v1.1.5: autoscroll sheet (long-press modal) ---------- */
+.ntt-sheet .setting-item {
+  padding: 0.6em 0;
+}
+.ntt-sheet {
+  --modal-width: 34rem;
+}
+
+/* ---------- v1.1.5: mobile toolbar guide ---------- */
+.ntt-guide {
+  --modal-width: 36rem;
+}
+.ntt-guide-progress {
+  font-weight: 600;
+  color: var(--text-accent);
+  margin-bottom: 0.5em;
+}
+.ntt-guide-steps {
+  margin: 0 0 0.8em 1.2em;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+.ntt-guide-steps li {
+  margin-bottom: 0.2em;
+}
+.ntt-guide-row.is-done .setting-item-name {
+  color: var(--text-success);
+  text-decoration: line-through;
+}
+.ntt-guide-tip {
+  margin-top: 0.8em;
+  padding: 0.6em 0.8em;
+  border-left: 3px solid var(--interactive-accent);
+  background: var(--background-secondary);
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+/* ---------- v1.1.6: floating button wrapper + reverse chip ---------- */
+.ntt-fab-wrap {
+  position: fixed;
+  right: 16px;
+  bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: var(--layer-notice, 60);
+}
+.ntt-fab-wrap.is-running {
+  bottom: calc(160px + env(safe-area-inset-bottom, 0px));
+}
+.ntt-fab-wrap .ntt-fab {
+  position: static;
+  right: auto;
+  bottom: auto;
+}
+.ntt-fab-rev {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+.ntt-fab-rev.is-reverse {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+body.is-mobile .ntt-fab-rev {
+  min-width: 48px;
+  min-height: 48px;
+  font-size: 20px;
+}

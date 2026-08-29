@@ -2,9 +2,9 @@
 
 Notion-style collapsible toggles for Obsidian, plus a recall workflow built on top of them: traffic-light grading, a floating Pomodoro timer, and SM-2 spaced repetition. You never type `<details>`, `<summary>` or `>` brackets by hand.
 
-Works on desktop and mobile. Version 1.1.4.
+Works on desktop and mobile. Version 1.1.6.
 
-Full guide: **[MANUAL.md](MANUAL.md)** — install, autoscroll, Quiz Mode, settings, troubleshooting.
+Full guide: **[MANUAL.md](MANUAL.md)** — install/enable, **every setting explained one by one** (Toggle basics, Recall timer, Focus guard, Minimal mode, Auto-scroll revision, Quiz mode), commands list for the mobile toolbar, ready-made presets, debug overlay, stats panel and troubleshooting.
 
 ## Install
 
@@ -15,7 +15,7 @@ Full guide: **[MANUAL.md](MANUAL.md)** — install, autoscroll, Quiz Mode, setti
 3. Enable **Notion Toggle** in *Settings → Community plugins*.
 4. Later updates: BRAT → *Check for updates*.
 
-> If BRAT reports *"A manifest.json file does not exist in the latest release"*, the release is missing its assets. The `v1.1.4` release ships `manifest.json`, `main.js` and `styles.css` as attached assets — remove and re-add the plugin in BRAT, then restart Obsidian.
+> If BRAT reports *"A manifest.json file does not exist in the latest release"*, the release is missing its assets. The `v1.1.6` release ships `manifest.json`, `main.js` and `styles.css` as attached assets — remove and re-add the plugin in BRAT, then restart Obsidian.
 
 ### Manual
 
@@ -185,3 +185,16 @@ The rules were already the reader's; now the **loop mechanics** are too (ported 
 - **Debug overlay** (toggle in settings) — a fixed read-out while autoscroll runs: float position and sub-pixel remainder, direction, `waypointReached` / `crossedTarget` events, the dwell guard key, the last dwell → FSRS grade, and route progress.
 - **Revision stats panel** — command `Autoscroll: revision stats (weak toggles)`, or the *Show stats* button in settings: deck summary, 7-day due forecast, and one row per toggle (`#7 · 42% recall · D 7.4 · S 3.1d · 2 lapses`) with a plain reason such as "forgotten 2× — kept close".
 - **Smoke test checklist** for a real vault in `SMOKE-TEST.md`.
+
+## v1.1.6 — ON/OFF switch, one-tap reverse, default hotkeys
+
+- **Autoscroll running switch** at the top of *Auto-scroll revision* settings — start and stop without the command palette or toolbar.
+- **Floating button upgrade** — a small ↑/↓ chip next to it flips direction in one tap, and the button now stays visible during a running session (offset above the control bar).
+- **Clear on-screen messages** — running-session actions (reverse, faster, slower, stop) now explain the exact command and hotkey to run instead of doing nothing; notes without toggles say so.
+- **Default hotkeys** — `Ctrl/Cmd+Shift+S` start/pause, `Ctrl/Cmd+Shift+R` reverse, `Ctrl/Cmd+Shift+A` sheet; shown in the command names and changeable in Settings → Hotkeys.
+
+## v1.1.5 — floating launch button, autoscroll sheet, mobile toolbar guide
+
+- **Floating ▶ button** on every open note (bottom-right, safe-area aware): tap = start / pause autoscroll, **long-press = autoscroll sheet**. It hides while the running control bar is on screen, and can be turned off in settings (*Floating autoscroll button*).
+- **Autoscroll sheet** — every control in one mobile-friendly sheet: start/pause, speed, pause-for, pause-at, colour filter, reverse, loop, auto-open/close, tall-toggle chunking, debug overlay, plus shortcuts to *go to first*, *stats* and the toolbar guide. Also available as the command `Autoscroll: sheet (all controls)`.
+- **Mobile toolbar guide** (command `Autoscroll: mobile toolbar guide`, or the button in settings) — in-app steps for Settings → Mobile → Manage toolbar with a **one-tap checklist** of the exact commands to add; the checklist persists, so you can tick commands off as you add them.
