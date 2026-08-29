@@ -142,6 +142,14 @@ import {
   type QuizSettings,
   type QuizState,
 } from "./src/quiz";
+import {
+  collectToggleEls,
+  isToggleOpen as isToggleOpenDom,
+  restoreToggles,
+  setToggleOpen as setToggleOpenDom,
+  toggleTitleOf,
+  toggleTypeOf,
+} from "./src/toggle-dom";
 import { QuizHud } from "./src/quiz-ui";
 import {
   pruneCards,
@@ -1720,25 +1728,15 @@ export default class NotionTogglePlugin extends Plugin {
 
   /** Every rendered toggle in the active note, with its offset and colour. */
   private collectStops(container: HTMLElement): ToggleStop[] {
-    const nodes = (
-      Array.from(
-        container.querySelectorAll(".callout, details, [data-callout]")
-      ) as HTMLElement[]
-    ).filter(
-      // keep only outermost matches (a nested callout is part of its parent)
-      (el, _i, all) => !all.some((other) => other !== el && other.contains(el))
-    );
+    const nodes = collectToggleEls(container);
     const base = container.getBoundingClientRect().top - container.scrollTop;
     return nodes.map((el, index) => {
-      const type =
-        el.getAttribute("data-callout") ??
-        (el.className || (el.tagName.toLowerCase() === "details" ? "details" : ""));
       const rect = el.getBoundingClientRect();
       return {
         index,
         top: Math.max(0, Math.round(rect.top - base)),
         height: Math.round(rect.height),
-        color: colorOf(type),
+        color: colorOf(toggleTypeOf(el)),
         el,
       } as ToggleStop & { el: HTMLElement; height: number };
     });
@@ -1746,20 +1744,13 @@ export default class NotionTogglePlugin extends Plugin {
 
   /** v1.2.0 — is this toggle currently expanded? */
   private isToggleOpen(el: HTMLElement): boolean {
-    if (el.tagName.toLowerCase() === "details") return (el as HTMLDetailsElement).open;
-    return !el.classList.contains("is-collapsed");
+    return isToggleOpenDom(el);
   }
 
   private setToggleOpen(el: HTMLElement, open: boolean) {
-    if (el.tagName.toLowerCase() === "details") {
-      (el as HTMLDetailsElement).open = open;
-      return;
-    }
-    const collapsed = el.classList.contains("is-collapsed");
-    if (collapsed === !open) return;
-    const title = el.querySelector(".callout-title") as HTMLElement | null;
-    title?.click();
+    setToggleOpenDom(el, open);
   }
+
 
   /**
    * v1.1.8 — freeze the loop while a finger is held anywhere on the note.
@@ -2518,15 +2509,9 @@ export default class NotionTogglePlugin extends Plugin {
 
   /** Visible title text of a toggle, used for the per-question "⏱30" marker. */
   private quizTitleOf(el: HTMLElement): string {
-    if (el.tagName.toLowerCase() === "details") {
-      return el.querySelector("summary")?.textContent ?? "";
-    }
-    return (
-      el.querySelector(".callout-title-inner")?.textContent ??
-      el.querySelector(".callout-title")?.textContent ??
-      ""
-    );
+    return toggleTitleOf(el);
   }
+
 
   /** Primary command: start, pause or resume the quiz. */
   toggleQuiz() {
@@ -2600,9 +2585,11 @@ export default class NotionTogglePlugin extends Plugin {
     const summary = this.quizState ? quizSummary(this.quizState) : "";
     // v1.2.0 — restore the note to its pre-quiz shape so the document stays
     // readable after a run (previously every toggle was left collapsed).
-    this.quizStops.forEach((stop, i) => {
-      if (stop.el) this.setToggleOpen(stop.el, !!this.quizWasOpen[i]);
-    });
+    restoreToggles(
+      this.quizStops.map((s) => s.el),
+      this.quizWasOpen
+    );
+
     this.quizState = null;
     this.quizWasOpen = [];
     this.quizStops = [];

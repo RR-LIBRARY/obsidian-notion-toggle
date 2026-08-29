@@ -2020,6 +2020,47 @@ function quizStartLabel(count, s) {
   )}s each \xB7 reveal ${clampRevealSeconds(s.quizRevealSeconds)}s`;
 }
 
+// src/toggle-dom.ts
+var TOGGLE_SELECTOR = ".callout, details, [data-callout]";
+function collectToggleEls(root) {
+  const nodes = Array.from(root.querySelectorAll(TOGGLE_SELECTOR));
+  return nodes.filter((el) => !nodes.some((other) => other !== el && other.contains(el)));
+}
+function toggleTypeOf(el) {
+  var _a;
+  return (_a = el.getAttribute("data-callout")) != null ? _a : el.className || (el.tagName.toLowerCase() === "details" ? "details" : "");
+}
+function isToggleOpen(el) {
+  if (el.tagName.toLowerCase() === "details")
+    return el.open;
+  return !el.classList.contains("is-collapsed");
+}
+function setToggleOpen(el, open) {
+  if (el.tagName.toLowerCase() === "details") {
+    el.open = open;
+    return;
+  }
+  if (isToggleOpen(el) === open)
+    return;
+  const title = el.querySelector(".callout-title");
+  title == null ? void 0 : title.click();
+  if (isToggleOpen(el) !== open)
+    el.classList.toggle("is-collapsed", !open);
+}
+function toggleTitleOf(el) {
+  var _a, _b, _c, _d, _e, _f;
+  if (el.tagName.toLowerCase() === "details") {
+    return (_b = (_a = el.querySelector("summary")) == null ? void 0 : _a.textContent) != null ? _b : "";
+  }
+  return (_f = (_e = (_c = el.querySelector(".callout-title-inner")) == null ? void 0 : _c.textContent) != null ? _e : (_d = el.querySelector(".callout-title")) == null ? void 0 : _d.textContent) != null ? _f : "";
+}
+function restoreToggles(els, wasOpen) {
+  els.forEach((el, i) => {
+    if (el)
+      setToggleOpen(el, !!wasOpen[i]);
+  });
+}
+
 // src/quiz-ui.ts
 var QuizHud = class {
   constructor(cb) {
@@ -3512,42 +3553,25 @@ ${row}`, { line: cursor.line, ch: line.length });
   }
   /** Every rendered toggle in the active note, with its offset and colour. */
   collectStops(container) {
-    const nodes = Array.from(
-      container.querySelectorAll(".callout, details, [data-callout]")
-    ).filter(
-      // keep only outermost matches (a nested callout is part of its parent)
-      (el, _i, all) => !all.some((other) => other !== el && other.contains(el))
-    );
+    const nodes = collectToggleEls(container);
     const base = container.getBoundingClientRect().top - container.scrollTop;
     return nodes.map((el, index) => {
-      var _a;
-      const type = (_a = el.getAttribute("data-callout")) != null ? _a : el.className || (el.tagName.toLowerCase() === "details" ? "details" : "");
       const rect = el.getBoundingClientRect();
       return {
         index,
         top: Math.max(0, Math.round(rect.top - base)),
         height: Math.round(rect.height),
-        color: colorOf(type),
+        color: colorOf(toggleTypeOf(el)),
         el
       };
     });
   }
   /** v1.2.0 — is this toggle currently expanded? */
   isToggleOpen(el) {
-    if (el.tagName.toLowerCase() === "details")
-      return el.open;
-    return !el.classList.contains("is-collapsed");
+    return isToggleOpen(el);
   }
   setToggleOpen(el, open) {
-    if (el.tagName.toLowerCase() === "details") {
-      el.open = open;
-      return;
-    }
-    const collapsed = el.classList.contains("is-collapsed");
-    if (collapsed === !open)
-      return;
-    const title = el.querySelector(".callout-title");
-    title == null ? void 0 : title.click();
+    setToggleOpen(el, open);
   }
   /**
    * v1.1.8 — freeze the loop while a finger is held anywhere on the note.
@@ -4291,11 +4315,7 @@ ${deckSummary(
   /* ==================== v1.1.0: quiz mode ==================== */
   /** Visible title text of a toggle, used for the per-question "⏱30" marker. */
   quizTitleOf(el) {
-    var _a, _b, _c, _d, _e, _f;
-    if (el.tagName.toLowerCase() === "details") {
-      return (_b = (_a = el.querySelector("summary")) == null ? void 0 : _a.textContent) != null ? _b : "";
-    }
-    return (_f = (_e = (_c = el.querySelector(".callout-title-inner")) == null ? void 0 : _c.textContent) != null ? _e : (_d = el.querySelector(".callout-title")) == null ? void 0 : _d.textContent) != null ? _f : "";
+    return toggleTitleOf(el);
   }
   /** Primary command: start, pause or resume the quiz. */
   toggleQuiz() {
@@ -4358,10 +4378,10 @@ ${deckSummary(
       this.quizInterval = null;
     }
     const summary = this.quizState ? quizSummary(this.quizState) : "";
-    this.quizStops.forEach((stop, i) => {
-      if (stop.el)
-        this.setToggleOpen(stop.el, !!this.quizWasOpen[i]);
-    });
+    restoreToggles(
+      this.quizStops.map((s) => s.el),
+      this.quizWasOpen
+    );
     this.quizState = null;
     this.quizWasOpen = [];
     this.quizStops = [];

@@ -93,3 +93,54 @@ single-button FAB.
 | Quiz timing | Per-question duration, `⏱30` override, auto-next, pause/resume, skip, post-quiz toggle restore — `tests/verify-v120.test.ts`. |
 | New regression test | `tests/scroll-loop.test.ts` proves frames advance `scrollTop` and that a non-scrollable wrapper is skipped. |
 | Suite | 231 tests pass, typecheck clean, bundle 207 kb. |
+
+## v1.2.3 — deep verification: quiz timing + automatic toggle open/close
+
+Toggle DOM handling was extracted from `main.ts` into `src/toggle-dom.ts`
+(`collectToggleEls`, `isToggleOpen`, `setToggleOpen`, `toggleTitleOf`,
+`applyQuizVisibility`, `restoreToggles`). `main.ts` now calls those helpers, so
+the tests below exercise the *production* code path instead of a copy.
+
+### Engine timing — `tests/quiz-timing.test.ts`
+
+| Check | Result |
+| --- | --- |
+| Per-question markers `⏱30`, `⏱ 45s`, `⏲25`, `[30s]`, `(45 s)`, `@20s` | PASS |
+| Fallback to the setting, clamp 3 s … 600 s, NaN → default | PASS |
+| Question ends exactly on its own duration → `reveal` | PASS |
+| Reveal ends on `quizRevealSeconds` → `next`, timer resets to the next question's own time | PASS |
+| Last question → `done`, `answered` counted, loop stopped | PASS |
+| `quizAutoNext = false` halts after the reveal; manual next resumes | PASS |
+| `quizLoop = true` wraps back to Q1 with the correct duration | PASS |
+| Pause freezes the countdown; resume continues from the same value | PASS |
+| `reveal now` / `skip` mid-phase | PASS |
+
+Driven in 250 ms frames — the same interval as the live loop — so the timings
+match what runs on the device.
+
+### Automatic open / close — `tests/quiz-dom.test.ts` (happy-dom)
+
+Fixture note: `!note` (collapsed), `!question` (open, with a nested `!info`),
+`<details>`, `<details open>`, plus plain paragraphs.
+
+| Check | Result |
+| --- | --- |
+| Discovery finds all four toggles, skips the nested one and plain text | PASS |
+| Callout type / `<details>` reported for the colour filter | PASS |
+| Titles readable for the per-question duration marker | PASS |
+| Initial open state read correctly for callouts *and* `<details>` | PASS |
+| Open/close idempotent on both flavours | PASS |
+| Quiz start collapses everything (active recall) | PASS |
+| Question phase keeps the answer hidden; reveal opens **only** the current toggle | PASS |
+| Moving on closes the previous toggle automatically | PASS |
+| `quizCloseAfterReveal = false` keeps revealed answers open | PASS |
+| Quiz stop restores every toggle to its exact pre-quiz state — document stays readable | PASS |
+| Shorter/stale saved-state array does not crash the restore | PASS |
+
+### Fix included
+
+`setToggleOpen()` for callouts relied purely on Obsidian's title click handler.
+If a theme or a re-render swallowed that click, the toggle silently stayed in
+the wrong state. It now verifies the result and syncs `is-collapsed` itself.
+
+**Suite: 249 tests pass**, build clean (207 kb).

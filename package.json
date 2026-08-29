@@ -1,6 +1,6 @@
 {
   "name": "obsidian-notion-toggle",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Notion-style toggle plugin for Obsidian",
   "private": true,
   "scripts": {
@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
+    "@happy-dom/global-registrator": "^20.11.15",
     "@types/node": "^20.11.0",
     "esbuild": "^0.20.2",
     "obsidian": "^1.5.7",
