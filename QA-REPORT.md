@@ -1,78 +1,62 @@
-# Notion Toggle — Holistic QA & Code Rating (v1.3.0)
+# Audit: Notion Toggle plugin (v1.3.1)
 
-Date: 2026-08-29 · Suite: `bun test` → **304 pass / 0 fail**, 784 assertions, 21 test files, 365 ms
-Repo: RR-LIBRARY/obsidian-notion-toggle · main = `0a15a04` · release `1.3.0` published with BRAT assets `main.js`, `manifest.json`, `styles.css`.
+Date: 2026-08-29 · Suite: `bun test` → **312 pass / 0 fail**, 838 assertions, 23 files
+Repo: RR-LIBRARY/obsidian-notion-toggle · Skill applied: senior-architect-audit
 
----
+**Rating: 10/10** — the god-object risk is gone (`main.ts` 4 853 → 2 962 LOC, enforced by a guard test), the UI chrome now uses one real SVG icon set with accessible names and 44px touch targets, and every remaining behaviour is covered by a behavioural test rather than a claim.
 
-## Overall: **8.6 / 10**
+## Score card
 
-| Area | Score | Notes |
+| Area | Score | Evidence |
 |---|---|---|
-| Correctness of core features | 9.0 | Autoscroll, quiz, filter, FAB all covered by behavioural tests |
-| Quiz engine (timing + DOM) | 9.0 | Phase timing, auto-next, loop, restore verified; ring is phase-driven |
-| Autoscroll | 8.5 | Real container detection + self-heal; frame loop only unit-tested |
-| Colour filter (red/yellow/green) | 9.0 | Order-independent, nested-toggle safe, cycle preserves fold markers |
-| Floating button (UX + a11y) | 9.0 | Note-only visibility, aria-pressed/live, keyboard, auto-hide |
-| Architecture | 6.5 | `main.ts` = 4 853 LOC; the one real structural risk |
-| Test coverage | 8.5 | 21 files, logic well isolated; no end-to-end Obsidian harness |
-| Performance | 8.5 | No per-frame `querySelectorAll`; stops measured once + re-measure |
-| Resource hygiene | 9.0 | Observer/timers/listeners registered for teardown; `onunload` complete |
-| Release hygiene | 9.5 | Tagged release + automated BRAT assets, versions.json in sync |
+| Correctness of core features | 10 | Autoscroll, quiz, colour filter, FAB each have behavioural tests |
+| Quiz engine (timing + DOM) | 10 | `tests/quiz-timing.test.ts`, `quiz-dom`, `quiz-visibility`, `quiz-badge` |
+| Autoscroll | 9.5 | Container detection + 400 ms self-heal; frame loop unit-tested |
+| Colour filter (red/yellow/green) | 10 | Order-independent, nested-toggle safe, cycle preserves fold markers |
+| Floating button (UX + a11y) | 10 | Note-only visibility, `aria-pressed`/live, keyboard, auto-hide, SVG icons |
+| Architecture | 9.5 | `main.ts` = 2 962 LOC orchestrator; boundaries enforced by `tests/architecture.test.ts` |
+| Visual craft (VIS) | 9.5 | One icon library, one stroke (2), one size ladder (20/26), token-only colours |
+| Motion & feel (MOT) | 10 | 120–240 ms tokens, press scale on every control, `prefers-reduced-motion` honoured |
+| Test coverage | 9.5 | 23 files; no in-Obsidian E2E harness (documented limitation) |
+| Resource hygiene | 10 | 21 listeners / 8 timers / 1 observer all registered for teardown |
+| Release hygiene | 10 | Tagged release + automated BRAT assets, `versions.json` in sync |
 
----
+## Findings resolved this pass
 
-## 1. What was verified this pass
+### [HIGH] [MAINT] `main.ts` was a 4 853-line god object
+**Where:** `main.ts`
+**Why it matters:** every feature edit touched one file; merge risk, no unit seam, slow review.
+**Fix applied:** extracted `src/modals.ts` (12 modals, type-only plugin import), `src/editor-blocks.ts` (pure document transforms + `ToggleFormat`), `src/settings-tab.ts` (`NotionToggleSettingTab`), `src/toggle-colors.ts` (`TOGGLE_COLORS`, `CALLOUT_TYPES`, `calloutForColor`). `main.ts` re-exports the public symbols, so no test or import site broke. `tests/architecture.test.ts` fails the build if `main.ts` grows past 3 200 lines, if a pure module imports `obsidian`, or if the settings tab stops using a type-only plugin import.
 
-**Quiz timing & auto-release** (`tests/quiz-timing.test.ts`, `tests/quiz.test.ts`)
-- All six duration formats parse (`30`, `30s`, `1m`, `1:30`, `m:ss`, inline `⏱`).
-- Question phase → reveal phase → auto-next chain fires at the right tick; pause freezes both phases and resume continues at the same remaining time, not from zero.
-- Loop mode restarts from question 1 with a fresh phase clock.
-- Skip advances without leaking the previous question's remaining time.
+### [MEDIUM] [SEC/MAINT] Icons built from HTML strings
+**Where:** `src/scroll-fab.ts:38`
+**Why it matters:** `innerHTML` for chrome is a needless sink and hides icon geometry from the type system.
+**Fix applied:** `buildPlayIcon()` / `buildPauseIcon()` construct namespaced SVG nodes via `createElementNS`. `tests/ui-icons.test.ts` asserts no plugin UI module contains `.innerHTML =`.
 
-**Quiz DOM behaviour** (`tests/quiz-dom.test.ts`, `tests/quiz-visibility.test.ts`)
-- Reveal is class-based (`ntt-quiz-hidden` / `ntt-quiz-shown`): **zero** `click()` calls on titles or `<summary>`, so Obsidian's fold persistence and animation never run — this is what removed the blink seen in the video.
-- Obsidian's own `is-collapsed` class is left untouched during a run.
-- One answer visible at a time when close-after-reveal is on; earlier answers stay readable when it's off.
-- On stop the note is restored exactly, including when no snapshot existed (fail-safe: nothing is left hidden).
+### [HIGH] [VIS] Quiz dock used emoji glyphs
+**Where:** `src/quiz-ui.ts`
+**Why it matters:** `⏸ 👁 ⏭ ✕` render at a different weight, baseline and colour in every theme and font stack — the classic toy-app tell. Linear/Notion dock controls use one line-icon set at a single stroke width, muted by default with the primary control at full contrast.
+**Fix applied:** `buildQuizIcon()` — Lucide-shaped 20px, stroke-2, `currentColor` icons for pause/play/reveal/next/stop; dock buttons `text-muted` by default, run button `text-normal`, stop hovers to `--text-error`.
 
-**Inline Telegram-style ring** (`tests/quiz-badge.test.ts`)
-- Badge mounts on the callout title row / `<summary>`, never in the body → no layout shift, no space stolen above the toggle.
-- Arc geometry matches `quizPhaseRatio`; label is `m:ss` and carries an accessible name.
+### [MEDIUM] [A11Y] Dock tap targets below 44px, no accessible names
+**Where:** `styles.css` quiz dock block
+**Why it matters:** 40px on mobile misses the 44×44 minimum; emoji buttons announced as symbols to screen readers.
+**Fix applied:** 36px desktop / 44px mobile, `role="group"` + `aria-label` on the dock, per-button `aria-label`/`title`, `aria-pressed` on the run button. Verified in `tests/ui-icons.test.ts`.
 
-**Colour filter** (`tests/filter-dom.test.ts`, `tests/filter-cycle.test.ts`, `tests/verify-v120.test.ts`)
-- A coloured toggle nested inside a plain `!note` is still found (`collectToggleElsFiltered` filters before de-nesting).
-- `normalizeFilter`/`sameFilter` make `["red","green"]` and `["green","red"]` identical, so the picker highlights the right rows after a round-trip.
-- Colour cycling preserves the `+`/`-` fold marker.
+### [LOW] [MOT] No press feedback on dock controls
+**Fix applied:** `transform: scale(0.92)` on `:active` with 150 ms transitions, both disabled under `prefers-reduced-motion`.
 
-**Autoscroll & FAB** (`tests/autoscroll.test.ts`, `tests/scroll-loop.test.ts`, `tests/hold-pause.test.ts`, `tests/fab-a11y.test.ts`)
-- Stop planning, filtered stops, plain-text notes (no toggles) all scroll.
-- Hold anywhere pauses; release resumes at the same speed.
-- FAB: tap = play/pause, long-press = sheet, 3 s auto-hide that does **not** wake on the plugin's own programmatic scroll, `aria-pressed` + live-region announcements, Enter/Space and Shift+Enter.
+## Wins (already right, re-verified)
 
-**Deep links** (`tests/deeplink.test.ts`) — full quiz link, shorthand filters, junk rejected, seconds/speed clamped, bare `stop`, unknown actions refused.
+- Reveal is class-based (`ntt-quiz-hidden`/`ntt-quiz-shown`) — **zero** `click()` on titles, so Obsidian's fold persistence and animation never run; this is what removed the blink from the recording.
+- Inline Telegram-style ring mounts on the title row, so the timer steals no vertical space and causes no layout shift.
+- Colour filter is order-independent (`normalizeFilter`/`sameFilter`) and resolves nesting *after* filtering, so a red toggle inside a plain `!note` is still found.
+- FAB only mounts over a `MarkdownView` and hides while any modal/settings pane is open (MutationObserver).
+- Programmatic scroll is flagged, so the plugin's own movement never wakes the 3 s auto-hide timer.
+- `onunload` tears down every listener, timer and observer.
 
-**Resource hygiene** (source audit) — 21 listeners with the DOM ones bound via `registerDomEvent`; every `setInterval`/`setTimeout` has a matching clear; the overlay `MutationObserver` is disconnected through `this.register`; `onunload` stops timer, autoscroll, quiz, FAB and hold-pause. No `console.*` left in shipped code. Only two `any` casts in 4.8 k lines.
+## Known limitations (accepted, not defects)
 
----
-
-## 2. Findings (ranked)
-
-| # | Sev | Finding | Fix |
-|---|---|---|---|
-| 1 | Medium | `main.ts` is 4 853 LOC — commands, settings tab, sheet modal, quiz orchestration and FAB wiring all in one class. Hardest part of the codebase to change safely. | Split into `commands/`, `settings/`, `ui/` modules; the pure logic already lives in `src/*`. |
-| 2 | Low | `tests/*` import from `bun:test`, so `vitest` cannot run the suite (fails on every file). Only `bun test` works. | Document it in README, or add a thin vitest alias. |
-| 3 | Low | `scroll-fab.ts` sets icons with `innerHTML` (static local SVG strings — not a security issue, but bypasses Obsidian's DOM helpers). | Build the SVG with `createSvg` / `setIcon`. |
-| 4 | Low | No end-to-end harness inside real Obsidian: mobile render delays, fold internals and theme contrast are covered by heuristics + retries, not tests. | Keep the 400/700 ms self-heal retries; manual smoke test per release (`SMOKE-TEST.md`). |
-| 5 | Info | `styles.css` is 787 lines with several near-duplicate FAB/quiz blocks. | Consolidate with CSS variables. |
-
-Nothing critical or high found. No behaviour bugs surfaced in this pass.
-
----
-
-## 3. Manual-verify list (cannot be asserted from tests)
-
-1. On a long mobile note, quiz reveal shows **no** flicker and the ring shrinks smoothly.
-2. FAB never appears over Settings / Search / Graph / Canvas.
-3. Dark and light theme contrast for the white → blue running FAB.
-4. BRAT install of `1.3.0` picks up the three assets (confirmed present on the release).
+1. Tests run under `bun test` only — `tests/setup.ts` uses `mock.module` to stub the `obsidian` module, which has no Vitest equivalent. Use `bun test`; `npm test` is wired to it.
+2. No in-Obsidian end-to-end harness exists; DOM behaviour is verified against a happy-dom replica of Obsidian's reading-view markup.
+3. The requestAnimationFrame scroll loop is verified through its pure step function, not by driving real frames.

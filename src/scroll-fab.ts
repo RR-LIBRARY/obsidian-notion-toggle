@@ -35,11 +35,53 @@ export function isProgrammaticScroll(now = Date.now()): boolean {
   return now < programmaticUntil;
 }
 
-/* v1.2.2 — screenshot style: plain white circle, dark double-chevron down. */
-const PLAY_ICON =
-  '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l7 6 7-6"/><path d="M5 13l7 6 7-6"/></svg>';
-const PAUSE_ICON =
-  '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><rect x="6.5" y="5" width="4" height="14" rx="1.4" fill="currentColor"/><rect x="13.5" y="5" width="4" height="14" rx="1.4" fill="currentColor"/></svg>';
+/* v1.2.2 — screenshot style: plain white circle, dark double-chevron down.
+   v1.3.1 — built with real SVG DOM nodes (no innerHTML anywhere). */
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svgEl<K extends keyof SVGElementTagNameMap>(
+  tag: K,
+  attrs: Record<string, string>
+): SVGElementTagNameMap[K] {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+/** Double chevron pointing down = "scroll on". */
+export function buildPlayIcon(): SVGSVGElement {
+  const svg = svgEl("svg", {
+    viewBox: "0 0 24 24",
+    width: "26",
+    height: "26",
+    "aria-hidden": "true",
+    fill: "none",
+    stroke: "currentColor",
+    "stroke-width": "2.6",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+  });
+  svg.appendChild(svgEl("path", { d: "M5 7l7 6 7-6" }));
+  svg.appendChild(svgEl("path", { d: "M5 13l7 6 7-6" }));
+  return svg;
+}
+
+/** Two rounded bars = "running, tap to pause". */
+export function buildPauseIcon(): SVGSVGElement {
+  const svg = svgEl("svg", {
+    viewBox: "0 0 24 24",
+    width: "26",
+    height: "26",
+    "aria-hidden": "true",
+  });
+  for (const x of ["6.5", "13.5"]) {
+    svg.appendChild(
+      svgEl("rect", { x, y: "5", width: "4", height: "14", rx: "1.4", fill: "currentColor" })
+    );
+  }
+  return svg;
+}
+
 
 export class ScrollFab {
   private wrap: HTMLDivElement;
@@ -67,7 +109,7 @@ export class ScrollFab {
     this.root.className = "ntt-fab";
     this.icon = document.createElement("span");
     this.icon.className = "ntt-fab-icon";
-    this.icon.innerHTML = PLAY_ICON;
+    this.icon.appendChild(buildPlayIcon());
     this.root.appendChild(this.icon);
     this.root.type = "button";
     this.root.setAttribute("aria-label", "Autoscroll — tap to start, hold for settings");
@@ -149,7 +191,8 @@ export class ScrollFab {
   }
 
   setRunning(running: boolean) {
-    this.icon.innerHTML = running ? PAUSE_ICON : PLAY_ICON;
+    this.icon.textContent = "";
+    this.icon.appendChild(running ? buildPauseIcon() : buildPlayIcon());
     this.root.setAttribute("aria-pressed", running ? "true" : "false");
     if (this.sr) this.sr.textContent = running ? "Autoscroll running" : "Autoscroll stopped";
     this.root.classList.toggle("is-running", running);

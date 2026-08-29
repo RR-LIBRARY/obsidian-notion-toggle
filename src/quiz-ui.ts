@@ -19,6 +19,64 @@ export interface QuizBarData {
   revealing: boolean;
 }
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svgEl<K extends keyof SVGElementTagNameMap>(
+  tag: K,
+  attrs: Record<string, string>
+): SVGElementTagNameMap[K] {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+export type QuizIcon = "pause" | "play" | "reveal" | "next" | "stop";
+
+/**
+ * v1.3.1 — one icon set, one stroke width (2), one size (20px).
+ * The emoji glyphs the dock used before rendered at a different weight in every
+ * theme/font and read like a toy app; these are Lucide-shaped line icons that
+ * inherit `currentColor` so dark mode and the accent state just work.
+ */
+export function buildQuizIcon(kind: QuizIcon): SVGSVGElement {
+  const svg = svgEl("svg", {
+    viewBox: "0 0 24 24",
+    width: "20",
+    height: "20",
+    "aria-hidden": "true",
+    fill: "none",
+    stroke: "currentColor",
+    "stroke-width": "2",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+  });
+  const path = (d: string) => svg.appendChild(svgEl("path", { d }));
+  switch (kind) {
+    case "pause":
+      path("M9 5v14");
+      path("M15 5v14");
+      break;
+    case "play":
+      svg.appendChild(
+        svgEl("path", { d: "M7 4.5l12 7.5-12 7.5z", fill: "currentColor", stroke: "none" })
+      );
+      break;
+    case "reveal":
+      path("M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z");
+      svg.appendChild(svgEl("circle", { cx: "12", cy: "12", r: "2.6" }));
+      break;
+    case "next":
+      path("M5 5l9 7-9 7z");
+      path("M18 5v14");
+      break;
+    case "stop":
+      path("M6 6l12 12");
+      path("M18 6L6 18");
+      break;
+  }
+  return svg;
+}
+
 export class QuizBar {
   private root: HTMLElement;
   private progressEl: HTMLElement;
@@ -35,10 +93,11 @@ export class QuizBar {
     this.progressEl.textContent = "Q 1/1";
     this.root.appendChild(this.progressEl);
 
-    const btn = (text: string, label: string, cls: string, fn: () => void) => {
+    const btn = (icon: QuizIcon, label: string, cls: string, fn: () => void) => {
       const b = document.createElement("button");
       b.className = `ntt-quiz-dock-btn ${cls}`;
-      b.textContent = text;
+      b.type = "button";
+      b.appendChild(buildQuizIcon(icon));
       b.setAttribute("aria-label", label);
       b.title = label;
       b.addEventListener("click", (e) => {
@@ -49,17 +108,20 @@ export class QuizBar {
       return b;
     };
 
-    this.runBtn = btn("⏸", "Pause / resume", "is-run", () => this.cb.onTogglePause());
-    btn("👁", "Reveal the answer now", "is-reveal", () => this.cb.onRevealNow());
-    btn("⏭", "Next question", "is-next", () => this.cb.onNext());
-    btn("✕", "Stop quiz", "is-stop", () => this.cb.onStop());
+    this.runBtn = btn("pause", "Pause / resume", "is-run", () => this.cb.onTogglePause());
+    btn("reveal", "Reveal the answer now", "is-reveal", () => this.cb.onRevealNow());
+    btn("next", "Next question", "is-next", () => this.cb.onNext());
+    btn("stop", "Stop quiz", "is-stop", () => this.cb.onStop());
 
     document.body.appendChild(this.root);
   }
 
   render(d: QuizBarData) {
     this.progressEl.textContent = d.progress;
-    this.runBtn.textContent = d.running ? "⏸" : "▶";
+    this.runBtn.textContent = "";
+    this.runBtn.appendChild(buildQuizIcon(d.running ? "pause" : "play"));
+    this.runBtn.setAttribute("aria-label", d.running ? "Pause quiz" : "Resume quiz");
+    this.runBtn.title = this.runBtn.getAttribute("aria-label") ?? "";
     this.runBtn.setAttribute("aria-pressed", String(!d.running));
     this.root.classList.toggle("is-paused", !d.running);
     this.root.classList.toggle("is-reveal", d.revealing);
@@ -69,3 +131,4 @@ export class QuizBar {
     this.root.remove();
   }
 }
+
