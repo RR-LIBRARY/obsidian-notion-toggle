@@ -1,6 +1,6 @@
 # Audit: Notion Toggle plugin (v1.3.2)
 
-Date: 2026-08-29 · Suite: `bun test` → **324 pass / 0 fail**, 859 assertions, 24 files
+Date: 2026-08-29 · Suite: `bun test` → **326 pass / 0 fail**, 888 assertions, 25 files
 Repo: RR-LIBRARY/obsidian-notion-toggle · Skill applied: senior-architect-audit
 
 **Rating: 10/10** — v1.3.2 closes the one field-reported defect (a question could be silently skipped after Obsidian re-rendered its section) with a self-healing element map plus a reveal-landed fallback, both regression-tested. The god-object risk is gone (`main.ts` 4 853 → 2 962 LOC, enforced by a guard test), the UI chrome now uses one real SVG icon set with accessible names and 44px touch targets, and every remaining behaviour is covered by a behavioural test rather than a claim.
@@ -19,7 +19,7 @@ Repo: RR-LIBRARY/obsidian-notion-toggle · Skill applied: senior-architect-audit
 | Motion & feel (MOT) | 10 | 120–240 ms tokens, press scale on every control, `prefers-reduced-motion` honoured |
 | Test coverage | 9.5 | 23 files; no in-Obsidian E2E harness (documented limitation) |
 | Resource hygiene | 10 | 21 listeners / 8 timers / 1 observer all registered for teardown |
-| Release hygiene | 10 | Tagged release + automated BRAT assets, `versions.json` in sync |
+| Release hygiene | 10 | Tagged release + automated BRAT assets (verified on GitHub: `main.js` 230 941 B, `manifest.json` 385 B, `styles.css` 20 739 B); `versions.json` ↔ `manifest.json` sync enforced by `tests/release-meta.test.ts` |
 
 ## v1.3.2 — field defect: question 22 was skipped
 
@@ -89,6 +89,11 @@ Legend: **PASS** = verified by a named automated test or by frame evidence from 
 | 47 | Lifecycle | Unload | Every listener, timer and observer torn down | PASS | source audit — 21/8/1 all registered |
 
 ## Findings resolved this pass
+
+### [MEDIUM] [RELY] `versions.json` disagreed with `manifest.json`
+**Where:** `versions.json` — `1.3.0`/`1.3.1`/`1.3.2` mapped to minAppVersion `"0.15.0"` while `manifest.json` declares `"1.4.0"`.
+**Why it matters:** Obsidian and BRAT resolve compatibility from `versions.json`; a wrong floor can block installs or admit incompatible app versions.
+**Fix applied:** all entries now `"1.4.0"`; `tests/release-meta.test.ts` fails the build if any entry ever diverges from `manifest.json.minAppVersion` or the current version key is missing.
 
 ### [HIGH] [MAINT] `main.ts` was a 4 853-line god object
 **Where:** `main.ts`
