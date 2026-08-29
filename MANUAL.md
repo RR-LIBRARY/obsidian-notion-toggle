@@ -1,4 +1,4 @@
-# Notion Toggle — User Manual (v1.1.3)
+# Notion Toggle — User Manual (v1.1.4)
 
 Complete guide for install, autoscroll revision, Quiz Mode, settings, and troubleshooting.
 
@@ -18,8 +18,8 @@ Complete guide for install, autoscroll revision, Quiz Mode, settings, and troubl
 
 > **If BRAT says "A manifest.json file does not exist in the latest release"**
 > The latest GitHub release must carry `manifest.json`, `main.js` and `styles.css`
-> as *release assets* (not just repo files). Fixed in v1.1.3 — the release
-> `v1.1.3` has all three attached. If you still see it: BRAT → remove the entry →
+> as *release assets* (not just repo files). Fixed in v1.1.4 — the release
+> `v1.1.4` has all three attached. If you still see it: BRAT → remove the entry →
 > add it again, then restart Obsidian.
 
 ### 1.2 Manual install
@@ -166,4 +166,4 @@ auto-scrolled into view.
 - Real-vault checklist: `SMOKE-TEST.md` (18 steps).
 - Releases must attach `manifest.json`, `main.js`, `styles.css`; the
   `Package Obsidian plugin release` GitHub Action does this on tag push or
-  manual dispatch, and resolves both `1.1.3` and `v1.1.3` style tags.
+  manual dispatch, and resolves both `1.1.4` and `v1.1.4` style tags.
