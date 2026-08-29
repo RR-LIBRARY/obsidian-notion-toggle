@@ -1,0 +1,268 @@
+/**
+ * v1.1.1 — "pause on pages" for toggles.
+ *
+ * The rules (clamps, list parsing, parity matching, A4 screen-by-screen stops,
+ * crossing detection) are the **exact** engine from the Naveen Bharat reader:
+ * see `src/reader/dwellEngine.ts`, copied verbatim from
+ * `mranujbabu/navinbharat → src/lib/reader/dwellEngine.ts`.
+ *
+ * This file is only the adapter: a reader "page" is a plugin toggle, and the
+ * speed ladder mirrors the reader's autoscroll sheet presets.
+ */
+
+import {
+  DEFAULT_DWELL,
+  DWELL_MAX_SECONDS,
+  DWELL_MIN_SECONDS,
+  DWELL_SLIDER_STEPS,
+  MAX_LIST_LENGTH,
+  clampDwellSeconds as clampDwellSecondsUpstream,
+  crossedTarget,
+  dwellStepIndex,
+  dwellTargets,
+  isRouteMode,
+  matchesParity,
+  normalizeDwell,
+  pageStops,
+  parseDwell,
+  parsePageList,
+  parseRouteList,
+  waypointReached,
+  type DwellParity,
+  type DwellSettings,
+  type DwellTarget,
+  type PageBox,
+} from "./reader/dwellEngine";
+
+export {
+  DEFAULT_DWELL,
+  DWELL_MAX_SECONDS,
+  DWELL_MIN_SECONDS,
+  DWELL_SLIDER_STEPS,
+  MAX_LIST_LENGTH,
+  crossedTarget,
+  dwellStepIndex,
+  dwellTargets,
+  isRouteMode,
+  matchesParity,
+  normalizeDwell,
+  pageStops,
+  parseDwell,
+  parsePageList,
+  parseRouteList,
+  waypointReached,
+};
+export type { DwellParity, DwellSettings, DwellTarget, PageBox };
+
+/** Plugin-side names: a reader "page" is a toggle, a "parity" is a pause-at mode. */
+export type ScrollMode = DwellParity;
+export const DWELL_PRESETS = DWELL_SLIDER_STEPS;
+export const DWELL_MAX = DWELL_MAX_SECONDS;
+
+/** Speed chips from the reader's autoscroll sheet (AutoScrollSheet.tsx). */
+export const SPEED_MULTIPLIERS = [
+  0.02, 0.05, 0.1, 0.2, 0.5, 0.75, 1, 1.5, 2, 3, 5, 7, 10, 20,
+];
+/** Reader ceiling: 20 × ~1px per 16.67ms frame (autoScrollLimits.ts). */
+export const MAX_SPEED_MULTIPLIER = 20;
+/** 1x ≈ 1px per frame ≈ 60 px/s, which is what the plugin loop speaks. */
+export const BASE_SPEED = 60;
+
+export function clampDwellSeconds(value: unknown, fallback?: number): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback ?? DEFAULT_DWELL.seconds;
+  return clampDwellSecondsUpstream(n);
+}
+
+export function nearestDwellPreset(seconds: number): number {
+  return DWELL_SLIDER_STEPS[dwellStepIndex(clampDwellSeconds(seconds))];
+}
+
+export function nearestSpeedMultiplier(mult: number): number {
+  const n = Number.isFinite(mult) ? mult : 1;
+  let best = SPEED_MULTIPLIERS[0];
+  let dist = Infinity;
+  for (const m of SPEED_MULTIPLIERS) {
+    const d = Math.abs(m - n);
+    if (d < dist) {
+      dist = d;
+      best = m;
+    }
+  }
+  return best;
+}
+
+export function speedFromMultiplier(mult: number): number {
+  // Two decimals keep 0.02x (1.2 px/s) alive; whole pixels would floor it away.
+  return Math.max(0.6, Math.round(BASE_SPEED * nearestSpeedMultiplier(mult) * 100) / 100);
+}
+
+export function multiplierFromSpeed(px: number): number {
+  return nearestSpeedMultiplier((Number(px) || BASE_SPEED) / BASE_SPEED);
+}
+
+export function formatDwell(seconds: number): string {
+  const s = clampDwellSeconds(seconds);
+  if (s >= 3600) return `${Math.round(s / 3600)}h`;
+  if (s >= 60) return s % 60 === 0 ? `${s / 60}m` : `${Math.floor(s / 60)}m ${s % 60}s`;
+  return `${s}s`;
+}
+
+/* -------------------- plugin-facing wrappers (toggles) -------------------- */
+
+export interface ModeConfig {
+  mode: ScrollMode;
+  /** 1-based toggle numbers for "custom". */
+  picks: number[];
+  /** 1-based toggle numbers, in visit order, for "route" / "shuffle". */
+  route: number[];
+}
+
+export interface ModeItem {
+  ordinal: number;
+  top: number;
+  height: number;
+}
+
+export interface ModeStop {
+  ordinal: number;
+  top: number;
+  part: number;
+  key: string;
+}
+
+/** ModeConfig → the reader's DwellSettings shape, so the exact rules apply. */
+export function toDwellSettings(cfg: ModeConfig, seconds = DEFAULT_DWELL.seconds, a4 = true): DwellSettings {
+  return normalizeDwell({
+    enabled: true,
+    parity: cfg.mode,
+    seconds,
+    pages: cfg.picks,
+    route: cfg.route,
+    loopRoute: false,
+    a4,
+    shuffleFrom: 0,
+    shuffleTo: 0,
+  });
+}
+
+export const parsePicks = parsePageList;
+export const parseRoute = parseRouteList;
+
+export function normalizeMode(mode: unknown): ScrollMode {
+  return normalizeDwell({ parity: mode as DwellParity }).parity;
+}
+
+/** Should we stop at this (1-based) toggle number? */
+export function matchesMode(cfg: ModeConfig, ordinal: number): boolean {
+  return matchesParity(toDwellSettings(cfg), ordinal);
+}
+
+/** Screen-by-screen stops inside one tall toggle (the reader's A4 mode). */
+export function chunkTops(top: number, height: number, viewport: number): number[] {
+  return pageStops(top, height, viewport);
+}
+
+/** Every stop for the current mode, ascending — `dwellTargets` under the hood. */
+export function buildModeStops(
+  items: ModeItem[],
+  cfg: ModeConfig,
+  viewport: number,
+  chunkTall: boolean
+): ModeStop[] {
+  const boxes: PageBox[] = items.map((i) => ({ page: i.ordinal, top: i.top, height: i.height }));
+  return dwellTargets(boxes, toDwellSettings(cfg, DEFAULT_DWELL.seconds, chunkTall), viewport).map(
+    (t) => ({ ordinal: t.page, top: t.top, part: t.index, key: t.key })
+  );
+}
+
+/**
+ * Visit order. "route" / "shuffle" follow the saved waypoint order (duplicates
+ * kept, like the reader's route legs); everything else follows the note.
+ */
+export function orderModeStops(stops: ModeStop[], cfg: ModeConfig, reverse: boolean): ModeStop[] {
+  if (cfg.mode === "route" || cfg.mode === "shuffle") {
+    const byOrdinal = new Map<number, ModeStop[]>();
+    for (const s of stops) {
+      const list = byOrdinal.get(s.ordinal) ?? [];
+      list.push(s);
+      byOrdinal.set(s.ordinal, list);
+    }
+    const out: ModeStop[] = [];
+    for (const ordinal of cfg.route) {
+      const list = byOrdinal.get(ordinal);
+      if (list) out.push(...list);
+    }
+    return out;
+  }
+  const sorted = [...stops].sort((a, b) => a.top - b.top);
+  return reverse ? sorted.reverse() : sorted;
+}
+
+export function modeLabel(cfg: ModeConfig): string {
+  switch (cfg.mode) {
+    case "all":
+      return "every toggle";
+    case "odd":
+      return "odd toggles";
+    case "even":
+      return "even toggles";
+    case "custom":
+      return `custom (${cfg.picks.length})`;
+    case "route":
+      return `route (${cfg.route.length})`;
+    case "shuffle":
+      return `shuffle (${cfg.route.length})`;
+  }
+}
+
+export function modeIcon(mode: ScrollMode): string {
+  return mode === "odd"
+    ? "1️⃣"
+    : mode === "even"
+      ? "2️⃣"
+      : mode === "custom"
+        ? "✍️"
+        : mode === "route"
+          ? "🧭"
+          : mode === "shuffle"
+            ? "🔀"
+            : "∞";
+}
+
+/* ------------------- loop helpers (reader loop, extracted) ----------------- */
+
+/**
+ * Route mode owns the direction: each leg heads toward its waypoint, so the
+ * sign flips automatically (6 down -> 3 up -> 8 down). Mirrors useAutoScroll:
+ * `if (Math.abs(delta) > 0.5) dir = delta > 0 ? 1 : -1`.
+ */
+export function legDirection(target: number, pos: number, current: 1 | -1): 1 | -1 {
+  const delta = target - pos;
+  if (Math.abs(delta) <= 0.5) return current;
+  return delta > 0 ? 1 : -1;
+}
+
+/**
+ * Float position accumulator. `scrollTop` snaps to whole device pixels, so the
+ * remainder must live outside the DOM or slow speeds stall completely.
+ */
+export function advancePosition(
+  pos: number,
+  perFrame: number,
+  dt: number,
+  dir: 1 | -1,
+  max: number
+): number {
+  return Math.max(0, Math.min(max, pos + perFrame * dt * dir));
+}
+
+/** Frame delta factor, capped like the reader (avoids jumps after tab-away). */
+export function frameFactor(deltaMs: number): number {
+  return Math.min(4, Math.max(0, deltaMs) / 16.67);
+}
+
+/** A stop only fires once per direction — guarded by its "page:slice" key. */
+export function shouldPark(previousKey: string | null, crossed: { key: string } | undefined): boolean {
+  return !!crossed && previousKey !== crossed.key;
+}

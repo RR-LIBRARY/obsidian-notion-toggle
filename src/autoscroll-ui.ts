@@ -9,6 +9,11 @@ export interface ScrollBarCallbacks {
   onReverse: () => void;
   onFilter: () => void;
   onClose: () => void;
+  /** v1.1.1 */
+  onMode?: () => void;
+  onDwell?: () => void;
+  onTop?: () => void;
+  onSpeedPresets?: () => void;
 }
 
 export interface ScrollBarData {
@@ -17,6 +22,11 @@ export interface ScrollBarData {
   reverse: boolean;
   filterLabel: string;
   progress: string;
+  /** v1.1.1 */
+  modeIcon?: string;
+  modeLabel?: string;
+  dwellLabel?: string;
+  speedLabel?: string;
 }
 
 export class ScrollBar {
@@ -24,6 +34,8 @@ export class ScrollBar {
   private runBtn: HTMLButtonElement;
   private revBtn: HTMLButtonElement;
   private filterBtn: HTMLButtonElement;
+  private modeBtn: HTMLButtonElement;
+  private dwellBtn: HTMLButtonElement;
   private infoEl: HTMLElement;
 
   constructor(private cb: ScrollBarCallbacks) {
@@ -51,7 +63,11 @@ export class ScrollBar {
     btn("+", "is-faster", () => this.cb.onFaster());
     this.revBtn = btn("↓", "is-reverse", () => this.cb.onReverse());
     this.filterBtn = btn("🔴", "is-filter", () => this.cb.onFilter());
+    this.modeBtn = btn("∞", "is-mode", () => this.cb.onMode?.());
+    this.dwellBtn = btn("⏱", "is-dwell", () => this.cb.onDwell?.());
+    btn("⤒", "is-top", () => this.cb.onTop?.());
     btn("✕", "is-close", () => this.cb.onClose());
+    this.runBtn.addEventListener("dblclick", () => this.cb.onSpeedPresets?.());
 
     this.infoEl = document.createElement("div");
     this.infoEl.className = "ntt-scroll-info";
@@ -65,7 +81,13 @@ export class ScrollBar {
     this.revBtn.textContent = d.reverse ? "↑" : "↓";
     this.revBtn.setAttribute("aria-label", d.reverse ? "Reverse (up)" : "Forward (down)");
     this.filterBtn.textContent = d.filterLabel === "all toggles" ? "⚪" : d.filterLabel;
-    this.infoEl.textContent = `${Math.round(d.speed)} px/s · ${d.progress}`;
+    this.modeBtn.textContent = d.modeIcon ?? "∞";
+    this.modeBtn.setAttribute("aria-label", `Pause at: ${d.modeLabel ?? "every toggle"}`);
+    this.dwellBtn.textContent = d.dwellLabel ?? "⏱";
+    this.dwellBtn.setAttribute("aria-label", `Pause for ${d.dwellLabel ?? ""}`);
+    this.infoEl.textContent = `${d.speedLabel ?? `${Math.round(d.speed)} px/s`} · ${
+      d.modeLabel ?? "every toggle"
+    } · ${d.progress}`;
     this.root.classList.toggle("is-running", d.running);
   }
 

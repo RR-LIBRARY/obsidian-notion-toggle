@@ -66,10 +66,10 @@ describe("motion", () => {
   });
 
   it("clamps speed and hold", () => {
-    expect(clampSpeed(1)).toBe(10);
-    expect(clampSpeed(9999)).toBe(600);
+    expect(clampSpeed(0)).toBe(1);
+    expect(clampSpeed(9999)).toBe(1200);
     expect(clampHold(-5)).toBe(0);
-    expect(clampHold(999)).toBe(120);
+    expect(clampHold(99999)).toBe(3600);
     expect(clampSpeed(Number.NaN)).toBe(DEFAULT_AUTOSCROLL.scrollSpeed);
   });
 

@@ -408,3 +408,180 @@ body.is-mobile .ntt-due-btn {
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* ---------- v1.0.9: floating auto-scroll bar ---------- */
+.ntt-scroll-bar {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: var(--layer-notice, 60);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+.ntt-scroll-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ntt-scroll-btn {
+  min-width: 36px;
+  min-height: 32px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.ntt-scroll-info {
+  font-size: 11px;
+  opacity: 0.75;
+}
+.ntt-scroll-bar.is-running .ntt-scroll-btn.is-run {
+  outline: 1px solid var(--interactive-accent);
+}
+body.is-mobile .ntt-scroll-btn {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 16px;
+}
+
+/* ---------- v1.1.0: quiz mode HUD ---------- */
+.ntt-quiz-hud {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  z-index: var(--layer-notice, 61);
+  min-width: 190px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+.ntt-quiz-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.ntt-quiz-time {
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.ntt-quiz-meta {
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  opacity: 0.8;
+}
+.ntt-quiz-bar {
+  height: 4px;
+  border-radius: 4px;
+  background: var(--background-modifier-border);
+  overflow: hidden;
+}
+.ntt-quiz-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--interactive-accent);
+  transition: width 240ms linear;
+}
+.ntt-quiz-actions {
+  display: flex;
+  gap: 6px;
+}
+.ntt-quiz-btn {
+  flex: 1;
+  min-height: 32px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.ntt-quiz-hud.is-reveal .ntt-quiz-time {
+  color: var(--color-green, var(--interactive-accent));
+}
+.ntt-quiz-hud.is-paused .ntt-quiz-time {
+  opacity: 0.55;
+}
+body.is-mobile .ntt-quiz-btn {
+  min-height: 44px;
+  font-size: 16px;
+}
+body.is-mobile .ntt-quiz-time {
+  font-size: 28px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ntt-quiz-bar-fill {
+    transition: none;
+  }
+}
+
+/* v1.1.1 — extra autoscroll bar buttons (mode / dwell / go-to-top) */
+.ntt-scroll-btn.is-mode,
+.ntt-scroll-btn.is-dwell,
+.ntt-scroll-btn.is-top {
+  font-size: 0.85em;
+  min-width: 44px;
+}
+.ntt-scroll-btn.is-dwell {
+  font-variant-numeric: tabular-nums;
+}
+
+/* v1.1.2 — shuffle deck summary in the pause-at sheet */
+.notion-toggle-deck-summary,
+.notion-toggle-deck-forecast {
+  margin: 0.4em 0;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* v1.1.3 — debug overlay + weak-toggle stats */
+.notion-toggle-scroll-debug {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  right: 8px;
+  z-index: var(--layer-notice, 60);
+  max-width: min(19rem, 70vw);
+  padding: 0.45em 0.6em;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.92;
+  pointer-events: none;
+}
+.notion-toggle-scroll-debug-title {
+  color: var(--text-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.2em;
+}
+.notion-toggle-stats-list {
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.notion-toggle-stats-row {
+  padding: 0.4em 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.notion-toggle-stats-head {
+  font-variant-numeric: tabular-nums;
+}
+.notion-toggle-stats-why {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}

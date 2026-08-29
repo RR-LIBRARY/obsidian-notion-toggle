@@ -2,7 +2,7 @@
 
 Notion-style collapsible toggles for Obsidian, plus a recall workflow built on top of them: traffic-light grading, a floating Pomodoro timer, and SM-2 spaced repetition. You never type `<details>`, `<summary>` or `>` brackets by hand.
 
-Works on desktop and mobile. Version 1.0.8.
+Works on desktop and mobile. Version 1.1.0.
 
 ## Install
 
@@ -71,9 +71,34 @@ The trailing `-` starts the toggle collapsed, which is what makes active recall 
 - **Convert `<details>` blocks to callouts** — migrates a whole HTML note to native foldable callouts in one command (verified on a 179-block note).
 - **Convert callouts to `<details>`** — the reverse, when you need portable HTML.
 
+## Auto-scroll revision (1.0.9)
+
+Hands-free revision: the note scrolls by itself, stops at each toggle, opens it, then closes it again as it moves on.
+
+- **Autoscroll (start / pause revision)** — primary command; a floating bar appears with pause, speed −/+, direction and filter buttons.
+- **Reverse direction** — revise bottom → top for a fast second pass.
+- **Colour filter** — stop only at 🔴 / 🟡 / 🟢 toggles (or Red + Yellow "weak spots", or all graded ones). Only the selected toggles open.
+- **Hold time** — how long each opened toggle stays visible before moving on.
+- **Loop** — start over from the other end instead of stopping.
+
+## Quiz mode (1.1.0)
+
+A timed, Telegram-quiz style run through the toggles of the current note:
+
+1. A countdown runs on the question while the toggle stays closed.
+2. When the time is up, the **answer is revealed automatically**.
+3. After the answer time, the toggle **closes by itself**.
+4. The next question scrolls into view and its timer starts.
+
+- **Quiz (timed question run)** — primary command; a floating HUD shows `00:14`, `Q 3/12`, the phase, a progress bar, and pause / reveal-now / next / stop buttons.
+- **Time per question** and **answer time** are set in settings; `Quiz: set time per question` offers 10 / 15 / 20 / 30 / 45 / 60 / 90 or a custom value.
+- **Per-question override** — write `⏱30` (also `[30s]`, `(30s)`, `@30s`) in a toggle title and that question gets its own time.
+- **Colour filter** — quiz only red, yellow or green toggles, reusing the auto-scroll filter.
+- **Auto-next**, **close after the answer**, **loop the quiz** and **notify when the time is up** are all optional.
+
 ## Settings
 
-Callout type, collapsed by default, auto-bold the question, auto-continue on Enter, toggle format (`callout` / `details`), auto-numbering, colour palette, MCQ option count, Match row count, auto Answer line, the full Pomodoro block, minimal command names, and the **Recall schedule** section.
+Callout type, collapsed by default, auto-bold the question, auto-continue on Enter, toggle format (`callout` / `details`), auto-numbering, colour palette, MCQ option count, Match row count, auto Answer line, the full Pomodoro block, minimal command names, the **Recall schedule** section, the **Auto-scroll revision** section, and the **Quiz mode** section.
 
 ### Recall schedule maintenance (new in 1.0.8)
 
@@ -89,15 +114,17 @@ Schedules are stored per note path, so the plugin now keeps them in sync with th
 ```bash
 cd obsidian-toggle-plugin
 bun install
-bun test         # 127 pure tests
+bun test         # 159 pure tests
 bun run typecheck
 bun run build    # regenerates main.js
 ```
 
-Logic lives in pure modules — `src/smart.ts`, `src/naming.ts`, `src/timer.ts`, `src/timer-ui.ts`, `src/srs.ts`, `src/maintenance.ts` — so behaviour is tested without the Obsidian API.
+Logic lives in pure modules — `src/smart.ts`, `src/naming.ts`, `src/timer.ts`, `src/timer-ui.ts`, `src/srs.ts`, `src/maintenance.ts`, `src/autoscroll.ts`, `src/quiz.ts` — so behaviour is tested without the Obsidian API.
 
 ## Changelog highlights
 
+- **1.1.0** — quiz mode: per-question countdown, automatic answer reveal, auto-close, auto-next, floating quiz HUD, per-question `⏱30` override.
+- **1.0.9** — auto-scroll revision with auto-open/auto-close toggles, reverse direction, speed control and colour filter.
 - **1.0.8** — schedule follows renames/moves and is pruned on delete, Recall schedule settings section, Obsidian-native modal/settings headings, CSS classes instead of inline styles, MIT LICENSE, `versions.json`.
 - **1.0.7** — minimal five-command surface with smart context actions, SM-2 spaced repetition, due-notes list.
 - **1.0.6** — mobile UX pass: attention-aware auto-pause, pinned session note, compact draggable widget, 44px touch targets.
@@ -109,3 +136,47 @@ Logic lives in pure modules — `src/smart.ts`, `src/naming.ts`, `src/timer.ts`,
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## v1.1.1 — Autoscroll "pause on toggles" (Naveen Bharat reader parity)
+
+The reader app's autoscroll sheet is now available for toggles:
+
+- **Speed presets** — `0.02x … 20x` (1x = 60 px/s). Double-tap the play button on the floating bar, or use *Autoscroll: speed presets*.
+- **Pause at** — every toggle / odd / even / **custom list** (`2, 5, 9`) / **route** (your own order, repeats allowed) / **shuffle** (weakest toggles first).
+- **Pause for** — hold time from `1s` to `1h` with quick chips (5s, 10s, 20s, 30s, 1m, 2m, 5m, 10m, 30m, 1h) plus a custom value.
+- **Tall toggles screen-by-screen** — long answers scroll one screen at a time before the next toggle (the reader's "A4 sheet" behaviour).
+- **Go to first toggle** (`⤒`) and **reverse** (`↑/↓`) for fast backwards revision.
+- **Loop the route** — route / shuffle runs restart instead of stopping.
+- **Smart shuffle memory (FSRS)** — each toggle gets a difficulty/stability card per note. The time you linger on an open toggle is auto-graded (lingered ≥ 2x → *Again*, quick → *Easy*), so the next shuffle puts your weak toggles and leeches first and mixes in new ones (`New toggles mixed into shuffle`). Reset it any time with *Autoscroll: reset revision memory for this note*.
+- Colour filter (🔴/🟡/🟢) still applies on top of every mode.
+
+New commands: `Autoscroll: pause at`, `Autoscroll: pause for`, `Autoscroll: speed presets`, `Autoscroll: go to first toggle`, `Autoscroll: smart shuffle`, `Autoscroll: reset revision memory for this note`.
+
+### Where the autoscroll logic comes from
+
+The v1.1.1 autoscroll rules are the reader's own code, not a rewrite:
+
+| Plugin file | Upstream source (`mranujbabu/navinbharat`) |
+| --- | --- |
+| `src/reader/dwellEngine.ts` | `src/lib/reader/dwellEngine.ts` (verbatim) — clamps, page/route parsing, parity matching, A4 screen-by-screen stops, `crossedTarget` / `waypointReached` |
+| `src/reader/fsrsScheduler.ts` | `src/lib/reader/fsrsScheduler.ts` (verbatim) — FSRS-5 weights, retrievability, `reviewCard`, `inferGrade`, `buildShuffleRoute`, `deckStats`, `forecastDue` |
+| `src/reader/shuffleDeck.ts` | `src/lib/reader/shuffleDeck.ts` (adapted: deck per note in plugin settings instead of localStorage) |
+| `src/scrollmode.ts` | adapter — a reader "page" is a toggle; speed chips from `src/components/viewer/AutoScrollSheet.tsx` (`0.02 … 20x`, ceiling `MAX_SPEED = 20`) |
+
+## v1.1.2 — reader-exact autoscroll loop
+
+The rules were already the reader's; now the **loop mechanics** are too (ported from `src/hooks/useAutoScroll.ts`):
+
+- **Float scroll position + sub-pixel remainder** — `scrollTop` snaps to whole pixels, so the position is owned as a float and the fraction is painted with `translate3d`. The slow chips (0.02x–0.2x) now really creep instead of stalling.
+- **Per-leg direction in Route / Shuffle** — each leg heads to its waypoint (`legDirection` + `waypointReached`), so `6 → 3 → 8` travels down, up, down. Previously a waypoint above the cursor was never reached.
+- **`crossedTarget` + stop-key guard** — the stop that a frame actually crossed is chosen (last passed going up, first going down) and fires once per direction, so no double pauses and no missed stops after a jump.
+- **Route end handling** — `isRouteMode`, `loopRoute` restart, and a "Route / Shuffle finished" notice.
+- **Shuffle range, deck summary and 7-day due forecast** in the "pause at" sheet (`deckStats`, `forecastDue`).
+- **Per-note memory** of speed, direction and hold time (the reader's per-document keys).
+
+## v1.1.3 — settings, debug overlay, weak-toggle stats
+
+- **Autoscroll settings, all in one place** — Settings → Notion Toggle → *Auto-scroll revision*: speed slider + speed presets (0.02x–20x), pause-at mode (Odd / Even / Every / Custom / Route / Shuffle), pause-for duration, reverse, colour filter (🔴/🟡/🟢), auto-open / auto-close, loop note, loop route, tall-toggle screen-by-screen, shuffle range, auto-grade, new-toggle mix. Everything is stored in the plugin's own `data.json`, so it survives restarts, and speed / direction / hold are also remembered **per note**.
+- **Debug overlay** (toggle in settings) — a fixed read-out while autoscroll runs: float position and sub-pixel remainder, direction, `waypointReached` / `crossedTarget` events, the dwell guard key, the last dwell → FSRS grade, and route progress.
+- **Revision stats panel** — command `Autoscroll: revision stats (weak toggles)`, or the *Show stats* button in settings: deck summary, 7-day due forecast, and one row per toggle (`#7 · 42% recall · D 7.4 · S 3.1d · 2 lapses`) with a plain reason such as "forgotten 2× — kept close".
+- **Smoke test checklist** for a real vault in `SMOKE-TEST.md`.

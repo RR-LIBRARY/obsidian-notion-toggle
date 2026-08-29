@@ -43,13 +43,17 @@ import {
 } from "./src/srs";
 import {
   DEFAULT_AUTOSCROLL,
+  SPEED_MAX,
+  SPEED_MIN,
   SPEED_STEP,
   atEnd,
+  clampHold,
   clampSpeed,
   colorOf,
   filterLabel,
   firstStopFrom,
   frameDelta,
+  matchesFilter,
   planStops,
   reachedTarget,
   sessionLabel,
@@ -58,7 +62,74 @@ import {
   type RecallColor,
   type ToggleStop,
 } from "./src/autoscroll";
+import { ScrollDebugOverlay, type DebugFrame } from "./src/debug-overlay";
+import { orderExplainer, rowLabel, weakRows } from "./src/stats-panel";
 import { ScrollBar } from "./src/autoscroll-ui";
+import {
+  DWELL_PRESETS,
+  SPEED_MULTIPLIERS,
+  buildModeStops,
+  clampDwellSeconds,
+  formatDwell,
+  matchesMode,
+  modeIcon,
+  modeLabel,
+  multiplierFromSpeed,
+  orderModeStops,
+  parsePicks,
+  parseRoute,
+  speedFromMultiplier,
+  advancePosition,
+  crossedTarget,
+  dwellTargets,
+  frameFactor,
+  isRouteMode,
+  legDirection,
+  shouldPark,
+  pageStops,
+  toDwellSettings,
+  waypointReached,
+  type DwellSettings,
+  type DwellTarget,
+  type ModeConfig,
+  type PageBox,
+  type ScrollMode,
+} from "./src/scrollmode";
+import {
+  buildShuffleOrder,
+  deckStats,
+  deckSummary,
+  forecastDue,
+  gradeFromDwell,
+  loadDeck,
+  recordReview,
+  resetDeck,
+  saveDeck,
+  type FsrsCard,
+} from "./src/fsrs";
+import {
+  DEFAULT_QUIZ,
+  QUIZ_PRESETS,
+  QUIZ_SECONDS_MAX,
+  QUIZ_SECONDS_MIN,
+  clampQuizSeconds,
+  clampRevealSeconds,
+  formatQuizTime,
+  pauseQuiz,
+  quizPhaseLabel,
+  quizProgressLabel,
+  quizProgressRatio,
+  quizStartLabel,
+  quizSummary,
+  quizTick,
+  resumeQuiz,
+  revealNow,
+  skipQuestion,
+  startQuiz,
+  type QuizSettings,
+  type QuizState,
+} from "./src/quiz";
+import { QuizHud } from "./src/quiz-ui";
 import {
   pruneCards,
   removeCardKey,
@@ -71,7 +142,7 @@ import {
 
 type ToggleFormat = "callout" | "details";
 
-interface NotionToggleSettings extends PomodoroSettings, AutoScrollSettings {
+interface NotionToggleSettings extends PomodoroSettings, AutoScrollSettings, QuizSettings {
   calloutType: string;
   defaultCollapsed: boolean;
   boldSummary: boolean;
@@ -99,6 +170,7 @@ interface NotionToggleSettings extends PomodoroSettings, AutoScrollSettings {
 const DEFAULT_SETTINGS: NotionToggleSettings = {
   ...DEFAULT_POMODORO,
   ...DEFAULT_AUTOSCROLL,
+  ...DEFAULT_QUIZ,
   calloutType: "question",
   defaultCollapsed: true,
   boldSummary: true,
@@ -162,6 +234,45 @@ export default class NotionTogglePlugin extends Plugin {
   scrollLastFrame = 0;
   scrollRaf: number | null = null;
   scrollContainer: HTMLElement | null = null;
+  /* v1.1.1 pause-at / memory state */
+  scrollOpenedAt = 0;
+  scrollSeen: Set<number> = new Set();
+  scrollNotePath: string | null = null;
+  scrollTotalItems = 0;
+  /* v1.1.2 reader-exact loop state (mirrors useAutoScroll refs) */
+  /** Authoritative float scroll position — scrollTop snaps to whole pixels. */
+  scrollPos = 0;
+  /** +1 = down, -1 = up. Route mode owns this per leg. */
+  scrollDir = 1;
+  scrollRouteIdx = 0;
+  scrollRouteStop = 0;
+  scrollDwellUntil = 0;
+  scrollDwellKey: string | null = null;
+  scrollDwellDir = 1;
+  scrollBoxes: PageBox[] = [];
+  scrollBoxesAt = 0;
+  scrollElByOrdinal: Map<number, HTMLElement> = new Map();
+  scrollTargets: DwellTarget[] = [];
+  scrollTargetsKey = "";
+  scrollOpenEl: HTMLElement | null = null;
+  scrollVisit: { ordinal: number; at: number } | null = null;
+  /** v1.1.3 debug overlay + the last loop events it reports. */
+  scrollDebugOverlay: ScrollDebugOverlay | null = null;
+  scrollLastEvent = "";
+  scrollLastGrade = "";
+  scrollSmoothEl: HTMLElement | null = null;
+  scrollPrevTransform: string | null = null;
+  scrollPrevBehavior: string | null = null;
+
+  /* v1.1.0 quiz mode state */
+  quizHud: QuizHud | null = null;
+  quizState: QuizState | null = null;
+  quizStops: (ToggleStop & { el?: HTMLElement })[] = [];
+  quizTitles: string[] = [];
+  quizContainer: HTMLElement | null = null;
+  quizLastFrame = 0;
+  quizInterval: number | null = null;
+
 
   /**
    * v1.0.7: every command goes through here, so the toolbar list stays short.
@@ -570,6 +681,105 @@ export default class NotionTogglePlugin extends Plugin {
       name: "Autoscroll: stop",
       callback: () => this.stopAutoScroll(true),
     });
+
+    /* ---------- v1.1.1: pause-at modes, dwell, speed presets, memory ---------- */
+
+    this.addCommand({
+      id: "autoscroll-mode",
+      icon: "list-filter",
+      name: "Autoscroll: pause at (odd / even / custom / route / shuffle)",
+      callback: () => new ScrollModeModal(this.app, this).open(),
+    });
+
+    this.addCommand({
+      id: "autoscroll-dwell",
+      icon: "timer",
+      name: "Autoscroll: pause for (hold time)",
+      callback: () => new ScrollDwellModal(this.app, this).open(),
+    });
+
+    this.addCommand({
+      id: "autoscroll-speed-presets",
+      icon: "gauge",
+      name: "Autoscroll: speed presets (0.02x … 20x)",
+      callback: () => new ScrollSpeedModal(this.app, this).open(),
+    });
+
+    this.addCommand({
+      id: "autoscroll-top",
+      icon: "arrow-up-to-line",
+      name: "Autoscroll: go to first toggle",
+      callback: () => this.scrollToStart(),
+    });
+
+    this.addCommand({
+      id: "autoscroll-shuffle",
+      icon: "shuffle",
+      name: "Autoscroll: smart shuffle (weakest toggles first)",
+      callback: () => void this.rebuildShuffleRoute(),
+    });
+
+    this.addCommand({
+      id: "autoscroll-reset-memory",
+      icon: "eraser",
+      name: "Autoscroll: reset revision memory for this note",
+      callback: () => void this.resetScrollMemory(),
+    });
+
+    /* ---------- v1.1.0: quiz mode (timed question run) ---------- */
+
+    // Primary 6: timed run through the toggles — question timer, auto reveal,
+    // auto close, auto next (Telegram-quiz style).
+    // v1.1.3: explain the shuffle order from the FSRS history.
+    this.addCommand({
+      id: "scroll-stats",
+      icon: "bar-chart-3",
+      name: "Autoscroll: revision stats (weak toggles)",
+      callback: () => new ScrollStatsModal(this.app, this).open(),
+    });
+
+    this.addCommand({
+      id: "smart-quiz",
+      icon: "help-circle",
+      name: "Quiz (timed question run)",
+      callback: () => this.toggleQuiz(),
+    });
+
+    this.addCommand({
+      id: "quiz-pause",
+      icon: "pause",
+      name: "Quiz: pause / resume",
+      callback: () => this.toggleQuizPause(),
+    });
+
+    this.addCommand({
+      id: "quiz-reveal-now",
+      icon: "eye",
+      name: "Quiz: reveal the answer now",
+      callback: () => this.quizRevealNow(),
+    });
+
+    this.addCommand({
+      id: "quiz-next",
+      icon: "skip-forward",
+      name: "Quiz: next question",
+      callback: () => this.quizNext(),
+    });
+
+    this.addCommand({
+      id: "quiz-stop",
+      icon: "square",
+      name: "Quiz: stop",
+      callback: () => this.stopQuiz(true),
+    });
+
+    this.addCommand({
+      id: "quiz-seconds",
+      icon: "timer-reset",
+      name: "Quiz: set time per question",
+      callback: () => new QuizSecondsModal(this.app, this).open(),
+    });
+
 
     this.addCommand({
       id: "show-due-notes",
@@ -1299,6 +1509,7 @@ export default class NotionTogglePlugin extends Plugin {
   onunload() {
     this.hideTimer();
     this.stopAutoScroll(false);
+    this.stopQuiz(false);
   }
 
 
@@ -1323,12 +1534,14 @@ export default class NotionTogglePlugin extends Plugin {
       const type =
         el.getAttribute("data-callout") ??
         (el.className || (el.tagName.toLowerCase() === "details" ? "details" : ""));
+      const rect = el.getBoundingClientRect();
       return {
         index,
-        top: Math.max(0, Math.round(el.getBoundingClientRect().top - base)),
+        top: Math.max(0, Math.round(rect.top - base)),
+        height: Math.round(rect.height),
         color: colorOf(type),
         el,
-      } as ToggleStop & { el: HTMLElement };
+      } as ToggleStop & { el: HTMLElement; height: number };
     });
   }
 
@@ -1353,10 +1566,135 @@ export default class NotionTogglePlugin extends Plugin {
     if (this.scrollPlan.length === 0) this.startAutoScroll();
     else {
       this.scrollRunning = true;
-      this.scrollLastFrame = performance.now();
+      this.scrollLastFrame = 0;
       this.scheduleScrollFrame();
       this.renderScrollBar();
     }
+  }
+
+  /** v1.1.1 — the current pause-at configuration. */
+  modeConfig(): ModeConfig {
+    return {
+      mode: this.settings.scrollMode,
+      picks: this.settings.scrollPicks ?? [],
+      route: this.settings.scrollRoute ?? [],
+    };
+  }
+
+  /** FSRS cards for the active note. */
+  scrollCards(path = this.scrollNotePath ?? this.app.workspace.getActiveFile()?.path ?? ""): FsrsCard[] {
+    if (!path) return [];
+    return loadDeck(this.settings.scrollMemory, path);
+  }
+
+  private async saveScrollCards(path: string, cards: FsrsCard[]) {
+    this.settings.scrollMemory = saveDeck(this.settings.scrollMemory, path, cards);
+    await this.saveSettings();
+  }
+
+  /**
+   * v1.1.1 — build the plan: colour filter first, then the pause-at mode
+   * (every / odd / even / custom / route / shuffle) and tall-toggle chunking.
+   */
+  private buildScrollPlan(container: HTMLElement) {
+    const all = this.collectStops(container) as (ToggleStop & { el: HTMLElement; height: number })[];
+    const kept = all.filter((s) => matchesFilter(s.color, this.settings.scrollFilter));
+    this.scrollTotalItems = kept.length;
+    const cfg = this.modeConfig();
+    const items = kept.map((s, i) => ({ ordinal: i + 1, top: s.top, height: s.height }));
+    const stops = buildModeStops(items, cfg, container.clientHeight, this.settings.scrollChunkTall);
+    const ordered = orderModeStops(stops, cfg, this.settings.scrollReverse);
+    return ordered.map((ms) => {
+      const src = kept[ms.ordinal - 1];
+      return {
+        index: src.index,
+        top: ms.top,
+        color: src.color,
+        el: src.el,
+        ordinal: ms.ordinal,
+        part: ms.part,
+      } as ToggleStop & { el: HTMLElement; ordinal: number; part: number };
+    });
+  }
+
+  /** Rebuild the shuffle route from this note's FSRS memory. */
+  async rebuildShuffleRoute(notify = true) {
+    const container = this.findScrollContainer();
+    const path = this.app.workspace.getActiveFile()?.path ?? "";
+    if (!container || !path) {
+      new Notice("Open a note first — shuffle needs a note view.");
+      return;
+    }
+    this.measureScrollBoxes(container);
+    const total = this.scrollTotalItems;
+    if (total === 0) {
+      new Notice("No toggles found in this note.");
+      return;
+    }
+    const order = buildShuffleOrder(this.scrollCards(path), total, {
+      from: this.settings.scrollShuffleFrom,
+      to: this.settings.scrollShuffleTo,
+      seed: Date.now() & 65535,
+      retention: this.settings.scrollRetention,
+      newMix: this.settings.scrollNewMix,
+    });
+    this.settings.scrollMode = "shuffle";
+    this.settings.scrollRoute = order;
+    await this.saveSettings();
+    if (notify) {
+      new Notice(
+        `🔀 Shuffle ready — ${order.length} toggles.\n${deckSummary(
+          deckStats(this.scrollCards(path), total, { retention: this.settings.scrollRetention })
+        )}`
+      );
+    }
+  }
+
+  /** Deck summary for the current note, or null when nothing is measured yet. */
+  scrollDeckStats() {
+    const path = this.scrollNotePath ?? this.app.workspace.getActiveFile()?.path ?? "";
+    if (!path) return null;
+    const total = this.scrollTotalItems || this.scrollBoxes.length;
+    if (!total) return null;
+    return deckStats(this.scrollCards(path), total, {
+      from: this.settings.scrollShuffleFrom,
+      to: this.settings.scrollShuffleTo,
+      retention: this.settings.scrollRetention,
+    });
+  }
+
+  /** How many toggles fall due on each of the next 7 days. */
+  scrollForecast(): number[] {
+    const path = this.scrollNotePath ?? this.app.workspace.getActiveFile()?.path ?? "";
+    const total = this.scrollTotalItems || this.scrollBoxes.length;
+    if (!path || !total) return [];
+    return forecastDue(this.scrollCards(path), total, 7, {
+      from: this.settings.scrollShuffleFrom,
+      to: this.settings.scrollShuffleTo,
+      retention: this.settings.scrollRetention,
+    });
+  }
+
+  async resetScrollMemory() {
+    const path = this.app.workspace.getActiveFile()?.path ?? "";
+    if (!path) return;
+    this.settings.scrollMemory = resetDeck(this.settings.scrollMemory, path);
+    await this.saveSettings();
+    new Notice("Revision memory reset — every toggle is new again.");
+  }
+
+  /** Auto-grade the toggle we are leaving (shuffle mode only). */
+  private async gradeLeavingStop(ordinal: number, openedMs: number) {
+    if (!this.settings.scrollAutoGrade || this.settings.scrollMode !== "shuffle") return;
+    const path = this.scrollNotePath;
+    if (!path || !ordinal) return;
+    const planned = Math.max(1, clampHold(this.settings.scrollHold)) * 1000;
+    const grade = gradeFromDwell(openedMs / planned, this.scrollSeen.has(ordinal));
+    this.scrollSeen.add(ordinal);
+    const cards = recordReview(this.settings.scrollMemory, path, ordinal, grade);
+    const names = ["", "Again", "Hard", "Good", "Easy"];
+    this.scrollLastGrade = `toggle ${ordinal} · ${(openedMs / 1000).toFixed(1)}s → ${names[grade]} (${grade})`;
+    await this.saveScrollCards(path, cards);
   }
 
   startAutoScroll() {
@@ -1366,17 +1704,41 @@ export default class NotionTogglePlugin extends Plugin {
       return;
     }
     this.scrollContainer = container;
-    const stops = this.collectStops(container);
-    const plan = planStops(stops, this.settings.scrollFilter, this.settings.scrollReverse);
+    this.scrollNotePath = this.app.workspace.getActiveFile()?.path ?? null;
+    this.scrollSeen = new Set();
+    this.applyPerNoteScrollPrefs();
+    const plan = this.buildScrollPlan(container);
     if (plan.length === 0) {
-      new Notice(`No toggles match the filter (${filterLabel(this.settings.scrollFilter)}).`);
+      new Notice(
+        `No toggles match this selection (${filterLabel(this.settings.scrollFilter)} · ${modeLabel(
+          this.modeConfig()
+        )}).`
+      );
       return;
     }
     this.scrollPlan = plan;
-    this.scrollAt = firstStopFrom(plan, container.scrollTop, this.settings.scrollReverse);
+    const routed = this.settings.scrollMode === "route" || this.settings.scrollMode === "shuffle";
+    this.scrollAt = routed
+      ? 0
+      : firstStopFrom(plan, container.scrollTop, this.settings.scrollReverse);
     this.scrollHoldUntil = 0;
+    this.scrollOpenedAt = 0;
     this.scrollRunning = true;
-    this.scrollLastFrame = performance.now();
+    this.scrollLastFrame = 0;
+    this.scrollPos = container.scrollTop;
+    this.scrollDir = this.settings.scrollReverse ? -1 : 1;
+    this.scrollDwellDir = this.scrollDir;
+    this.scrollDwellUntil = 0;
+    this.scrollDwellKey = null;
+    this.scrollRouteIdx = 0;
+    this.scrollRouteStop = 0;
+    this.scrollBoxes = [];
+    this.scrollBoxesAt = 0;
+    this.scrollTargetsKey = "";
+    this.scrollVisit = null;
+    this.scrollOpenEl = null;
+    this.scrollPrevBehavior = container.style.scrollBehavior;
+    container.style.scrollBehavior = "auto";
     if (!this.scrollBar) {
       this.scrollBar = new ScrollBar({
         onToggleRun: () => this.toggleAutoScroll(),
@@ -1384,16 +1746,74 @@ export default class NotionTogglePlugin extends Plugin {
         onFaster: () => this.nudgeScrollSpeed(SPEED_STEP),
         onReverse: () => this.setScrollReverse(!this.settings.scrollReverse),
         onFilter: () => new ScrollFilterModal(this.app, this).open(),
+        onMode: () => new ScrollModeModal(this.app, this).open(),
+        onDwell: () => new ScrollDwellModal(this.app, this).open(),
+        onSpeedPresets: () => new ScrollSpeedModal(this.app, this).open(),
+        onTop: () => this.scrollToStart(),
         onClose: () => this.stopAutoScroll(true),
       });
     }
+    this.scrollLastEvent = "";
+    this.scrollLastGrade = "";
+    this.syncScrollDebugOverlay();
     new Notice(sessionLabel(this.settings, plan.length));
     this.renderScrollBar();
     this.scheduleScrollFrame();
   }
 
+  /** Reader parity: speed / direction / hold are remembered per note. */
+  private applyPerNoteScrollPrefs() {
+    const path = this.scrollNotePath;
+    if (!path) return;
+    const saved = this.settings.scrollPerNote?.[path];
+    if (!saved) return;
+    this.settings.scrollSpeed = clampSpeed(saved.speed);
+    this.settings.scrollReverse = !!saved.reverse;
+    this.settings.scrollHold = clampHold(saved.hold);
+  }
+
+  async rememberPerNoteScrollPrefs() {
+    const path = this.scrollNotePath ?? this.app.workspace.getActiveFile()?.path ?? null;
+    if (!path) return;
+    this.settings.scrollPerNote = {
+      ...(this.settings.scrollPerNote ?? {}),
+      [path]: {
+        speed: clampSpeed(this.settings.scrollSpeed),
+        reverse: this.settings.scrollReverse,
+        hold: clampHold(this.settings.scrollHold),
+      },
+    };
+    await this.saveSettings();
+  }
+
+  /** "Go to first page" — jump to the start (or end in reverse) and continue. */
+  scrollToStart() {
+    const container = this.scrollContainer ?? this.findScrollContainer();
+    if (!container) return;
+    container.scrollTop = this.settings.scrollReverse ? container.scrollHeight : 0;
+    this.scrollPos = container.scrollTop;
+    this.scrollDwellKey = null;
+    this.scrollDwellUntil = 0;
+    this.scrollRouteIdx = 0;
+    this.scrollRouteStop = 0;
+    this.scrollAt = 0;
+    this.scrollHoldUntil = 0;
+    this.renderScrollBar();
+  }
+
   stopAutoScroll(notify: boolean) {
     this.scrollRunning = false;
+    this.closeScrollVisit();
+    if (this.scrollOpenEl && this.settings.scrollAutoClose) {
+      this.setToggleOpen(this.scrollOpenEl, false);
+    }
+    this.scrollOpenEl = null;
+    this.restoreScrollSmoothing();
+    this.scrollDwellUntil = 0;
+    this.scrollDwellKey = null;
+    this.scrollBoxes = [];
+    this.scrollTargets = [];
+    this.scrollTargetsKey = "";
     if (this.scrollRaf !== null) {
       window.cancelAnimationFrame(this.scrollRaf);
       this.scrollRaf = null;
@@ -1402,6 +1822,8 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollAt = -1;
     this.scrollBar?.destroy();
     this.scrollBar = null;
+    this.scrollDebugOverlay?.destroy();
+    this.scrollDebugOverlay = null;
     if (notify) new Notice("Autoscroll stopped.");
   }
 
@@ -1409,14 +1831,9 @@ export default class NotionTogglePlugin extends Plugin {
     this.settings.scrollReverse = reverse;
     await this.saveSettings();
     if (this.scrollPlan.length && this.scrollContainer) {
-      const stops = this.collectStops(this.scrollContainer);
-      this.scrollPlan = planStops(stops, this.settings.scrollFilter, reverse);
-      this.scrollAt = firstStopFrom(
-        this.scrollPlan,
-        this.scrollContainer.scrollTop,
-        reverse
-      );
+      this.refreshScrollPlan();
     }
+    await this.rememberPerNoteScrollPrefs();
     this.renderScrollBar();
     new Notice(reverse ? "Autoscroll: reverse ↑" : "Autoscroll: forward ↓");
   }
@@ -1425,13 +1842,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.settings.scrollFilter = filter;
     await this.saveSettings();
     if (this.scrollContainer && this.scrollPlan.length) {
-      const stops = this.collectStops(this.scrollContainer);
-      this.scrollPlan = planStops(stops, filter, this.settings.scrollReverse);
-      this.scrollAt = firstStopFrom(
-        this.scrollPlan,
-        this.scrollContainer.scrollTop,
-        this.settings.scrollReverse
-      );
+      this.refreshScrollPlan();
     }
     this.renderScrollBar();
     new Notice(`Autoscroll filter: ${filterLabel(filter)}`);
@@ -1440,7 +1851,78 @@ export default class NotionTogglePlugin extends Plugin {
   async nudgeScrollSpeed(delta: number) {
     this.settings.scrollSpeed = clampSpeed(this.settings.scrollSpeed + delta);
     await this.saveSettings();
+    await this.rememberPerNoteScrollPrefs();
     this.renderScrollBar();
+  }
+
+  /** Recompute the plan mid-session (filter / mode / direction changed). */
+  refreshScrollPlan() {
+    const container = this.scrollContainer;
+    if (!container) return;
+    this.scrollPlan = this.buildScrollPlan(container);
+    this.scrollAt = 0;
+    this.scrollBoxes = [];
+    this.scrollBoxesAt = 0;
+    this.scrollTargetsKey = "";
+    this.scrollRouteIdx = 0;
+    this.scrollRouteStop = 0;
+    this.scrollDwellKey = null;
+    this.scrollDwellUntil = 0;
+    this.scrollDir = this.settings.scrollReverse ? -1 : 1;
+    this.scrollDwellDir = this.scrollDir;
+    this.scrollHoldUntil = 0;
+    this.renderScrollBar();
+  }
+
+  /** "3/12" — route legs in route/shuffle mode, dwell stops otherwise. */
+  private scrollProgressLabel(): string {
+    const route = this.settings.scrollRoute ?? [];
+    if ((this.settings.scrollMode === "route" || this.settings.scrollMode === "shuffle") && route.length) {
+      return `${Math.min(this.scrollRouteIdx + 1, route.length)}/${route.length}`;
+    }
+    const total = this.scrollTargets.length || this.scrollPlan.length;
+    return total ? `${Math.min(this.scrollAt + 1, total)}/${total}` : "0/0";
+  }
+
+  /** Mount or drop the debug overlay to match the setting. */
+  syncScrollDebugOverlay() {
+    if (this.settings.scrollDebug && this.scrollRunning) {
+      if (!this.scrollDebugOverlay) {
+        this.scrollDebugOverlay = new ScrollDebugOverlay();
+        this.scrollDebugOverlay.mount(document.body);
+      }
+    } else {
+      this.scrollDebugOverlay?.destroy();
+      this.scrollDebugOverlay = null;
+    }
+  }
+
+  private paintScrollDebug(frame: Partial<DebugFrame>, ts: number) {
+    const overlay = this.scrollDebugOverlay;
+    const container = this.scrollContainer;
+    if (!overlay || !container) return;
+    overlay.update({
+      pos: this.scrollPos,
+      scrollTop: container.scrollTop,
+      max: Math.max(0, container.scrollHeight - container.clientHeight),
+      speed: clampSpeed(this.settings.scrollSpeed),
+      dir: this.scrollDir as 1 | -1,
+      mode: this.settings.scrollMode,
+      routeMode: false,
+      target: null,
+      routeIdx: this.scrollRouteIdx,
+      routeLen: (this.settings.scrollRoute ?? []).length,
+      routeStop: this.scrollRouteStop,
+      routeStops: 1,
+      stops: this.scrollTargets.length,
+      at: this.scrollAt,
+      dwellKey: this.scrollDwellKey,
+      dwellLeft: this.scrollDwellUntil ? Math.max(0, this.scrollDwellUntil - ts) : 0,
+      lastEvent: this.scrollLastEvent,
+      lastGrade: this.scrollLastGrade,
+      progress: `progress ${this.scrollProgressLabel()}`,
+      ...frame,
+    });
   }
 
   private renderScrollBar() {
@@ -1449,18 +1931,130 @@ export default class NotionTogglePlugin extends Plugin {
       speed: this.settings.scrollSpeed,
       reverse: this.settings.scrollReverse,
       filterLabel: filterLabel(this.settings.scrollFilter),
-      progress: this.scrollPlan.length
-        ? `${Math.min(this.scrollAt + 1, this.scrollPlan.length)}/${this.scrollPlan.length}`
-        : "0/0",
+      progress: this.scrollProgressLabel(),
+      modeIcon: modeIcon(this.settings.scrollMode),
+      modeLabel: modeLabel(this.modeConfig()),
+      dwellLabel: formatDwell(clampHold(this.settings.scrollHold)),
+      speedLabel: `${multiplierFromSpeed(this.settings.scrollSpeed)}x`,
     });
+  }
+
+  /* ---------- v1.1.2: the reader's own loop mechanics ---------- */
+
+  /** Current pause rules in the reader's DwellSettings shape. */
+  private dwellCfg(): DwellSettings {
+    return {
+      ...toDwellSettings(
+        this.modeConfig(),
+        clampHold(this.settings.scrollHold),
+        this.settings.scrollChunkTall
+      ),
+      loopRoute: this.settings.scrollLoopRoute,
+    };
+  }
+
+  /** Measure the colour-filtered toggles as page boxes in content space. */
+  private measureScrollBoxes(container: HTMLElement) {
+    const all = this.collectStops(container) as (ToggleStop & { el: HTMLElement; height: number })[];
+    const kept = all.filter((st) => matchesFilter(st.color, this.settings.scrollFilter));
+    this.scrollTotalItems = kept.length;
+    this.scrollElByOrdinal = new Map();
+    this.scrollBoxes = kept
+      .map((st, i) => {
+        this.scrollElByOrdinal.set(i + 1, st.el);
+        return { page: i + 1, top: st.top, height: st.height };
+      })
+      .sort((a, b) => a.top - b.top);
+    this.scrollTargetsKey = "";
+  }
+
+  /** Cached dwell targets — rebuilt only when the inputs change. */
+  private currentTargets(container: HTMLElement, cfg: DwellSettings): DwellTarget[] {
+    const key = `${container.clientHeight}|${cfg.a4}|${cfg.parity}|${cfg.pages.join(",")}|${this.scrollBoxes.length}`;
+    if (key !== this.scrollTargetsKey) {
+      this.scrollTargetsKey = key;
+      this.scrollTargets = dwellTargets(this.scrollBoxes, cfg, container.clientHeight);
+      this.scrollPlan = this.scrollTargets.map((t) => ({
+        index: t.page - 1,
+        top: t.top,
+        color: "other",
+      })) as ToggleStop[];
+    }
+    return this.scrollTargets;
+  }
+
+  /** Open the toggle we just parked on and start its visit clock. */
+  private parkOnToggle(ordinal: number, now: number) {
+    const el = this.scrollElByOrdinal.get(ordinal);
+    if (this.scrollOpenEl && this.scrollOpenEl !== el && this.settings.scrollAutoClose) {
+      this.setToggleOpen(this.scrollOpenEl, false);
+    }
+    if (el && this.settings.scrollAutoOpen) this.setToggleOpen(el, true);
+    this.scrollOpenEl = el ?? null;
+    this.noteScrollVisit(ordinal, now);
+  }
+
+  /** Reader parity: a visit opens here and is graded when the pause ends. */
+  private noteScrollVisit(ordinal: number, now = Date.now()) {
+    if (!Number.isFinite(ordinal) || ordinal <= 0) return;
+    if (this.settings.scrollMode !== "shuffle") return;
+    const open = this.scrollVisit;
+    if (open && open.ordinal !== ordinal) {
+      this.scrollVisit = null;
+      void this.gradeLeavingStop(open.ordinal, Date.now() - open.at);
+    }
+    if (!this.scrollVisit) this.scrollVisit = { ordinal, at: Date.now() };
+  }
+
+  private closeScrollVisit() {
+    const open = this.scrollVisit;
+    if (!open || this.settings.scrollMode !== "shuffle") return;
+    this.scrollVisit = null;
+    void this.gradeLeavingStop(open.ordinal, Date.now() - open.at);
+  }
+
+  /** Element that carries the sub-pixel remainder while running. */
+  private pickSmoothEl(container: HTMLElement): HTMLElement | null {
+    try {
+      if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return null;
+      const candidate = Array.from(container.children).find((c) => {
+        if (!(c instanceof HTMLElement)) return false;
+        const pos = getComputedStyle(c).position;
+        return pos !== "sticky" && pos !== "fixed";
+      }) as HTMLElement | undefined;
+      if (!candidate) return null;
+      const t = getComputedStyle(candidate).transform;
+      if (t && t !== "none") return null;
+      return candidate;
+    } catch {
+      return null;
+    }
+  }
+
+  private restoreScrollSmoothing() {
+    if (this.scrollSmoothEl) {
+      this.scrollSmoothEl.style.transform = this.scrollPrevTransform ?? "";
+      this.scrollSmoothEl.style.willChange = "";
+    }
+    this.scrollSmoothEl = null;
+    this.scrollPrevTransform = null;
+    if (this.scrollContainer && this.scrollPrevBehavior !== null) {
+      this.scrollContainer.style.scrollBehavior = this.scrollPrevBehavior;
+    }
+    this.scrollPrevBehavior = null;
   }
 
   private scheduleScrollFrame() {
     if (this.scrollRaf !== null) window.cancelAnimationFrame(this.scrollRaf);
-    this.scrollRaf = window.requestAnimationFrame(() => this.autoScrollFrame());
+    this.scrollRaf = window.requestAnimationFrame((ts) => this.autoScrollFrame(ts));
   }
 
-  private autoScrollFrame() {
+  /**
+   * v1.1.2 — ported from the reader's `useAutoScroll` same-origin loop:
+   * float position, per-leg route direction, `crossedTarget` dwell guard and
+   * the sub-pixel `translate3d` remainder.
+   */
+  private autoScrollFrame(ts: number) {
     this.scrollRaf = null;
     if (!this.scrollRunning) return;
     const container = this.scrollContainer;
@@ -1469,54 +2063,330 @@ export default class NotionTogglePlugin extends Plugin {
       return;
     }
 
-    const now = performance.now();
-    const dt = Math.min(200, now - this.scrollLastFrame);
-    this.scrollLastFrame = now;
-    const reverse = this.settings.scrollReverse;
+    if (!this.scrollLastFrame) this.scrollLastFrame = ts;
+    // speed is px/s in settings; the reader's loop speaks px per 16.67ms frame.
+    const dt = frameFactor(ts - this.scrollLastFrame);
+    this.scrollLastFrame = ts;
+    const perFrame = clampSpeed(this.settings.scrollSpeed) / 60;
 
-    // Holding on an open toggle: wait, then move to the next stop.
-    if (this.scrollHoldUntil > now) {
+    // Parked on a stop: hold this frame, then grade + release.
+    if (this.scrollDwellUntil && ts < this.scrollDwellUntil) {
+      this.scrollPos = container.scrollTop;
+      if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
       this.scheduleScrollFrame();
       return;
     }
-    if (this.scrollHoldUntil !== 0) {
-      this.scrollHoldUntil = 0;
-      const current = this.scrollPlan[this.scrollAt] as (ToggleStop & { el?: HTMLElement }) | undefined;
-      if (current?.el && this.settings.scrollAutoClose) this.setToggleOpen(current.el, false);
-      this.scrollAt += 1;
-      if (this.scrollAt >= this.scrollPlan.length) {
+    if (this.scrollDwellUntil && ts >= this.scrollDwellUntil) {
+      this.scrollDwellUntil = 0;
+      this.closeScrollVisit();
+      if (this.scrollOpenEl && this.settings.scrollAutoClose) {
+        this.setToggleOpen(this.scrollOpenEl, false);
+        this.scrollOpenEl = null;
+      }
+      this.renderScrollBar();
+    }
+
+    const max = container.scrollHeight - container.clientHeight;
+    if (max > 2) {
+      // The user scrolled out from under us — re-seed instead of fighting them.
+      if (Math.abs(container.scrollTop - this.scrollPos) > 2) this.scrollPos = container.scrollTop;
+
+      const cfg = this.dwellCfg();
+      const routeMode = isRouteMode(cfg);
+      if (ts - this.scrollBoxesAt > 500 || this.scrollBoxes.length === 0) {
+        this.scrollBoxesAt = ts;
+        this.measureScrollBoxes(container);
+      }
+
+      // Route / shuffle mode owns the direction: each leg heads to its waypoint.
+      let routeTarget: number | null = null;
+      let routeStops: number[] = [];
+      if (routeMode) {
+        const wanted = cfg.route[this.scrollRouteIdx % cfg.route.length];
+        const hit = this.scrollBoxes.find((b) => b.page === wanted);
+        if (hit) {
+          routeStops = cfg.a4
+            ? pageStops(hit.top, hit.height, container.clientHeight)
+            : [hit.top];
+          routeTarget = routeStops[Math.min(this.scrollRouteStop, routeStops.length - 1)];
+          this.scrollDir = legDirection(routeTarget, this.scrollPos, this.scrollDir as 1 | -1);
+        }
+      } else {
+        this.scrollDir = this.settings.scrollReverse ? -1 : 1;
+      }
+
+      const prevPos = this.scrollPos;
+      this.scrollPos = advancePosition(this.scrollPos, perFrame, dt, this.scrollDir as 1 | -1, max);
+      const whole = Math.floor(this.scrollPos);
+      container.scrollTop = whole;
+
+      if (routeMode) {
+        if (routeTarget != null && waypointReached(prevPos, this.scrollPos, routeTarget)) {
+          this.scrollPos = routeTarget;
+          container.scrollTop = Math.floor(routeTarget);
+          this.scrollDwellUntil = ts + cfg.seconds * 1000;
+          const ordinal = cfg.route[this.scrollRouteIdx % cfg.route.length];
+          this.scrollLastEvent = `waypointReached toggle ${ordinal} @ ${Math.round(routeTarget)}`;
+          this.parkOnToggle(ordinal, ts);
+          // More screenfuls left on this toggle → stay on this waypoint.
+          if (this.scrollRouteStop < routeStops.length - 1) {
+            this.scrollRouteStop += 1;
+            if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
+      this.scheduleScrollFrame();
+            return;
+          }
+          this.scrollRouteStop = 0;
+          const last = this.scrollRouteIdx >= cfg.route.length - 1;
+          if (last && !cfg.loopRoute) {
+            new Notice(
+              this.settings.scrollMode === "shuffle"
+                ? "Shuffle finished — every scheduled toggle revised."
+                : "Route finished — every waypoint visited."
+            );
+            this.scrollRunning = false;
+            this.renderScrollBar();
+            if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
+      this.scheduleScrollFrame();
+            return;
+          }
+          this.scrollRouteIdx = last ? 0 : this.scrollRouteIdx + 1;
+          this.renderScrollBar();
+          if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
+      this.scheduleScrollFrame();
+          return;
+        }
+      } else {
+        // Reverse must be able to pause again on a stop it used going down,
+        // so the "already used" guard is scoped to the current direction.
+        if (this.scrollDwellDir !== this.scrollDir) {
+          this.scrollDwellDir = this.scrollDir;
+          this.scrollDwellKey = null;
+        }
+        const targets = this.currentTargets(container, cfg);
+        const crossed = crossedTarget(targets, prevPos, this.scrollPos, this.scrollDir);
+        if (shouldPark(this.scrollDwellKey, crossed)) {
+          const stop = crossed as DwellTarget;
+          this.scrollDwellKey = stop.key;
+          this.scrollDwellUntil = ts + cfg.seconds * 1000;
+          this.scrollPos = stop.top;
+          container.scrollTop = Math.floor(stop.top);
+          this.scrollAt = targets.findIndex((t) => t.key === stop.key);
+          this.scrollLastEvent = `crossedTarget ${stop.key} @ ${Math.round(stop.top)}`;
+          this.parkOnToggle(stop.page, ts);
+          this.renderScrollBar();
+          if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
+      this.scheduleScrollFrame();
+          return;
+        }
+      }
+
+      // Sub-pixel remainder, so 0.02x-0.2x actually creeps forward.
+      if (!this.scrollSmoothEl) {
+        const cand = this.pickSmoothEl(container);
+        if (cand) {
+          this.scrollSmoothEl = cand;
+          this.scrollPrevTransform = cand.style.transform;
+          cand.style.willChange = "transform";
+        }
+      }
+      if (this.scrollSmoothEl) {
+        const frac = this.scrollPos - whole;
+        this.scrollSmoothEl.style.transform = `translate3d(0, ${-frac}px, 0)`;
+      }
+
+      const atEdge = this.scrollDir < 0 ? this.scrollPos <= 1 : this.scrollPos >= max - 1;
+      if (atEdge && !routeMode) {
         if (this.settings.scrollLoop) {
-          this.scrollAt = 0;
-          container.scrollTop = reverse ? container.scrollHeight : 0;
+          this.scrollPos = this.scrollDir < 0 ? max : 0;
+          container.scrollTop = Math.floor(this.scrollPos);
+          this.scrollDwellKey = null;
         } else {
           new Notice("Autoscroll finished — every selected toggle revised.");
           this.stopAutoScroll(false);
           return;
         }
       }
-      this.renderScrollBar();
     }
 
-    const stop = this.scrollPlan[this.scrollAt] as (ToggleStop & { el?: HTMLElement }) | undefined;
-    if (!stop) {
-      this.stopAutoScroll(false);
+    if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
+    this.scheduleScrollFrame();
+  }
+
+  /* ==================== v1.1.0: quiz mode ==================== */
+
+  /** Visible title text of a toggle, used for the per-question "⏱30" marker. */
+  private quizTitleOf(el: HTMLElement): string {
+    if (el.tagName.toLowerCase() === "details") {
+      return el.querySelector("summary")?.textContent ?? "";
+    }
+    return (
+      el.querySelector(".callout-title-inner")?.textContent ??
+      el.querySelector(".callout-title")?.textContent ??
+      ""
+    );
+  }
+
+  /** Primary command: start, pause or resume the quiz. */
+  toggleQuiz() {
+    if (this.quizState && this.quizState.phase !== "done") {
+      this.toggleQuizPause();
+      return;
+    }
+    this.startQuizRun();
+  }
+
+  startQuizRun() {
+    const container = this.findScrollContainer();
+    if (!container) {
+      new Notice("Open a note first — quiz mode needs a note view.");
+      return;
+    }
+    const filter = this.settings.quizUseColorFilter ? this.settings.scrollFilter : [];
+    const stops = planStops(
+      this.collectStops(container),
+      filter,
+      this.settings.scrollReverse
+    ) as (ToggleStop & { el?: HTMLElement })[];
+    if (stops.length === 0) {
+      new Notice(`No toggles match the filter (${filterLabel(filter)}).`);
       return;
     }
 
-    const target = targetOffset(stop.top, container.clientHeight);
-    container.scrollTop += frameDelta(this.settings.scrollSpeed, dt, reverse);
+    this.quizContainer = container;
+    this.quizStops = stops;
+    this.quizTitles = stops.map((s) => (s.el ? this.quizTitleOf(s.el) : ""));
+    // Active recall: everything starts closed.
+    for (const s of stops) if (s.el) this.setToggleOpen(s.el, false);
+    this.quizState = startQuiz(this.quizTitles, this.settings);
 
-    if (reachedTarget(container.scrollTop, target, reverse)) {
-      container.scrollTop = target;
-      if (stop.el && this.settings.scrollAutoOpen) this.setToggleOpen(stop.el, true);
-      this.scrollHoldUntil = now + Math.max(200, this.settings.scrollHold * 1000);
-    } else if (atEnd(container.scrollTop, container.scrollHeight, container.clientHeight, reverse)) {
-      if (stop.el && this.settings.scrollAutoOpen) this.setToggleOpen(stop.el, true);
-      this.scrollHoldUntil = now + Math.max(200, this.settings.scrollHold * 1000);
+    if (!this.quizHud) {
+      this.quizHud = new QuizHud({
+        onTogglePause: () => this.toggleQuizPause(),
+        onRevealNow: () => this.quizRevealNow(),
+        onNext: () => this.quizNext(),
+        onStop: () => this.stopQuiz(true),
+      });
     }
-
-    this.scheduleScrollFrame();
+    this.scrollQuizTo(0);
+    new Notice(quizStartLabel(stops.length, this.settings));
+    this.renderQuizHud();
+    this.startQuizLoop();
   }
+
+  stopQuiz(notify: boolean) {
+    if (this.quizInterval !== null) {
+      window.clearInterval(this.quizInterval);
+      this.quizInterval = null;
+    }
+    const summary = this.quizState ? quizSummary(this.quizState) : "";
+    const current = this.quizState ? this.quizStops[this.quizState.at] : undefined;
+    if (current?.el && this.settings.quizCloseAfterReveal) this.setToggleOpen(current.el, false);
+    this.quizState = null;
+    this.quizStops = [];
+    this.quizTitles = [];
+    this.quizContainer = null;
+    this.quizHud?.destroy();
+    this.quizHud = null;
+    if (notify) new Notice(summary || "Quiz stopped.");
+  }
+
+  toggleQuizPause() {
+    if (!this.quizState) {
+      this.startQuizRun();
+      return;
+    }
+    this.quizState = this.quizState.running
+      ? pauseQuiz(this.quizState)
+      : resumeQuiz(this.quizState);
+    this.quizLastFrame = Date.now();
+    this.renderQuizHud();
+    new Notice(this.quizState.running ? "Quiz resumed." : "Quiz paused.");
+  }
+
+  quizRevealNow() {
+    if (!this.quizState) return;
+    const { state, event } = revealNow(this.quizState, this.settings);
+    this.quizState = state;
+    this.applyQuizEvent(event);
+  }
+
+  quizNext() {
+    if (!this.quizState) return;
+    const { state, event } = skipQuestion(this.quizState, this.quizTitles, this.settings);
+    const previous = this.quizStops[this.quizState.at];
+    if (previous?.el && this.settings.quizCloseAfterReveal) this.setToggleOpen(previous.el, false);
+    this.quizState = state;
+    this.applyQuizEvent(event);
+  }
+
+  /** React to an engine event: open the answer, move on, or finish. */
+  private applyQuizEvent(event: "reveal" | "next" | "done" | null) {
+    if (!this.quizState) return;
+    if (event === "reveal") {
+      const stop = this.quizStops[this.quizState.at];
+      if (stop?.el) this.setToggleOpen(stop.el, true);
+      if (this.settings.quizBeepOnTimeUp) new Notice("⏰ Time up — answer revealed.");
+    } else if (event === "next") {
+      this.scrollQuizTo(this.quizState.at);
+    } else if (event === "done") {
+      const summary = quizSummary(this.quizState);
+      this.stopQuiz(false);
+      new Notice(summary);
+      return;
+    }
+    this.renderQuizHud();
+  }
+
+  /** Close every other toggle and bring question `index` into view. */
+  private scrollQuizTo(index: number) {
+    const container = this.quizContainer;
+    const stop = this.quizStops[index];
+    if (!container || !stop) return;
+    for (let i = 0; i < this.quizStops.length; i++) {
+      const el = this.quizStops[i].el;
+      if (el && i !== index && this.settings.quizCloseAfterReveal) this.setToggleOpen(el, false);
+    }
+    const fresh = this.collectStops(container) as (ToggleStop & { el?: HTMLElement })[];
+    const match = stop.el ? fresh.find((f) => f.el === stop.el) : undefined;
+    const top = match ? match.top : stop.top;
+    container.scrollTo({ top: targetOffset(top, container.clientHeight), behavior: "smooth" });
+  }
+
+  private startQuizLoop() {
+    if (this.quizInterval !== null) window.clearInterval(this.quizInterval);
+    this.quizLastFrame = Date.now();
+    this.quizInterval = window.setInterval(() => this.quizFrame(), 250);
+    this.registerInterval(this.quizInterval);
+  }
+
+  private quizFrame() {
+    if (!this.quizState) return;
+    const container = this.quizContainer;
+    if (!container || !container.isConnected) {
+      this.stopQuiz(false);
+      return;
+    }
+    const now = Date.now();
+    const dt = Math.min(2000, now - this.quizLastFrame);
+    this.quizLastFrame = now;
+    const { state, event } = quizTick(this.quizState, dt, this.quizTitles, this.settings);
+    this.quizState = state;
+    if (event) this.applyQuizEvent(event);
+    else this.renderQuizHud();
+  }
+
+  private renderQuizHud() {
+    if (!this.quizState) return;
+    this.quizHud?.render({
+      time: formatQuizTime(this.quizState.remaining),
+      progress: quizProgressLabel(this.quizState),
+      phase: quizPhaseLabel(this.quizState),
+      running: this.quizState.running,
+      revealing: this.quizState.phase === "reveal",
+      ratio: quizProgressRatio(this.quizState),
+    });
+  }
+
 
   /**
    * Remove schedule entries whose note no longer exists.
@@ -1553,6 +2423,54 @@ export default class NotionTogglePlugin extends Plugin {
 
 /* ---------- v1.0.9: autoscroll colour filter ---------- */
 
+/** v1.1.3 — mini stats panel explaining the shuffle priority. */
+class ScrollStatsModal extends Modal {
+  constructor(app: App, private plugin: NotionTogglePlugin) {
+    super(app);
+  }
+
+  onOpen() {
+    this.titleEl.setText("Autoscroll revision stats");
+    const path = this.plugin.scrollNotePath ?? this.app.workspace.getActiveFile()?.path ?? "";
+    const cards = this.plugin.scrollCards(path);
+    const stats = this.plugin.scrollDeckStats();
+    const total = Math.max(this.plugin.scrollTotalItems, cards.length);
+    const rows = weakRows(cards, total, Date.now(), {
+      from: this.plugin.settings.scrollShuffleFrom,
+      to: this.plugin.settings.scrollShuffleTo,
+      retention: this.plugin.settings.scrollRetention,
+      limit: 20,
+    });
+
+    if (stats) {
+      this.contentEl.createDiv({ cls: "notion-toggle-deck-summary", text: deckSummary(stats) });
+    }
+    this.contentEl.createDiv({ cls: "notion-toggle-deck-summary", text: orderExplainer(rows) });
+
+    const list = this.contentEl.createDiv({ cls: "notion-toggle-stats-list" });
+    for (const row of rows) {
+      const item = list.createDiv({ cls: "notion-toggle-stats-row" });
+      item.createDiv({ cls: "notion-toggle-stats-head", text: rowLabel(row) });
+      item.createDiv({ cls: "notion-toggle-stats-why", text: row.why });
+    }
+    if (rows.length === 0) {
+      list.createDiv({ text: "Run a shuffle session on this note to build its history." });
+    }
+
+    const forecast = this.plugin.scrollForecast();
+    if (forecast.some((n) => n > 0)) {
+      this.contentEl.createDiv({
+        cls: "notion-toggle-deck-forecast",
+        text: `Due next 7 days: ${forecast.join(" · ")}`,
+      });
+    }
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
 class ScrollFilterModal extends Modal {
   constructor(app: App, private plugin: NotionTogglePlugin) {
     super(app);
@@ -1581,6 +2499,249 @@ class ScrollFilterModal extends Modal {
         this.close();
       };
     }
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+/* ---------- v1.1.1: pause-at mode, dwell and speed pickers ---------- */
+
+class ScrollModeModal extends Modal {
+  constructor(app: App, private plugin: NotionTogglePlugin) {
+    super(app);
+  }
+
+  onOpen() {
+    this.setTitle("Autoscroll — pause at");
+    const list = this.contentEl.createDiv({ cls: "notion-toggle-color-list" });
+    const options: { label: string; mode: ScrollMode }[] = [
+      { label: "∞ Every toggle", mode: "all" },
+      { label: "1️⃣ Odd toggles (1, 3, 5 …)", mode: "odd" },
+      { label: "2️⃣ Even toggles (2, 4, 6 …)", mode: "even" },
+      { label: "✍️ Custom list", mode: "custom" },
+      { label: "🧭 Route (my own order)", mode: "route" },
+      { label: "🔀 Shuffle (weakest first)", mode: "shuffle" },
+    ];
+    for (const opt of options) {
+      const btn = list.createEl("button", { text: opt.label, cls: "notion-toggle-color-btn" });
+      if (this.plugin.settings.scrollMode === opt.mode) btn.addClass("is-suggested");
+      btn.onclick = async () => {
+        if (opt.mode === "shuffle") {
+          this.close();
+          await this.plugin.rebuildShuffleRoute();
+          this.plugin.refreshScrollPlan();
+          return;
+        }
+        this.plugin.settings.scrollMode = opt.mode;
+        await this.plugin.saveSettings();
+        this.plugin.refreshScrollPlan();
+        new Notice(`Autoscroll pauses at: ${modeLabel(this.plugin.modeConfig())}`);
+        this.close();
+      };
+    }
+
+    new Setting(this.contentEl)
+      .setName("Custom list")
+      .setDesc("Toggle numbers to stop at, e.g. 2, 5, 9.")
+      .addText((t) =>
+        t
+          .setPlaceholder("2, 5, 9")
+          .setValue((this.plugin.settings.scrollPicks ?? []).join(", "))
+          .onChange(async (v) => {
+            this.plugin.settings.scrollPicks = parsePicks(v);
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(this.contentEl)
+      .setName("Route")
+      .setDesc("Your own visit order, e.g. 7, 2, 9, 2.")
+      .addText((t) =>
+        t
+          .setPlaceholder("7, 2, 9")
+          .setValue((this.plugin.settings.scrollRoute ?? []).join(", "))
+          .onChange(async (v) => {
+            this.plugin.settings.scrollRoute = parseRoute(v);
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(this.contentEl)
+      .setName("Loop the route")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.scrollLoopRoute).onChange(async (v) => {
+          this.plugin.settings.scrollLoopRoute = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(this.contentEl)
+      .setName("Shuffle range")
+      .setDesc("Limit shuffle to these toggle numbers (0 = whole note).")
+      .addText((t) =>
+        t
+          .setPlaceholder("from")
+          .setValue(String(this.plugin.settings.scrollShuffleFrom || ""))
+          .onChange(async (v) => {
+            this.plugin.settings.scrollShuffleFrom = Math.max(0, Math.floor(Number(v) || 0));
+            await this.plugin.saveSettings();
+          })
+      )
+      .addText((t) =>
+        t
+          .setPlaceholder("to")
+          .setValue(String(this.plugin.settings.scrollShuffleTo || ""))
+          .onChange(async (v) => {
+            this.plugin.settings.scrollShuffleTo = Math.max(0, Math.floor(Number(v) || 0));
+            await this.plugin.saveSettings();
+          })
+      );
+
+    const stats = this.plugin.scrollDeckStats();
+    if (stats) {
+      this.contentEl.createDiv({
+        cls: "notion-toggle-deck-summary",
+        text: deckSummary(stats),
+      });
+      const forecast = this.plugin.scrollForecast();
+      if (forecast.some((n) => n > 0)) {
+        this.contentEl.createDiv({
+          cls: "notion-toggle-deck-forecast",
+          text: `Due next 7 days: ${forecast.join(" · ")}`,
+        });
+      }
+    }
+
+    new Setting(this.contentEl)
+      .setName("Tall toggles screen-by-screen")
+      .setDesc("Long answers are read one screen at a time before moving on.")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.scrollChunkTall).onChange(async (v) => {
+          this.plugin.settings.scrollChunkTall = v;
+          await this.plugin.saveSettings();
+          this.plugin.refreshScrollPlan();
+        })
+      );
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+class ScrollDwellModal extends Modal {
+  constructor(app: App, private plugin: NotionTogglePlugin) {
+    super(app);
+  }
+
+  onOpen() {
+    this.setTitle("Autoscroll — pause for");
+    const list = this.contentEl.createDiv({ cls: "notion-toggle-color-list" });
+    const quick = [5, 10, 20, 30, 60, 120, 300, 600, 1800, 3600];
+    const current = clampHold(this.plugin.settings.scrollHold);
+    for (const secs of quick) {
+      const btn = list.createEl("button", {
+        text: formatDwell(secs),
+        cls: "notion-toggle-color-btn",
+      });
+      if (secs === current) btn.addClass("is-suggested");
+      btn.onclick = async () => {
+        this.plugin.settings.scrollHold = clampDwellSeconds(secs);
+        await this.plugin.saveSettings();
+        this.plugin.refreshScrollPlan();
+        new Notice(`Autoscroll pauses for ${formatDwell(secs)}.`);
+        this.close();
+      };
+    }
+
+    new Setting(this.contentEl)
+      .setName("Custom seconds")
+      .setDesc(`1 – ${DWELL_PRESETS[DWELL_PRESETS.length - 1]} seconds.`)
+      .addText((t) =>
+        t.setPlaceholder(String(current)).onChange(async (v) => {
+          const n = clampDwellSeconds(Number(v), current);
+          this.plugin.settings.scrollHold = n;
+          await this.plugin.saveSettings();
+        })
+      );
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+class ScrollSpeedModal extends Modal {
+  constructor(app: App, private plugin: NotionTogglePlugin) {
+    super(app);
+  }
+
+  onOpen() {
+    this.setTitle("Autoscroll speed");
+    const list = this.contentEl.createDiv({ cls: "notion-toggle-color-list" });
+    const active = multiplierFromSpeed(this.plugin.settings.scrollSpeed);
+    for (const mult of SPEED_MULTIPLIERS) {
+      const btn = list.createEl("button", { text: `${mult}x`, cls: "notion-toggle-color-btn" });
+      if (mult === active) btn.addClass("is-suggested");
+      btn.onclick = async () => {
+        this.plugin.settings.scrollSpeed = speedFromMultiplier(mult);
+        await this.plugin.saveSettings();
+        this.plugin.refreshScrollPlan();
+        new Notice(`Autoscroll speed: ${mult}x`);
+        this.close();
+      };
+    }
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+/* ---------- v1.1.0: quiz time picker ---------- */
+
+class QuizSecondsModal extends Modal {
+  constructor(app: App, private plugin: NotionTogglePlugin) {
+    super(app);
+  }
+
+  onOpen() {
+    this.setTitle("Quiz — time per question");
+    const list = this.contentEl.createDiv({ cls: "notion-toggle-color-list" });
+    const current = clampQuizSeconds(this.plugin.settings.quizSeconds);
+    for (const seconds of QUIZ_PRESETS) {
+      const btn = list.createEl("button", {
+        text: `${seconds} seconds`,
+        cls: "notion-toggle-color-btn",
+      });
+      if (seconds === current) btn.addClass("is-suggested");
+      btn.onclick = async () => {
+        this.plugin.settings.quizSeconds = clampQuizSeconds(seconds);
+        await this.plugin.saveSettings();
+        new Notice(`Quiz: ${seconds}s per question.`);
+        this.close();
+      };
+    }
+
+    const input = this.contentEl.createEl("input", { cls: "ntt-modal-input" });
+    input.type = "number";
+    input.min = String(QUIZ_SECONDS_MIN);
+    input.max = String(QUIZ_SECONDS_MAX);
+    input.value = String(current);
+    input.placeholder = "Custom seconds";
+
+    const actions = this.contentEl.createDiv({ cls: "ntt-modal-actions" });
+    const save = actions.createEl("button", { text: "Save" });
+    save.addClass("mod-cta");
+    save.onclick = async () => {
+      const seconds = clampQuizSeconds(Number(input.value));
+      this.plugin.settings.quizSeconds = seconds;
+      await this.plugin.saveSettings();
+      new Notice(`Quiz: ${seconds}s per question.`);
+      this.close();
+    };
   }
 
   onClose() {
@@ -2102,6 +3263,194 @@ class NotionToggleSettingTab extends PluginSettingTab {
       .addToggle((tg) =>
         tg.setValue(this.plugin.settings.scrollLoop).onChange(async (v) => {
           this.plugin.settings.scrollLoop = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    /* ---------- v1.1.1: pause-at + revision memory ---------- */
+    new Setting(containerEl)
+      .setName("Pause at")
+      .setDesc(
+        `Which toggles the autoscroll stops at — currently ${modeLabel(this.plugin.modeConfig())}.`
+      )
+      .addButton((btn) =>
+        btn.setButtonText("Choose mode").onClick(() => {
+          new ScrollModeModal(this.app, this.plugin).open();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Pause for")
+      .setDesc(`Hold time on each stop — currently ${formatDwell(clampHold(this.plugin.settings.scrollHold))}.`)
+      .addButton((btn) =>
+        btn.setButtonText("Choose time").onClick(() => {
+          new ScrollDwellModal(this.app, this.plugin).open();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Speed presets")
+      .setDesc(`Multiplier of the reading speed — currently ${multiplierFromSpeed(this.plugin.settings.scrollSpeed)}x.`)
+      .addButton((btn) =>
+        btn.setButtonText("Choose speed").onClick(() => {
+          new ScrollSpeedModal(this.app, this.plugin).open();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Tall toggles screen-by-screen")
+      .setDesc("Long answers are read one screen at a time before the next toggle.")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.scrollChunkTall).onChange(async (v) => {
+          this.plugin.settings.scrollChunkTall = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Loop the route")
+      .setDesc("Route / shuffle runs restart from the beginning instead of stopping.")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.scrollLoopRoute).onChange(async (v) => {
+          this.plugin.settings.scrollLoopRoute = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Auto-grade during shuffle")
+      .setDesc("Toggles you linger on come back sooner; quick ones move further away.")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.scrollAutoGrade).onChange(async (v) => {
+          this.plugin.settings.scrollAutoGrade = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("New toggles mixed into shuffle")
+      .setDesc("0 = only revise old toggles, 1 = new ones first.")
+      .addSlider((sl) =>
+        sl
+          .setLimits(0, 1, 0.05)
+          .setValue(this.plugin.settings.scrollNewMix)
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.scrollNewMix = v;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Weak toggles / priority")
+      .setDesc("Why the shuffle picks what it picks — recall, difficulty and lapses per toggle.")
+      .addButton((btn) =>
+        btn.setButtonText("Show stats").onClick(() => {
+          new ScrollStatsModal(this.app, this.plugin).open();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Debug overlay")
+      .setDesc(
+        "Shows the live loop state while autoscroll runs: position, direction, waypointReached / crossedTarget, dwell key and grade."
+      )
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.scrollDebug).onChange(async (v) => {
+          this.plugin.settings.scrollDebug = v;
+          await this.plugin.saveSettings();
+          this.plugin.syncScrollDebugOverlay();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Revision memory")
+      .setDesc("Forget what this note's shuffle learned about you.")
+      .addButton((btn) =>
+        btn.setButtonText("Reset for this note").onClick(async () => {
+          await this.plugin.resetScrollMemory();
+        })
+      );
+
+    /* ---------- v1.1.0: quiz mode ---------- */
+    new Setting(containerEl).setName("Quiz mode").setHeading();
+
+    new Setting(containerEl)
+      .setName("Time per question")
+      .setDesc(
+        "Seconds before the answer is revealed. Write ⏱30 (or [30s]) in a toggle title to override it for that question."
+      )
+      .addSlider((sl) =>
+        sl
+          .setLimits(QUIZ_SECONDS_MIN, 120, 1)
+          .setValue(clampQuizSeconds(this.plugin.settings.quizSeconds))
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.quizSeconds = clampQuizSeconds(v);
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Answer time")
+      .setDesc("Seconds the revealed answer stays open before the toggle closes.")
+      .addSlider((sl) =>
+        sl
+          .setLimits(1, 60, 1)
+          .setValue(clampRevealSeconds(this.plugin.settings.quizRevealSeconds))
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.quizRevealSeconds = clampRevealSeconds(v);
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Go to the next question automatically")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.quizAutoNext).onChange(async (v) => {
+          this.plugin.settings.quizAutoNext = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Close the toggle after the answer")
+      .setDesc("Only one answer is visible at a time.")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.quizCloseAfterReveal).onChange(async (v) => {
+          this.plugin.settings.quizCloseAfterReveal = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Use the colour filter")
+      .setDesc(
+        `Quiz only the colours chosen above — currently ${filterLabel(this.plugin.settings.scrollFilter)}.`
+      )
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.quizUseColorFilter).onChange(async (v) => {
+          this.plugin.settings.quizUseColorFilter = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Loop the quiz")
+      .setDesc("Start again from the first question instead of finishing.")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.quizLoop).onChange(async (v) => {
+          this.plugin.settings.quizLoop = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Notify when the time is up")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.quizBeepOnTimeUp).onChange(async (v) => {
+          this.plugin.settings.quizBeepOnTimeUp = v;
           await this.plugin.saveSettings();
         })
       );

@@ -11,6 +11,8 @@ export const PRIMARY_IDS = [
   "smart-recall",
   "smart-review",
   "smart-autoscroll",
+  "smart-quiz",
+  "scroll-stats",
 ] as const;
 
 export type PrimaryId = (typeof PRIMARY_IDS)[number];
@@ -21,6 +23,8 @@ export const PRIMARY_NAMES: Record<PrimaryId, string> = {
   "smart-recall": "Recall (start / pause session)",
   "smart-review": "Review (spaced repetition)",
   "smart-autoscroll": "Autoscroll (start / pause revision)",
+  "smart-quiz": "Quiz (timed question run)",
+  "scroll-stats": "Autoscroll: revision stats (weak toggles)",
 };
 
 
