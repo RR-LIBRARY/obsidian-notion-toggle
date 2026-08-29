@@ -586,11 +586,9 @@ body.is-mobile .ntt-quiz-time {
   color: var(--text-muted);
 }
 
-/* ---------- v1.2.1: floating launch button (halo + rounded-square icon) ---------- */
+/* ---------- v1.2.2: floating launch button — plain white circle, dark chevron ---------- */
 .ntt-fab {
-  --ntt-fab-size: 72px;
-  --ntt-fab-icon-size: 46px;
-  --ntt-fab-accent: var(--color-orange, #f97316);
+  --ntt-fab-size: 64px;
   position: fixed;
   right: 16px;
   bottom: calc(96px + env(safe-area-inset-bottom, 0px));
@@ -598,9 +596,9 @@ body.is-mobile .ntt-quiz-time {
   height: var(--ntt-fab-size);
   padding: 0;
   border-radius: 50%;
-  border: none;
-  background: var(--background-primary);
-  color: var(--text-on-accent, #fff);
+  border: 1px solid var(--background-modifier-border, rgba(0, 0, 0, 0.08));
+  background: var(--background-primary, #fff);
+  color: var(--text-normal, #1f1f1f);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -614,25 +612,21 @@ body.is-mobile .ntt-quiz-time {
   transition: transform 120ms ease, opacity 120ms ease;
 }
 .ntt-fab .ntt-fab-icon {
-  width: var(--ntt-fab-icon-size);
-  height: var(--ntt-fab-icon-size);
-  border-radius: 14px;
-  background: var(--ntt-fab-accent);
-  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
 }
 .ntt-fab .ntt-fab-icon svg {
   display: block;
+}
+.ntt-fab.is-running {
+  color: var(--interactive-accent, #7c3aed);
 }
 .ntt-fab.is-pressed {
   transform: scale(0.92);
 }
 body.is-mobile .ntt-fab {
-  --ntt-fab-size: 76px;
-  --ntt-fab-icon-size: 48px;
+  --ntt-fab-size: 68px;
 }
 @media (prefers-reduced-motion: reduce) {
   .ntt-fab {

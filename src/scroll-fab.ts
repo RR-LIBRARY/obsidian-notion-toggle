@@ -35,10 +35,11 @@ export function isProgrammaticScroll(now = Date.now()): boolean {
   return now < programmaticUntil;
 }
 
+/* v1.2.2 — screenshot style: plain white circle, dark double-chevron down. */
 const PLAY_ICON =
-  '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10-6.5a1 1 0 0 0 0-1.7l-10-6.5A1 1 0 0 0 8 5.5z" fill="currentColor"/></svg>';
+  '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l7 6 7-6"/><path d="M5 13l7 6 7-6"/></svg>';
 const PAUSE_ICON =
-  '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="6.5" y="5" width="4" height="14" rx="1.4" fill="currentColor"/><rect x="13.5" y="5" width="4" height="14" rx="1.4" fill="currentColor"/></svg>';
+  '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><rect x="6.5" y="5" width="4" height="14" rx="1.4" fill="currentColor"/><rect x="13.5" y="5" width="4" height="14" rx="1.4" fill="currentColor"/></svg>';
 
 export class ScrollFab {
   private wrap: HTMLDivElement;
