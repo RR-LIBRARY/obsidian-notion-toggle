@@ -2,7 +2,9 @@
 
 Notion-style collapsible toggles for Obsidian, plus a recall workflow built on top of them: traffic-light grading, a floating Pomodoro timer, and SM-2 spaced repetition. You never type `<details>`, `<summary>` or `>` brackets by hand.
 
-Works on desktop and mobile. Version 1.1.0.
+Works on desktop and mobile. Version 1.1.3.
+
+Full guide: **[MANUAL.md](MANUAL.md)** — install, autoscroll, Quiz Mode, settings, troubleshooting.
 
 ## Install
 
@@ -13,11 +15,14 @@ Works on desktop and mobile. Version 1.1.0.
 3. Enable **Notion Toggle** in *Settings → Community plugins*.
 4. Later updates: BRAT → *Check for updates*.
 
+> If BRAT reports *"A manifest.json file does not exist in the latest release"*, the release is missing its assets. The `v1.1.3` release ships `manifest.json`, `main.js` and `styles.css` as attached assets — remove and re-add the plugin in BRAT, then restart Obsidian.
+
 ### Manual
 
 1. Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/RR-LIBRARY/obsidian-notion-toggle/releases/latest).
 2. Copy them into `<vault>/.obsidian/plugins/notion-toggle/`.
 3. Reload Obsidian and enable the plugin.
+
 
 ## Minimal command surface
 
