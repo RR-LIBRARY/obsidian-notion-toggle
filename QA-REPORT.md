@@ -1,234 +1,78 @@
-# Notion Toggle — QA report (v1.2.0)
+# Notion Toggle — Holistic QA & Code Rating (v1.3.0)
 
-Scope: single floating button + deep verification of autoscroll, toggle types,
-quiz timing and the auto open/close behaviour.
-
-## Automated checks
-
-| Check | Result |
-| --- | --- |
-| Unit tests (`bun test`) | **226 pass / 0 fail**, 12 files, 565 assertions |
-| Typecheck | clean |
-| Production bundle | `main.js` 202.3 kb, builds clean, `dist/` emitted |
-| Versions | `manifest.json` / `package.json` / `versions.json` all `1.2.0` |
-
-## 1. Floating UI
-
-| Item | Result |
-| --- | --- |
-| Exactly one floating button on screen | PASS — the `↓` direction chip is removed; only the round ▶/⏸ button remains |
-| Tap = start / pause | PASS |
-| Long-press (500 ms) = the sheet with every other control | PASS — Autoscroll, Quiz, **Direction**, Speed, Dwell, Pause-at all live there |
-| Direction still reachable | PASS — new "Direction" row in the sheet, plus the existing `Ctrl/Cmd+Shift+R` command |
-| Auto-hide after 3 s while running, wake on tap/scroll, pinned when paused | PASS |
-| Hold anywhere to freeze, release to resume at the same speed | PASS (3 unit tests on the hold logic) |
-
-## 2. Toggle type coverage
-
-| Item | Result |
-| --- | --- |
-| `> [!note]-`, `> [!question]-`, `> [!info]-`, `!tip`, `!warning`, `!quote`, custom types | PASS — detection is type-agnostic (`.callout, details, [data-callout]`) |
-| Raw `<details>` blocks | PASS |
-| Nested toggles counted once (outermost wins) | PASS |
-| Colour filter keys only off `recall-red/yellow/green`, never the callout type | PASS |
-| Reverse visits the same stops in opposite order | PASS |
-
-## 3. Plain-text notes — **bug found and fixed**
-
-Before: a note with no toggles refused to start ("Is note me koi toggle nahi
-mila") — autoscroll simply did not run.
-Now: the run starts as a **plain continuous scroll** (no stops, no dwell) with
-an informational notice. The "no toggles match" error is now only shown when
-toggles genuinely exist but the filter or pause-at mode excludes all of them.
-
-## 4. Quiz mode
-
-| Item | Result |
-| --- | --- |
-| Answer auto-releases after the question duration | PASS — fires exactly on time, not a tick early |
-| Per-question overrides (`⏱30`, `[5s]`, `(45s)`, `@20s`) | PASS |
-| Timer resets to the *next* question's own duration | PASS |
-| Pause freezes the countdown; resume continues from the same point | PASS |
-| Manual reveal / skip keep the phase machine consistent (double reveal is a no-op) | PASS |
-| `Auto next = off` stops after the reveal instead of racing on | PASS |
-| Loop mode restarts from question 1 | PASS |
-| Toggles collapse at the start (active recall) and open at reveal | PASS |
-| Late render on mobile | PASS — 700 ms one-shot re-scan before reporting "no toggles" |
-| Quiz reachable without the toolbar | PASS — sheet row + `list-checks` toolbar command |
-
-## 5. Auto open / close — **bug found and fixed**
-
-Before: a quiz collapsed every toggle and, on stop, left them collapsed — the
-note was unreadable afterwards and the reader had to reopen each one.
-Now: the open/closed state of every toggle is recorded before the quiz starts
-and **restored exactly** when the quiz stops, so the document reads normally
-again. Autoscroll's own `scrollAutoClose` behaviour is unchanged.
-
-## 6. Lifecycle
-
-`onunload()` clears the recall timer, stops autoscroll (cancelling the rAF),
-stops the quiz (clearing its interval), destroys the FAB (its own timers and
-document listeners) and detaches hold-to-pause. No leaks with the new
-single-button FAB.
-
-## Findings summary
-
-- **Critical:** none.
-- **Fixed in 1.2.0:** plain-text notes could not autoscroll; quiz left the note
-  fully collapsed after stopping; the second floating chip is gone.
-- **Note:** the classic control bar stays off by default — Settings → "Classic
-  control bar" restores the old scrubber if you want it back.
-
-## v1.2.1 — autoscroll fix, new FAB, quiet notices
-
-| Area | Result |
-| --- | --- |
-| Autoscroll actually moves the page | FIXED — `findScrollContainer()` now picks an element that can really scroll (`scrollHeight - clientHeight > 2`). Reading mode was returning `previewMode.containerEl`, a wrapper, so `scrollTop` writes were no-ops. |
-| Self-healing container | The frame loop re-resolves the scroller after 400 ms if the current one cannot scroll (lazy render / view swap). |
-| Floating button UI | Single circular halo button with an orange rounded-square SVG icon (▶ / ⏸), matching the screenshot. |
-| Auto-hide | Fades 3 s after the last real user activity; the plugin's own programmatic scrolling no longer keeps it awake; pinned while paused or while the sheet is open. |
-| Popup spam | New "Quiet mode" (default ON, in Settings and in the sheet): status notices (session label, plain-scroll, direction, filter, stop, finish) are suppressed. Errors still show. |
-| Pause-at modes | every / odd / even / custom / route / shuffle + A4 tall-page chunking covered by `tests/scrollmode.test.ts` and `tests/planner.test.ts`. |
-| Toggle types | `!note`, `!question`, `!info`, custom types, raw `<details>`, nested outermost-only — `tests/verify-v120.test.ts`. |
-| Quiz timing | Per-question duration, `⏱30` override, auto-next, pause/resume, skip, post-quiz toggle restore — `tests/verify-v120.test.ts`. |
-| New regression test | `tests/scroll-loop.test.ts` proves frames advance `scrollTop` and that a non-scrollable wrapper is skipped. |
-| Suite | 231 tests pass, typecheck clean, bundle 207 kb. |
-
-## v1.2.3 — deep verification: quiz timing + automatic toggle open/close
-
-Toggle DOM handling was extracted from `main.ts` into `src/toggle-dom.ts`
-(`collectToggleEls`, `isToggleOpen`, `setToggleOpen`, `toggleTitleOf`,
-`applyQuizVisibility`, `restoreToggles`). `main.ts` now calls those helpers, so
-the tests below exercise the *production* code path instead of a copy.
-
-### Engine timing — `tests/quiz-timing.test.ts`
-
-| Check | Result |
-| --- | --- |
-| Per-question markers `⏱30`, `⏱ 45s`, `⏲25`, `[30s]`, `(45 s)`, `@20s` | PASS |
-| Fallback to the setting, clamp 3 s … 600 s, NaN → default | PASS |
-| Question ends exactly on its own duration → `reveal` | PASS |
-| Reveal ends on `quizRevealSeconds` → `next`, timer resets to the next question's own time | PASS |
-| Last question → `done`, `answered` counted, loop stopped | PASS |
-| `quizAutoNext = false` halts after the reveal; manual next resumes | PASS |
-| `quizLoop = true` wraps back to Q1 with the correct duration | PASS |
-| Pause freezes the countdown; resume continues from the same value | PASS |
-| `reveal now` / `skip` mid-phase | PASS |
-
-Driven in 250 ms frames — the same interval as the live loop — so the timings
-match what runs on the device.
-
-### Automatic open / close — `tests/quiz-dom.test.ts` (happy-dom)
-
-Fixture note: `!note` (collapsed), `!question` (open, with a nested `!info`),
-`<details>`, `<details open>`, plus plain paragraphs.
-
-| Check | Result |
-| --- | --- |
-| Discovery finds all four toggles, skips the nested one and plain text | PASS |
-| Callout type / `<details>` reported for the colour filter | PASS |
-| Titles readable for the per-question duration marker | PASS |
-| Initial open state read correctly for callouts *and* `<details>` | PASS |
-| Open/close idempotent on both flavours | PASS |
-| Quiz start collapses everything (active recall) | PASS |
-| Question phase keeps the answer hidden; reveal opens **only** the current toggle | PASS |
-| Moving on closes the previous toggle automatically | PASS |
-| `quizCloseAfterReveal = false` keeps revealed answers open | PASS |
-| Quiz stop restores every toggle to its exact pre-quiz state — document stays readable | PASS |
-| Shorter/stale saved-state array does not crash the restore | PASS |
-
-### Fix included
-
-`setToggleOpen()` for callouts relied purely on Obsidian's title click handler.
-If a theme or a re-render swallowed that click, the toggle silently stayed in
-the wrong state. It now verifies the result and syncs `is-collapsed` itself.
-
-**Suite: 249 tests pass**, build clean (207 kb).
-
-## v1.2.4 — FAB colour, dark mode, a11y, note-only visibility + hardcoded-parameter audit
-
-**Tests:** 259 pass / 0 fail (new `tests/fab-a11y.test.ts`, extended `tests/guide.test.ts`).
-
-### Changes verified
-| Area | Behaviour | Evidence |
-|---|---|---|
-| Running colour | Running = solid blue circle (`--interactive-accent`) with white icon; idle = white circle, dark chevrons | `fab-a11y.test.ts` "running state uses the solid blue circle class" + `.ntt-fab.is-running` in styles.css |
-| Dark mode | `.theme-dark .ntt-fab` uses `--background-secondary-alt` + `--text-normal`, stronger shadow; running keeps `--text-on-accent`; `prefers-contrast: more` bumps the border | styles.css |
-| A11y | `type=button`, `aria-label`, `aria-pressed`, `title`, `aria-keyshortcuts`, sr-only `aria-live="polite"` state text, `:focus-visible` ring (inverted while running), Enter/Space = tap, Shift+Enter = sheet, focus wakes the button | `fab-a11y.test.ts` (5 cases) |
-| Note-only floating | FAB only renders when a **MarkdownView** is active and no modal/settings overlay is open; MutationObserver + `layout-change` re-evaluate | `fabShouldShow` (5 new cases) + `syncScrollFab()` |
-
-### Hardcoded parameter audit (top → bottom)
-| Value | Where | Rating | Note |
-|---|---|---|---|
-| `FAB_AUTO_HIDE_MS = 3000` | src/scroll-fab.ts | OK (overridable via `hideAfterMs`) | not user-facing yet — candidate setting |
-| `FAB_LONG_PRESS_MS = 500` | src/scroll-fab.ts | OK | matches platform long-press |
-| `FAB_MOVE_TOLERANCE_PX = 12` | src/scroll-fab.ts | OK | prevents scroll/long-press conflicts |
-| `FAB_PROGRAMMATIC_WINDOW_MS = 150` | src/scroll-fab.ts | OK | > one frame at 60fps, < human tap cadence |
-| `HOLD_PAUSE_MS = 250`, `HOLD_MOVE_TOLERANCE_PX = 12` | src/hold-pause.ts | OK | hold-to-pause feels immediate |
-| `BASE_SPEED = 60`, `MAX_SPEED_MULTIPLIER = 20` | src/scrollmode.ts | OK | derived from settings, clamped |
-| `SPEED_MAX = 1200`, `SPEED_STEP = 20` | src/autoscroll.ts | OK | slider bounds |
-| `QUIZ_SECONDS_MAX = 600` (min 3s) | src/quiz.ts | OK | clamp for parsed `⏱30` markers |
-| 400 ms scroll-container re-resolve | main.ts scroll loop | OK | self-healing, cheap |
-| 700 ms render retry | main.ts start/quiz | OK | mobile render delay |
-| `timerX = 24`, `timerY = 120` | main.ts settings reset | OK | reset-to-default only |
-| FAB size 64 / 68 px, bottom 96 px | styles.css | Minor | fine on phones; could become CSS vars |
-| Notice durations (6000 ms) | main.ts | Minor | consistent but not configurable |
-
-**Verdict:** no blocking hardcoded values; every timing constant is exported and unit-tested, the two "minor" rows are cosmetic-only.
+Date: 2026-08-29 · Suite: `bun test` → **304 pass / 0 fail**, 784 assertions, 21 test files, 365 ms
+Repo: RR-LIBRARY/obsidian-notion-toggle · main = `0a15a04` · release `1.3.0` published with BRAT assets `main.js`, `manifest.json`, `styles.css`.
 
 ---
 
-## v1.2.5 — Red / Yellow / Green filter: bug hunt, live monitor, full code rating
+## Overall: **8.6 / 10**
 
-### 1. Bugs found (each reproduced by a failing test first, then fixed)
+| Area | Score | Notes |
+|---|---|---|
+| Correctness of core features | 9.0 | Autoscroll, quiz, filter, FAB all covered by behavioural tests |
+| Quiz engine (timing + DOM) | 9.0 | Phase timing, auto-next, loop, restore verified; ring is phase-driven |
+| Autoscroll | 8.5 | Real container detection + self-heal; frame loop only unit-tested |
+| Colour filter (red/yellow/green) | 9.0 | Order-independent, nested-toggle safe, cycle preserves fold markers |
+| Floating button (UX + a11y) | 9.0 | Note-only visibility, aria-pressed/live, keyboard, auto-hide |
+| Architecture | 6.5 | `main.ts` = 4 853 LOC; the one real structural risk |
+| Test coverage | 8.5 | 21 files, logic well isolated; no end-to-end Obsidian harness |
+| Performance | 8.5 | No per-frame `querySelectorAll`; stops measured once + re-measure |
+| Resource hygiene | 9.0 | Observer/timers/listeners registered for teardown; `onunload` complete |
+| Release hygiene | 9.5 | Tagged release + automated BRAT assets, versions.json in sync |
 
-| # | Bug | Impact | Root cause | Fix | Test |
-|---|---|---|---|---|---|
-| 1 | **A coloured toggle nested inside a plain toggle was invisible to the filter** | "🔴 Red only" said *"No toggles match this selection"* on notes that clearly had red toggles (any 🔴 answer nested under a `!note` / `!question` parent) | `collectToggleEls()` reduced to outermost toggles **before** the colour filter ran, so the nested red child was swallowed by its uncoloured parent | New `collectToggleElsFiltered(root, keep)` in `src/toggle-dom.ts` — nesting is now resolved **after** `keep`; `collectStops(container, filter)` passes the active filter | `tests/filter-dom.test.ts` → "BUG v1.2.4: a coloured toggle nested in a plain one was dropped" |
-| 2 | **Filter picker highlighted the wrong row** | After a per-note pref round-trip, `["yellow","red"]` and `["red","yellow"]` were treated as different filters — the modal showed no active row and the status label flipped between `🟡 🔴` and `🔴 🟡` | Active row was matched by comparing `filterLabel()` strings; nothing normalised the order | `normalizeFilter()` / `sameFilter()` / canonical `COLOR_ORDER` in `src/autoscroll.ts`; `setScrollFilter()` normalises before saving, the modal compares with `sameFilter()` | `tests/filter-dom.test.ts` → "filter selection is order-independent" |
-| 3 | **Quiz re-measure ignored the quiz filter** | With `quizUseColorFilter` on, `scrollQuizTo()` looked the current toggle up in an *unfiltered* re-scan; for a nested coloured question the lookup missed and it scrolled to a stale offset | Same nesting cause as #1, second call site | `scrollQuizTo()` now re-scans with the quiz filter | covered by #1's collection tests + `tests/quiz-dom.test.ts` |
-| 4 | **First tap of "Cycle colour" on an ungraded toggle was ambiguous** | `TRAFFIC_CYCLE.indexOf(-1) + 1` happened to land on red, but the behaviour was accidental and untested; the recolour regex also dropped the fold marker in a `[!note]-` header edge case | Inline regex + index arithmetic in `main.ts` with no coverage | Extracted `src/recolor.ts` (`calloutTypeOfLine`, `nextTrafficColor`, `recolorHeaderLine`); fold marker `+`/`-` is now explicitly preserved | `tests/filter-cycle.test.ts` (12 assertions, incl. 3-lap round trip) |
+---
 
-Verified-as-correct (no change needed): `colorOf` case-insensitivity, `<details class="recall-green">`, Live Preview `cm-callout` wrapper markup, `"other"` exclusion from "All graded toggles" (intentional), empty-plan message instead of a silent full-speed run.
+## 1. What was verified this pass
 
-### 2. Live monitor (debug overlay)
+**Quiz timing & auto-release** (`tests/quiz-timing.test.ts`, `tests/quiz.test.ts`)
+- All six duration formats parse (`30`, `30s`, `1m`, `1:30`, `m:ss`, inline `⏱`).
+- Question phase → reveal phase → auto-next chain fires at the right tick; pause freezes both phases and resume continues at the same remaining time, not from zero.
+- Loop mode restarts from question 1 with a fresh phase clock.
+- Skip advances without leaking the previous question's remaining time.
 
-`src/debug-overlay.ts` now prints colour telemetry each frame, fed by `filterTelemetry()` in `main.ts`:
+**Quiz DOM behaviour** (`tests/quiz-dom.test.ts`, `tests/quiz-visibility.test.ts`)
+- Reveal is class-based (`ntt-quiz-hidden` / `ntt-quiz-shown`): **zero** `click()` calls on titles or `<summary>`, so Obsidian's fold persistence and animation never run — this is what removed the blink seen in the video.
+- Obsidian's own `is-collapsed` class is left untouched during a run.
+- One answer visible at a time when close-after-reveal is on; earlier answers stay readable when it's off.
+- On stop the note is restored exactly, including when no snapshot existed (fail-safe: nothing is left hidden).
 
-```text
-filter 🔴 🟡 · kept 5/12 (🔴3 🟡2 🟢4 ⚪3)
-⚠ filter matches 0 of 9 toggles
-target red ← "recall-red"
-```
+**Inline Telegram-style ring** (`tests/quiz-badge.test.ts`)
+- Badge mounts on the callout title row / `<summary>`, never in the body → no layout shift, no space stolen above the toggle.
+- Arc geometry matches `quizPhaseRatio`; label is `m:ss` and carries an accessible name.
 
-`target … ← "raw type"` shows the exact `data-callout` / class string the colour was graded from — a mis-detected toggle is now readable on the phone screen without a debugger. Fields are optional, so the overlay is unchanged when telemetry is not supplied. Covered by 3 new cases in `tests/debug-stats.test.ts`.
+**Colour filter** (`tests/filter-dom.test.ts`, `tests/filter-cycle.test.ts`, `tests/verify-v120.test.ts`)
+- A coloured toggle nested inside a plain `!note` is still found (`collectToggleElsFiltered` filters before de-nesting).
+- `normalizeFilter`/`sameFilter` make `["red","green"]` and `["green","red"]` identical, so the picker highlights the right rows after a round-trip.
+- Colour cycling preserves the `+`/`-` fold marker.
 
-### 3. Full plugin rating
+**Autoscroll & FAB** (`tests/autoscroll.test.ts`, `tests/scroll-loop.test.ts`, `tests/hold-pause.test.ts`, `tests/fab-a11y.test.ts`)
+- Stop planning, filtered stops, plain-text notes (no toggles) all scroll.
+- Hold anywhere pauses; release resumes at the same speed.
+- FAB: tap = play/pause, long-press = sheet, 3 s auto-hide that does **not** wake on the plugin's own programmatic scroll, `aria-pressed` + live-region announcements, Enter/Space and Shift+Enter.
 
-| Module | LOC | Score | Notes |
+**Deep links** (`tests/deeplink.test.ts`) — full quiz link, shorthand filters, junk rejected, seconds/speed clamped, bare `stop`, unknown actions refused.
+
+**Resource hygiene** (source audit) — 21 listeners with the DOM ones bound via `registerDomEvent`; every `setInterval`/`setTimeout` has a matching clear; the overlay `MutationObserver` is disconnected through `this.register`; `onunload` stops timer, autoscroll, quiz, FAB and hold-pause. No `console.*` left in shipped code. Only two `any` casts in 4.8 k lines.
+
+---
+
+## 2. Findings (ranked)
+
+| # | Sev | Finding | Fix |
 |---|---|---|---|
-| `main.ts` | 4667 | **6.5/10** | Works and is well commented, but it is the one real weakness: plugin lifecycle, 30+ commands, editor ops, scroll loop, quiz runner, 4 modals and 2 settings tabs in a single file. Every bug in this round lived here, in logic that had no seam for a test. Extractions are steadily fixing it. |
-| `src/autoscroll.ts` | 219 | **9/10** | Pure, clamped, fully tested; now order-normalised. |
-| `src/scrollmode.ts` | 268 | **9/10** | Pause-at modes (odd/even/custom/route/shuffle) + A4 chunking, all pure and covered. |
-| `src/reader/dwellEngine.ts` | 313 | **8.5/10** | The loop's brain; good tests, but the dwell-key guard logic is dense and deserves a diagram. |
-| `src/reader/fsrsScheduler.ts` | 397 | **9/10** | Faithful FSRS implementation, deterministic tests. |
-| `src/quiz.ts` | 252 | **9/10** | Duration parsing (6 marker formats), clamps, auto-next/loop — all covered. |
-| `src/toggle-dom.ts` | 99 | **9/10** | The right seam; now the single source of truth for collection + open/close. |
-| `src/timer.ts` / `timer-ui.ts` | 317 / 298 | **8/10** | Solid; UI half is DOM-heavy and only indirectly tested. |
-| `src/srs.ts`, `fsrs.ts` | 168 | **8.5/10** | Grade suggestion from traffic-light stats is neat and tested. |
-| `src/scroll-fab.ts` | 210 | **9/10** | Single FAB, long-press, auto-hide, full ARIA + keyboard parity. |
-| `src/guide.ts`, `naming.ts` | 165 | **8.5/10** | Command names/hotkeys centralised — good de-duplication. |
-| `src/debug-overlay.ts` | 127 | **9/10** | Pure `debugLines`, DOM-only class; now the main diagnostic tool. |
-| `src/hold-pause.ts`, `maintenance.ts`, `stats-panel.ts`, `quiz-ui.ts` | ~420 | **8.5/10** | Small, focused, tested. |
-| `styles.css` | 746 | **8/10** | Theme-variable driven, dark mode + high-contrast handled; a few fixed px values (FAB size/offset) could be CSS vars. |
-| Tests | 283 tests / 18 files | **8.5/10** | Strong on pure logic and, since v1.2.3/1.2.5, on real DOM paths. Still no end-to-end run inside Obsidian itself. |
-| Build & release | — | **9/10** | esbuild + dist page, GitHub Actions attaches `main.js` / `manifest.json` / `styles.css` for BRAT automatically. |
+| 1 | Medium | `main.ts` is 4 853 LOC — commands, settings tab, sheet modal, quiz orchestration and FAB wiring all in one class. Hardest part of the codebase to change safely. | Split into `commands/`, `settings/`, `ui/` modules; the pure logic already lives in `src/*`. |
+| 2 | Low | `tests/*` import from `bun:test`, so `vitest` cannot run the suite (fails on every file). Only `bun test` works. | Document it in README, or add a thin vitest alias. |
+| 3 | Low | `scroll-fab.ts` sets icons with `innerHTML` (static local SVG strings — not a security issue, but bypasses Obsidian's DOM helpers). | Build the SVG with `createSvg` / `setIcon`. |
+| 4 | Low | No end-to-end harness inside real Obsidian: mobile render delays, fold internals and theme contrast are covered by heuristics + retries, not tests. | Keep the 400/700 ms self-heal retries; manual smoke test per release (`SMOKE-TEST.md`). |
+| 5 | Info | `styles.css` is 787 lines with several near-duplicate FAB/quiz blocks. | Consolidate with CSS variables. |
 
-**Overall: 8.4/10** — a genuinely capable, well-tested plugin whose only structural liability is the size of `main.ts`.
+Nothing critical or high found. No behaviour bugs surfaced in this pass.
 
-Highest-value follow-ups, ranked:
-1. Split `main.ts` into `commands/`, `scroll-session.ts`, `quiz-session.ts`, `settings-tab.ts`, `modals/` — most remaining risk lives in untestable glue there.
-2. Add a smoke test that mounts the whole reading-view markup and runs one autoscroll + one quiz end to end.
-3. Promote FAB size/offset and notice duration to settings/CSS vars.
-4. Consolidate the three filter call sites (plan, page boxes, quiz) behind one `plannedStops()` helper so they cannot drift again.
-5. Document the dwell-key guard with a state diagram.
+---
+
+## 3. Manual-verify list (cannot be asserted from tests)
+
+1. On a long mobile note, quiz reveal shows **no** flicker and the ring shrinks smoothly.
+2. FAB never appears over Settings / Search / Graph / Canvas.
+3. Dark and light theme contrast for the white → blue running FAB.
+4. BRAT install of `1.3.0` picks up the three assets (confirmed present on the release).
