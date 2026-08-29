@@ -450,80 +450,121 @@ body.is-mobile .ntt-scroll-btn {
   font-size: 16px;
 }
 
-/* ---------- v1.1.0: quiz mode HUD ---------- */
-.ntt-quiz-hud {
+/* ---------- v1.3.0: inline quiz timer (Telegram style) ---------- */
+
+/* The ring sits on the question's own title row — nothing floats. */
+.ntt-quiz-ring {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding-left: 8px;
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  line-height: 1;
+}
+.ntt-quiz-ring-time {
+  font-weight: 600;
+}
+.ntt-quiz-ring-svg {
+  transform: rotate(-90deg);
+  overflow: visible;
+}
+.ntt-quiz-ring-track {
+  stroke: var(--background-modifier-border);
+  stroke-width: 2;
+}
+.ntt-quiz-ring-arc {
+  stroke: var(--interactive-accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 240ms linear;
+}
+.ntt-quiz-ring.is-reveal .ntt-quiz-ring-arc {
+  stroke: var(--color-green, var(--interactive-accent));
+}
+.ntt-quiz-ring.is-reveal .ntt-quiz-ring-time {
+  color: var(--color-green, var(--interactive-accent));
+}
+.ntt-quiz-ring.is-paused {
+  opacity: 0.55;
+}
+body.is-mobile .ntt-quiz-ring {
+  font-size: 13px;
+}
+
+/* Plugin-owned show/hide: Obsidian's fold state is never touched, so the
+   reading view does not blink and the note keeps its own collapsed state. */
+body.ntt-quiz-active .callout.ntt-quiz-hidden > .callout-content,
+body.ntt-quiz-active details.ntt-quiz-hidden > *:not(summary) {
+  display: none !important;
+}
+body.ntt-quiz-active .callout.ntt-quiz-shown > .callout-content {
+  display: block !important;
+}
+/* No fold animation while a quiz runs — this is what caused the flicker. */
+body.ntt-quiz-active .callout,
+body.ntt-quiz-active .callout-content,
+body.ntt-quiz-active .callout-title,
+body.ntt-quiz-active .callout-fold {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* Slim control strip (hidden in minimal quiz UI mode). */
+.ntt-quiz-dock {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
   bottom: calc(76px + env(safe-area-inset-bottom, 0px));
   z-index: var(--layer-notice, 61);
-  min-width: 190px;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  border-radius: 14px;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
   background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
 }
-.ntt-quiz-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-.ntt-quiz-time {
-  font-size: 24px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
-}
-.ntt-quiz-meta {
-  display: flex;
-  flex-direction: column;
+.ntt-quiz-dock-progress {
   font-size: 11px;
-  opacity: 0.8;
+  opacity: 0.75;
+  padding-right: 4px;
+  font-variant-numeric: tabular-nums;
 }
-.ntt-quiz-bar {
-  height: 4px;
-  border-radius: 4px;
-  background: var(--background-modifier-border);
-  overflow: hidden;
-}
-.ntt-quiz-bar-fill {
-  height: 100%;
-  width: 0%;
-  background: var(--interactive-accent);
-  transition: width 240ms linear;
-}
-.ntt-quiz-actions {
-  display: flex;
-  gap: 6px;
-}
-.ntt-quiz-btn {
-  flex: 1;
+.ntt-quiz-dock-btn {
+  min-width: 32px;
   min-height: 32px;
-  border-radius: 8px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--text-normal);
   font-size: 14px;
+  cursor: pointer;
 }
-.ntt-quiz-hud.is-reveal .ntt-quiz-time {
-  color: var(--color-green, var(--interactive-accent));
+.ntt-quiz-dock-btn:hover,
+.ntt-quiz-dock-btn:focus-visible {
+  background: var(--background-modifier-hover);
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
 }
-.ntt-quiz-hud.is-paused .ntt-quiz-time {
-  opacity: 0.55;
+.ntt-quiz-dock.is-paused .ntt-quiz-dock-btn.is-run {
+  color: var(--interactive-accent);
 }
-body.is-mobile .ntt-quiz-btn {
-  min-height: 44px;
+body.is-mobile .ntt-quiz-dock-btn {
+  min-width: 40px;
+  min-height: 40px;
   font-size: 16px;
 }
-body.is-mobile .ntt-quiz-time {
-  font-size: 28px;
-}
 @media (prefers-reduced-motion: reduce) {
-  .ntt-quiz-bar-fill {
+  .ntt-quiz-ring-arc {
     transition: none;
   }
 }
+
 
 /* v1.1.1 — extra autoscroll bar buttons (mode / dwell / go-to-top) */
 .ntt-scroll-btn.is-mode,

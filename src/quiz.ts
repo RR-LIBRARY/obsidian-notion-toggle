@@ -239,6 +239,24 @@ export function quizProgressRatio(state: QuizState): number {
   return Math.min(1, Math.max(0, state.answered / state.total));
 }
 
+/**
+ * v1.3.0 — 0..1 of the *current phase* still to run, for the inline ring on
+ * the question (Telegram's shrinking `0:07 ⟳` circle).
+ */
+export function quizPhaseRatio(
+  state: QuizState,
+  titles: string[],
+  s: QuizSettings
+): number {
+  if (state.phase === "done") return 0;
+  const total =
+    state.phase === "reveal"
+      ? clampRevealSeconds(s.quizRevealSeconds) * 1000
+      : questionMs(titles[state.at], s);
+  if (!(total > 0)) return 0;
+  return Math.min(1, Math.max(0, state.remaining / total));
+}
+
 export function quizSummary(state: QuizState): string {
   const minutes = Math.round(state.elapsedMs / 60000);
   const q = state.answered;

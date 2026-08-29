@@ -29,6 +29,7 @@ __export(main_exports, {
   MCQ_OPTION: () => MCQ_OPTION2,
   NUMBERED_HEADER: () => NUMBERED_HEADER,
   NUMBERED_SUMMARY: () => NUMBERED_SUMMARY,
+  QUIZ_FILTER_OPTIONS: () => QUIZ_FILTER_OPTIONS,
   TOGGLE_COLORS: () => TOGGLE_COLORS,
   TRAFFIC_CYCLE: () => TRAFFIC_CYCLE,
   buildMatchBlock: () => buildMatchBlock,
@@ -2055,29 +2056,19 @@ function pauseQuiz(state) {
 function resumeQuiz(state) {
   return state.phase === "done" ? state : { ...state, running: true };
 }
-function formatQuizTime(ms) {
-  const total = Math.max(0, Math.ceil(ms / 1e3));
-  const m = Math.floor(total / 60);
-  const sec = total % 60;
-  return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-}
 function quizProgressLabel(state) {
   if (state.total === 0)
     return "Q 0/0";
   const shown = state.phase === "done" ? state.total : Math.min(state.at + 1, state.total);
   return `Q ${shown}/${state.total}`;
 }
-function quizPhaseLabel(state) {
+function quizPhaseRatio(state, titles, s) {
   if (state.phase === "done")
-    return "Finished";
-  if (state.phase === "reveal")
-    return "Answer";
-  return state.running ? "Question" : "Paused";
-}
-function quizProgressRatio(state) {
-  if (state.total === 0)
     return 0;
-  return Math.min(1, Math.max(0, state.answered / state.total));
+  const total = state.phase === "reveal" ? clampRevealSeconds(s.quizRevealSeconds) * 1e3 : questionMs(titles[state.at], s);
+  if (!(total > 0))
+    return 0;
+  return Math.min(1, Math.max(0, state.remaining / total));
 }
 function quizSummary(state) {
   const minutes = Math.round(state.elapsedMs / 6e4);
@@ -2127,51 +2118,22 @@ function toggleTitleOf(el) {
   }
   return (_f = (_e = (_c = el.querySelector(".callout-title-inner")) == null ? void 0 : _c.textContent) != null ? _e : (_d = el.querySelector(".callout-title")) == null ? void 0 : _d.textContent) != null ? _f : "";
 }
-function restoreToggles(els, wasOpen) {
-  els.forEach((el, i) => {
-    if (el)
-      setToggleOpen(el, !!wasOpen[i]);
-  });
-}
 
 // src/quiz-ui.ts
-var QuizHud = class {
+var QuizBar = class {
   constructor(cb) {
     this.cb = cb;
     this.root = document.createElement("div");
-    this.root.className = "ntt-quiz-hud";
+    this.root.className = "ntt-quiz-dock";
     this.root.setAttribute("role", "group");
-    this.root.setAttribute("aria-label", "Quiz mode");
-    const head = document.createElement("div");
-    head.className = "ntt-quiz-head";
-    this.root.appendChild(head);
-    this.timeEl = document.createElement("div");
-    this.timeEl.className = "ntt-quiz-time";
-    this.timeEl.textContent = "00:20";
-    head.appendChild(this.timeEl);
-    const meta = document.createElement("div");
-    meta.className = "ntt-quiz-meta";
-    head.appendChild(meta);
-    this.progressEl = document.createElement("div");
-    this.progressEl.className = "ntt-quiz-progress";
+    this.root.setAttribute("aria-label", "Quiz controls");
+    this.progressEl = document.createElement("span");
+    this.progressEl.className = "ntt-quiz-dock-progress";
     this.progressEl.textContent = "Q 1/1";
-    meta.appendChild(this.progressEl);
-    this.phaseEl = document.createElement("div");
-    this.phaseEl.className = "ntt-quiz-phase";
-    this.phaseEl.textContent = "Question";
-    meta.appendChild(this.phaseEl);
-    const bar = document.createElement("div");
-    bar.className = "ntt-quiz-bar";
-    this.barFill = document.createElement("div");
-    this.barFill.className = "ntt-quiz-bar-fill";
-    bar.appendChild(this.barFill);
-    this.root.appendChild(bar);
-    const row = document.createElement("div");
-    row.className = "ntt-quiz-actions";
-    this.root.appendChild(row);
+    this.root.appendChild(this.progressEl);
     const btn = (text, label, cls, fn) => {
       const b = document.createElement("button");
-      b.className = `ntt-btn ntt-quiz-btn ${cls}`;
+      b.className = `ntt-quiz-dock-btn ${cls}`;
       b.textContent = text;
       b.setAttribute("aria-label", label);
       b.title = label;
@@ -2179,7 +2141,7 @@ var QuizHud = class {
         e.preventDefault();
         fn();
       });
-      row.appendChild(b);
+      this.root.appendChild(b);
       return b;
     };
     this.runBtn = btn("\u23F8", "Pause / resume", "is-run", () => this.cb.onTogglePause());
@@ -2189,11 +2151,9 @@ var QuizHud = class {
     document.body.appendChild(this.root);
   }
   render(d) {
-    this.timeEl.textContent = d.time;
     this.progressEl.textContent = d.progress;
-    this.phaseEl.textContent = d.phase;
     this.runBtn.textContent = d.running ? "\u23F8" : "\u25B6";
-    this.barFill.style.width = `${Math.round(Math.min(1, Math.max(0, d.ratio)) * 100)}%`;
+    this.runBtn.setAttribute("aria-pressed", String(!d.running));
     this.root.classList.toggle("is-paused", !d.running);
     this.root.classList.toggle("is-reveal", d.revealing);
   }
@@ -2201,6 +2161,161 @@ var QuizHud = class {
     this.root.remove();
   }
 };
+
+// src/quiz-badge.ts
+var RING_RADIUS = 8;
+var RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+function clampRatio(ratio) {
+  if (!Number.isFinite(ratio))
+    return 0;
+  return Math.min(1, Math.max(0, ratio));
+}
+function ringOffset(ratio) {
+  return RING_CIRCUMFERENCE * (1 - clampRatio(ratio));
+}
+function formatRingTime(ms) {
+  const total = Math.max(0, Math.ceil((Number.isFinite(ms) ? ms : 0) / 1e3));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+function titleRowOf(el) {
+  var _a, _b;
+  return (_b = (_a = el.querySelector(".callout-title")) != null ? _a : el.querySelector("summary")) != null ? _b : el;
+}
+var SVG_NS = "http://www.w3.org/2000/svg";
+var QuizRing = class {
+  constructor(doc = document) {
+    this.root = doc.createElement("span");
+    this.root.className = "ntt-quiz-ring";
+    this.root.setAttribute("role", "timer");
+    this.root.setAttribute("aria-live", "polite");
+    const size = (RING_RADIUS + 2) * 2;
+    const svg = doc.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("class", "ntt-quiz-ring-svg");
+    svg.setAttribute("viewBox", `0 0 ${size} ${size}`);
+    svg.setAttribute("width", String(size));
+    svg.setAttribute("height", String(size));
+    svg.setAttribute("aria-hidden", "true");
+    const circle = (cls) => {
+      const c = doc.createElementNS(SVG_NS, "circle");
+      c.setAttribute("class", cls);
+      c.setAttribute("cx", String(size / 2));
+      c.setAttribute("cy", String(size / 2));
+      c.setAttribute("r", String(RING_RADIUS));
+      c.setAttribute("fill", "none");
+      svg.appendChild(c);
+      return c;
+    };
+    this.track = circle("ntt-quiz-ring-track");
+    this.arc = circle("ntt-quiz-ring-arc");
+    this.arc.setAttribute("stroke-dasharray", String(RING_CIRCUMFERENCE));
+    this.arc.setAttribute("stroke-dashoffset", "0");
+    this.label = doc.createElement("span");
+    this.label.className = "ntt-quiz-ring-time";
+    this.label.textContent = "0:00";
+    this.root.appendChild(this.label);
+    this.root.appendChild(svg);
+  }
+  /** Move the badge onto `el`'s title row (no-op when it is already there). */
+  mount(el) {
+    const row = titleRowOf(el);
+    if (this.root.parentElement !== row)
+      row.appendChild(this.root);
+  }
+  render(d) {
+    this.label.textContent = formatRingTime(d.remaining);
+    this.arc.setAttribute("stroke-dashoffset", String(ringOffset(d.ratio)));
+    this.root.classList.toggle("is-reveal", d.phase === "reveal");
+    this.root.classList.toggle("is-paused", !d.running);
+    this.root.setAttribute(
+      "aria-label",
+      `Question ${d.index} of ${d.total}, ${d.phase === "reveal" ? "answer" : "question"}, ${formatRingTime(
+        d.remaining
+      )} left`
+    );
+    void this.track;
+  }
+  destroy() {
+    this.root.remove();
+  }
+};
+
+// src/quiz-visibility.ts
+var QUIZ_HIDDEN_CLASS = "ntt-quiz-hidden";
+var QUIZ_SHOWN_CLASS = "ntt-quiz-shown";
+var QUIZ_ACTIVE_CLASS = "ntt-quiz-active";
+var isDetails = (el) => el.tagName.toLowerCase() === "details";
+function snapshotToggle(el) {
+  return { open: isDetails(el) ? el.open : false };
+}
+function snapshotToggles(els) {
+  return els.map((el) => el ? snapshotToggle(el) : { open: false });
+}
+function setQuizVisible(el, visible) {
+  if (isDetails(el)) {
+    el.open = visible;
+    el.classList.toggle(QUIZ_SHOWN_CLASS, visible);
+    el.classList.toggle(QUIZ_HIDDEN_CLASS, !visible);
+    return;
+  }
+  el.classList.toggle(QUIZ_SHOWN_CLASS, visible);
+  el.classList.toggle(QUIZ_HIDDEN_CLASS, !visible);
+}
+function applyQuizVisibilityClasses(els, index, revealed, closeOthers) {
+  els.forEach((el, i) => {
+    if (!el)
+      return;
+    if (i === index)
+      setQuizVisible(el, revealed);
+    else if (closeOthers)
+      setQuizVisible(el, false);
+  });
+}
+function clearQuizVisibility(els, snapshot = []) {
+  els.forEach((el, i) => {
+    var _a;
+    if (!el)
+      return;
+    el.classList.remove(QUIZ_HIDDEN_CLASS, QUIZ_SHOWN_CLASS);
+    if (isDetails(el))
+      el.open = !!((_a = snapshot[i]) == null ? void 0 : _a.open);
+  });
+}
+
+// src/deeplink.ts
+var COLORS = ["red", "yellow", "green", "other"];
+function parseFilterParam(raw) {
+  if (raw == null)
+    return void 0;
+  const text = raw.trim().toLowerCase();
+  if (!text || text === "all" || text === "default" || text === "any")
+    return [];
+  if (text === "graded")
+    return normalizeFilter(["red", "yellow", "green"]);
+  const picked = text.split(/[,+ ]+/).map((p) => p.trim()).filter((p) => COLORS.includes(p));
+  return picked.length ? normalizeFilter(picked) : void 0;
+}
+function parseDeepLink(params) {
+  var _a, _b;
+  const action = ((_a = params["action"]) != null ? _a : "").trim().toLowerCase();
+  if (action !== "quiz" && action !== "autoscroll" && action !== "stop")
+    return null;
+  const link = { action };
+  const file = (_b = params["file"]) == null ? void 0 : _b.trim();
+  if (file)
+    link.file = file;
+  const filter = parseFilterParam(params["filter"]);
+  if (filter)
+    link.filter = filter;
+  const seconds = Number(params["seconds"]);
+  if (Number.isFinite(seconds) && seconds > 0)
+    link.seconds = clampQuizSeconds(seconds);
+  const speed = Number(params["speed"]);
+  if (Number.isFinite(speed) && speed > 0)
+    link.speed = Math.min(600, Math.round(speed));
+  return link;
+}
 
 // src/maintenance.ts
 function renameCardKey(store, oldPath, newPath) {
@@ -2270,7 +2385,9 @@ var DEFAULT_SETTINGS = {
   scrollFab: true,
   toolbarGuideDone: [],
   scrollBarClassic: false,
-  scrollQuiet: true
+  scrollQuiet: true,
+  quizFilter: [],
+  quizMinimalUi: true
 };
 var CALLOUT_TYPES = ["question", "info", "note", "abstract", "tip", "warning", "success"];
 var TOGGLE_COLORS = [
@@ -2354,7 +2471,9 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     this.scrollHoldPaused = false;
     this.scrollHoldAt = 0;
     /* v1.1.0 quiz mode state */
-    this.quizHud = null;
+    this.quizBar = null;
+    /** v1.3.0 — inline Telegram-style countdown that rides on the question. */
+    this.quizRing = null;
     this.quizState = null;
     this.quizStops = [];
     this.quizTitles = [];
@@ -2363,8 +2482,8 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     this.quizInterval = null;
     /** v1.1.9: one-shot re-scan guard when the view is still rendering. */
     this.quizRetryPending = false;
-    /** v1.2.0 — open/closed state of each toggle before the quiz collapsed them. */
-    this.quizWasOpen = [];
+    /** v1.3.0 — pre-quiz state of every toggle, restored on stop. */
+    this.quizSnapshot = [];
   }
   /**
    * v1.0.7: every command goes through here, so the toolbar list stays short.
@@ -2808,6 +2927,12 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
       callback: () => this.stopQuiz(true)
     });
     this.addCommand({
+      id: "quiz-filter",
+      icon: "filter",
+      name: "Quiz: choose colour filter",
+      callback: () => new QuizFilterModal(this.app, this).open()
+    });
+    this.addCommand({
       id: "quiz-seconds",
       icon: "timer-reset",
       name: "Quiz: set time per question",
@@ -2872,6 +2997,41 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     const overlayObserver = new MutationObserver(() => this.syncScrollFab());
     overlayObserver.observe(document.body, { childList: true });
     this.register(() => overlayObserver.disconnect());
+    this.registerObsidianProtocolHandler("notion-toggle", async (params) => {
+      const link = parseDeepLink(params);
+      if (!link) {
+        new import_obsidian.Notice("Unknown notion-toggle link (use action=quiz | autoscroll | stop).");
+        return;
+      }
+      if (link.action === "stop") {
+        this.stopQuiz(false);
+        if (this.scrollRunning)
+          this.stopAutoScroll(false);
+        return;
+      }
+      if (link.file) {
+        await this.app.workspace.openLinkText(link.file, "", false);
+        await new Promise((r) => window.setTimeout(r, 350));
+      }
+      if (link.filter) {
+        if (link.action === "quiz")
+          await this.setQuizFilter(link.filter);
+        else
+          await this.setScrollFilter(link.filter);
+      }
+      if (link.seconds) {
+        this.settings.quizSeconds = clampQuizSeconds(link.seconds);
+        await this.saveSettings();
+      }
+      if (link.speed) {
+        this.settings.scrollSpeed = link.speed;
+        await this.saveSettings();
+      }
+      if (link.action === "quiz")
+        this.startQuizRun();
+      else
+        this.startAutoScroll();
+    });
     this.registerEditorExtension(
       import_state.Prec.highest(
         import_view.keymap.of([
@@ -4421,6 +4581,19 @@ ${deckSummary(
   quizTitleOf(el) {
     return toggleTitleOf(el);
   }
+  /** v1.3.0 — colours the quiz asks about. */
+  quizFilterColors() {
+    return normalizeFilter(
+      this.settings.quizUseColorFilter ? this.settings.quizFilter.length ? this.settings.quizFilter : this.settings.scrollFilter : []
+    );
+  }
+  async setQuizFilter(filter) {
+    this.settings.quizFilter = normalizeFilter(filter);
+    this.settings.quizUseColorFilter = true;
+    await this.saveSettings();
+    if (!this.settings.scrollQuiet)
+      new import_obsidian.Notice(`Quiz filter: ${filterLabel(this.settings.quizFilter)}`);
+  }
   /** Primary command: start, pause or resume the quiz. */
   toggleQuiz() {
     if (this.quizState && this.quizState.phase !== "done") {
@@ -4435,7 +4608,7 @@ ${deckSummary(
       new import_obsidian.Notice("Open a note first \u2014 quiz mode needs a note view.");
       return;
     }
-    const filter = this.settings.quizUseColorFilter ? this.settings.scrollFilter : [];
+    const filter = this.quizFilterColors();
     const stops = planStops(
       this.collectStops(container, filter),
       filter,
@@ -4457,13 +4630,16 @@ ${deckSummary(
     this.quizContainer = container;
     this.quizStops = stops;
     this.quizTitles = stops.map((s) => s.el ? this.quizTitleOf(s.el) : "");
-    this.quizWasOpen = stops.map((s) => s.el ? this.isToggleOpen(s.el) : false);
+    this.quizSnapshot = snapshotToggles(stops.map((s) => s.el));
+    document.body.classList.add(QUIZ_ACTIVE_CLASS);
     for (const s of stops)
       if (s.el)
-        this.setToggleOpen(s.el, false);
+        setQuizVisible(s.el, false);
     this.quizState = startQuiz(this.quizTitles, this.settings);
-    if (!this.quizHud) {
-      this.quizHud = new QuizHud({
+    if (!this.quizRing)
+      this.quizRing = new QuizRing(document);
+    if (!this.settings.quizMinimalUi && !this.quizBar) {
+      this.quizBar = new QuizBar({
         onTogglePause: () => this.toggleQuizPause(),
         onRevealNow: () => this.quizRevealNow(),
         onNext: () => this.quizNext(),
@@ -4471,28 +4647,32 @@ ${deckSummary(
       });
     }
     this.scrollQuizTo(0);
-    new import_obsidian.Notice(quizStartLabel(stops.length, this.settings));
+    if (!this.settings.scrollQuiet)
+      new import_obsidian.Notice(quizStartLabel(stops.length, this.settings));
     this.renderQuizHud();
     this.startQuizLoop();
   }
   stopQuiz(notify) {
-    var _a;
+    var _a, _b;
     if (this.quizInterval !== null) {
       window.clearInterval(this.quizInterval);
       this.quizInterval = null;
     }
     const summary = this.quizState ? quizSummary(this.quizState) : "";
-    restoreToggles(
+    clearQuizVisibility(
       this.quizStops.map((s) => s.el),
-      this.quizWasOpen
+      this.quizSnapshot
     );
+    document.body.classList.remove(QUIZ_ACTIVE_CLASS);
     this.quizState = null;
-    this.quizWasOpen = [];
+    this.quizSnapshot = [];
     this.quizStops = [];
     this.quizTitles = [];
     this.quizContainer = null;
-    (_a = this.quizHud) == null ? void 0 : _a.destroy();
-    this.quizHud = null;
+    (_a = this.quizRing) == null ? void 0 : _a.destroy();
+    this.quizRing = null;
+    (_b = this.quizBar) == null ? void 0 : _b.destroy();
+    this.quizBar = null;
     if (notify)
       new import_obsidian.Notice(summary || "Quiz stopped.");
   }
@@ -4504,7 +4684,9 @@ ${deckSummary(
     this.quizState = this.quizState.running ? pauseQuiz(this.quizState) : resumeQuiz(this.quizState);
     this.quizLastFrame = Date.now();
     this.renderQuizHud();
-    new import_obsidian.Notice(this.quizState.running ? "Quiz resumed." : "Quiz paused.");
+    if (!this.settings.scrollQuiet) {
+      new import_obsidian.Notice(this.quizState.running ? "Quiz resumed." : "Quiz paused.");
+    }
   }
   quizRevealNow() {
     if (!this.quizState)
@@ -4517,9 +4699,6 @@ ${deckSummary(
     if (!this.quizState)
       return;
     const { state, event } = skipQuestion(this.quizState, this.quizTitles, this.settings);
-    const previous = this.quizStops[this.quizState.at];
-    if ((previous == null ? void 0 : previous.el) && this.settings.quizCloseAfterReveal)
-      this.setToggleOpen(previous.el, false);
     this.quizState = state;
     this.applyQuizEvent(event);
   }
@@ -4528,11 +4707,10 @@ ${deckSummary(
     if (!this.quizState)
       return;
     if (event === "reveal") {
-      const stop = this.quizStops[this.quizState.at];
-      if (stop == null ? void 0 : stop.el)
-        this.setToggleOpen(stop.el, true);
-      if (this.settings.quizBeepOnTimeUp)
+      this.applyQuizVisibility(this.quizState.at, true);
+      if (this.settings.quizBeepOnTimeUp && !this.settings.scrollQuiet) {
         new import_obsidian.Notice("\u23F0 Time up \u2014 answer revealed.");
+      }
     } else if (event === "next") {
       this.scrollQuizTo(this.quizState.at);
     } else if (event === "done") {
@@ -4543,22 +4721,35 @@ ${deckSummary(
     }
     this.renderQuizHud();
   }
+  /** Only the current question may show its answer, and only after the reveal. */
+  applyQuizVisibility(index, revealed) {
+    applyQuizVisibilityClasses(
+      this.quizStops.map((s) => s.el),
+      index,
+      revealed,
+      this.settings.quizCloseAfterReveal
+    );
+  }
   /** Close every other toggle and bring question `index` into view. */
   scrollQuizTo(index) {
     const container = this.quizContainer;
     const stop = this.quizStops[index];
     if (!container || !stop)
       return;
-    for (let i = 0; i < this.quizStops.length; i++) {
-      const el = this.quizStops[i].el;
-      if (el && i !== index && this.settings.quizCloseAfterReveal)
-        this.setToggleOpen(el, false);
-    }
-    const quizFilter = this.settings.quizUseColorFilter ? this.settings.scrollFilter : [];
-    const fresh = this.collectStops(container, quizFilter);
-    const match = stop.el ? fresh.find((f) => f.el === stop.el) : void 0;
-    const top = match ? match.top : stop.top;
-    container.scrollTo({ top: targetOffset(top, container.clientHeight), behavior: "smooth" });
+    this.applyQuizVisibility(index, false);
+    const el = stop.el;
+    const scroll = () => {
+      var _a;
+      const top = el && el.isConnected ? el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop : stop.top;
+      container.scrollTo({ top: targetOffset(top, container.clientHeight), behavior: "smooth" });
+      if (el)
+        (_a = this.quizRing) == null ? void 0 : _a.mount(el);
+      this.renderQuizHud();
+    };
+    if (typeof window.requestAnimationFrame === "function")
+      window.requestAnimationFrame(scroll);
+    else
+      scroll();
   }
   startQuizLoop() {
     if (this.quizInterval !== null)
@@ -4585,17 +4776,27 @@ ${deckSummary(
     else
       this.renderQuizHud();
   }
+  /** Paint the inline ring (and the optional dock) from the engine state. */
   renderQuizHud() {
-    var _a;
-    if (!this.quizState)
+    var _a, _b, _c, _d;
+    const st = this.quizState;
+    if (!st)
       return;
-    (_a = this.quizHud) == null ? void 0 : _a.render({
-      time: formatQuizTime(this.quizState.remaining),
-      progress: quizProgressLabel(this.quizState),
-      phase: quizPhaseLabel(this.quizState),
-      running: this.quizState.running,
-      revealing: this.quizState.phase === "reveal",
-      ratio: quizProgressRatio(this.quizState)
+    const el = (_a = this.quizStops[st.at]) == null ? void 0 : _a.el;
+    if (el && el.isConnected)
+      (_b = this.quizRing) == null ? void 0 : _b.mount(el);
+    (_c = this.quizRing) == null ? void 0 : _c.render({
+      remaining: st.remaining,
+      ratio: quizPhaseRatio(st, this.quizTitles, this.settings),
+      phase: st.phase,
+      running: st.running,
+      index: st.at + 1,
+      total: st.total
+    });
+    (_d = this.quizBar) == null ? void 0 : _d.render({
+      progress: quizProgressLabel(st),
+      running: st.running,
+      revealing: st.phase === "reveal"
     });
   }
   /**
@@ -4694,6 +4895,37 @@ var ScrollFilterModal = class extends import_obsidian.Modal {
         btn.addClass("is-suggested");
       btn.onclick = async () => {
         await this.plugin.setScrollFilter(opt.filter);
+        this.close();
+      };
+    }
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+var QUIZ_FILTER_OPTIONS = [
+  { label: "\u26AA Default \u2014 every toggle", filter: [] },
+  { label: "\u{1F534} Red only", filter: ["red"] },
+  { label: "\u{1F7E1} Yellow only", filter: ["yellow"] },
+  { label: "\u{1F7E2} Green only", filter: ["green"] },
+  { label: "\u{1F534}\u{1F7E1} Red + Yellow (weak spots)", filter: ["red", "yellow"] },
+  { label: "\u{1F534}\u{1F7E1}\u{1F7E2} All graded toggles", filter: ["red", "yellow", "green"] }
+];
+var QuizFilterModal = class extends import_obsidian.Modal {
+  constructor(app, plugin) {
+    super(app);
+    this.plugin = plugin;
+  }
+  onOpen() {
+    this.setTitle("Quiz \u2014 ask about which toggles?");
+    const list = this.contentEl.createDiv({ cls: "notion-toggle-color-list" });
+    const active = this.plugin.quizFilterColors();
+    for (const opt of QUIZ_FILTER_OPTIONS) {
+      const btn = list.createEl("button", { text: opt.label, cls: "notion-toggle-color-btn" });
+      if (sameFilter(opt.filter, active))
+        btn.addClass("is-suggested");
+      btn.onclick = async () => {
+        await this.plugin.setQuizFilter(opt.filter);
         this.close();
       };
     }
@@ -4904,6 +5136,18 @@ var ScrollSheetModal = class extends import_obsidian.Modal {
     new import_obsidian.Setting(this.contentEl).setName("Quiz \u2014 auto next").setDesc("ON = answer ke baad agla question khud, OFF = wahin ruk jao.").addToggle(
       (tg) => tg.setValue(s.quizAutoNext).onChange(async (v) => {
         s.quizAutoNext = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(this.contentEl).setName("Quiz \u2014 kaunse toggle").setDesc(`Abhi ${filterLabel(this.plugin.quizFilterColors())} \u2014 default, \u{1F534}, \u{1F7E1}, \u{1F7E2} \u2026`).addButton(
+      (b) => b.setButtonText("Filter").onClick(() => {
+        this.close();
+        new QuizFilterModal(this.app, this.plugin).open();
+      })
+    );
+    new import_obsidian.Setting(this.contentEl).setName("Quiz \u2014 minimal UI").setDesc("Sirf question par chhota timer ring, koi floating box nahi.").addToggle(
+      (tg) => tg.setValue(s.quizMinimalUi).onChange(async (v) => {
+        s.quizMinimalUi = v;
         await this.plugin.saveSettings();
       })
     );
@@ -5578,11 +5822,19 @@ var NotionToggleSettingTab = class extends import_obsidian.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian.Setting(containerEl).setName("Use the colour filter").setDesc(
-      `Quiz only the colours chosen above \u2014 currently ${filterLabel(this.plugin.settings.scrollFilter)}.`
-    ).addToggle(
+    new import_obsidian.Setting(containerEl).setName("Use the colour filter").setDesc("Quiz only the chosen colours instead of every toggle.").addToggle(
       (tg) => tg.setValue(this.plugin.settings.quizUseColorFilter).onChange(async (v) => {
         this.plugin.settings.quizUseColorFilter = v;
+        await this.plugin.saveSettings();
+        this.display();
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName("Quiz colours").setDesc(`Currently ${filterLabel(this.plugin.quizFilterColors())}.`).addButton(
+      (b) => b.setButtonText("Choose").onClick(() => new QuizFilterModal(this.app, this.plugin).open())
+    );
+    new import_obsidian.Setting(containerEl).setName("Minimal quiz UI").setDesc("Only the small timer ring on the question \u2014 no floating control strip.").addToggle(
+      (tg) => tg.setValue(this.plugin.settings.quizMinimalUi).onChange(async (v) => {
+        this.plugin.settings.quizMinimalUi = v;
         await this.plugin.saveSettings();
       })
     );

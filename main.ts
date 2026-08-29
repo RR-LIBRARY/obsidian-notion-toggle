@@ -131,11 +131,9 @@ import {
   QUIZ_SECONDS_MIN,
   clampQuizSeconds,
   clampRevealSeconds,
-  formatQuizTime,
   pauseQuiz,
-  quizPhaseLabel,
   quizProgressLabel,
-  quizProgressRatio,
+  quizPhaseRatio,
   quizStartLabel,
   quizSummary,
   quizTick,
@@ -155,7 +153,17 @@ import {
   toggleTitleOf,
   toggleTypeOf,
 } from "./src/toggle-dom";
-import { QuizHud } from "./src/quiz-ui";
+import { QuizBar } from "./src/quiz-ui";
+import { QuizRing } from "./src/quiz-badge";
+import {
+  QUIZ_ACTIVE_CLASS,
+  applyQuizVisibilityClasses,
+  clearQuizVisibility,
+  setQuizVisible,
+  snapshotToggles,
+  type ToggleSnapshot,
+} from "./src/quiz-visibility";
+import { parseDeepLink } from "./src/deeplink";
 import {
   pruneCards,
   removeCardKey,
@@ -198,6 +206,10 @@ interface NotionToggleSettings extends PomodoroSettings, AutoScrollSettings, Qui
   scrollBarClassic: boolean;
   /** v1.2.1: quiet mode — only errors pop up, no status notices. */
   scrollQuiet: boolean;
+  /** v1.3.0: colours the quiz asks about (empty = every toggle). */
+  quizFilter: RecallColor[];
+  /** v1.3.0: only the inline ring on the question — no docked control strip. */
+  quizMinimalUi: boolean;
 }
 
 const DEFAULT_SETTINGS: NotionToggleSettings = {
@@ -221,6 +233,8 @@ const DEFAULT_SETTINGS: NotionToggleSettings = {
   toolbarGuideDone: [],
   scrollBarClassic: false,
   scrollQuiet: true,
+  quizFilter: [],
+  quizMinimalUi: true,
 };
 
 const CALLOUT_TYPES = ["question", "info", "note", "abstract", "tip", "warning", "success"];
@@ -313,7 +327,9 @@ export default class NotionTogglePlugin extends Plugin {
   private scrollHoldAt = 0;
 
   /* v1.1.0 quiz mode state */
-  quizHud: QuizHud | null = null;
+  quizBar: QuizBar | null = null;
+  /** v1.3.0 — inline Telegram-style countdown that rides on the question. */
+  quizRing: QuizRing | null = null;
   quizState: QuizState | null = null;
   quizStops: (ToggleStop & { el?: HTMLElement })[] = [];
   quizTitles: string[] = [];
@@ -322,8 +338,8 @@ export default class NotionTogglePlugin extends Plugin {
   quizInterval: number | null = null;
   /** v1.1.9: one-shot re-scan guard when the view is still rendering. */
   quizRetryPending = false;
-  /** v1.2.0 — open/closed state of each toggle before the quiz collapsed them. */
-  quizWasOpen: boolean[] = [];
+  /** v1.3.0 — pre-quiz state of every toggle, restored on stop. */
+  quizSnapshot: ToggleSnapshot[] = [];
 
 
   /**
@@ -854,6 +870,15 @@ export default class NotionTogglePlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "quiz-filter",
+      icon: "filter",
+      name: "Quiz: choose colour filter",
+      callback: () => new QuizFilterModal(this.app, this).open(),
+    });
+
+
+
+    this.addCommand({
       id: "quiz-seconds",
       icon: "timer-reset",
       name: "Quiz: set time per question",
@@ -928,6 +953,39 @@ export default class NotionTogglePlugin extends Plugin {
     const overlayObserver = new MutationObserver(() => this.syncScrollFab());
     overlayObserver.observe(document.body, { childList: true });
     this.register(() => overlayObserver.disconnect());
+
+    /* ---------- v1.3.0: deep links ----------
+       obsidian://notion-toggle?action=quiz&file=Bio/Alleles.md&filter=red&seconds=30 */
+    this.registerObsidianProtocolHandler("notion-toggle", async (params) => {
+      const link = parseDeepLink(params as Record<string, string | undefined>);
+      if (!link) {
+        new Notice("Unknown notion-toggle link (use action=quiz | autoscroll | stop).");
+        return;
+      }
+      if (link.action === "stop") {
+        this.stopQuiz(false);
+        if (this.scrollRunning) this.stopAutoScroll(false);
+        return;
+      }
+      if (link.file) {
+        await this.app.workspace.openLinkText(link.file, "", false);
+        await new Promise((r) => window.setTimeout(r, 350));
+      }
+      if (link.filter) {
+        if (link.action === "quiz") await this.setQuizFilter(link.filter);
+        else await this.setScrollFilter(link.filter);
+      }
+      if (link.seconds) {
+        this.settings.quizSeconds = clampQuizSeconds(link.seconds);
+        await this.saveSettings();
+      }
+      if (link.speed) {
+        this.settings.scrollSpeed = link.speed;
+        await this.saveSettings();
+      }
+      if (link.action === "quiz") this.startQuizRun();
+      else this.startAutoScroll();
+    });
 
 
 
@@ -2568,6 +2626,24 @@ export default class NotionTogglePlugin extends Plugin {
   }
 
 
+  /** v1.3.0 — colours the quiz asks about. */
+  quizFilterColors(): RecallColor[] {
+    return normalizeFilter(
+      this.settings.quizUseColorFilter
+        ? this.settings.quizFilter.length
+          ? this.settings.quizFilter
+          : this.settings.scrollFilter
+        : []
+    );
+  }
+
+  async setQuizFilter(filter: RecallColor[]) {
+    this.settings.quizFilter = normalizeFilter(filter);
+    this.settings.quizUseColorFilter = true;
+    await this.saveSettings();
+    if (!this.settings.scrollQuiet) new Notice(`Quiz filter: ${filterLabel(this.settings.quizFilter)}`);
+  }
+
   /** Primary command: start, pause or resume the quiz. */
   toggleQuiz() {
     if (this.quizState && this.quizState.phase !== "done") {
@@ -2583,7 +2659,7 @@ export default class NotionTogglePlugin extends Plugin {
       new Notice("Open a note first — quiz mode needs a note view.");
       return;
     }
-    const filter = this.settings.quizUseColorFilter ? this.settings.scrollFilter : [];
+    const filter = this.quizFilterColors();
     const stops = planStops(
       this.collectStops(container, filter),
       filter,
@@ -2608,18 +2684,20 @@ export default class NotionTogglePlugin extends Plugin {
       return;
     }
 
-
     this.quizContainer = container;
     this.quizStops = stops;
     this.quizTitles = stops.map((s) => (s.el ? this.quizTitleOf(s.el) : ""));
-    // Active recall: everything starts closed — but remember what the reader
-    // had open so stopping the quiz gives the document back exactly as it was.
-    this.quizWasOpen = stops.map((s) => (s.el ? this.isToggleOpen(s.el) : false));
-    for (const s of stops) if (s.el) this.setToggleOpen(s.el, false);
+    // v1.3.0 — remember the note's own shape, then hide every answer with
+    // plugin classes only (Obsidian's fold state stays untouched: no blink,
+    // no rewritten reading view).
+    this.quizSnapshot = snapshotToggles(stops.map((s) => s.el));
+    document.body.classList.add(QUIZ_ACTIVE_CLASS);
+    for (const s of stops) if (s.el) setQuizVisible(s.el, false);
     this.quizState = startQuiz(this.quizTitles, this.settings);
 
-    if (!this.quizHud) {
-      this.quizHud = new QuizHud({
+    if (!this.quizRing) this.quizRing = new QuizRing(document);
+    if (!this.settings.quizMinimalUi && !this.quizBar) {
+      this.quizBar = new QuizBar({
         onTogglePause: () => this.toggleQuizPause(),
         onRevealNow: () => this.quizRevealNow(),
         onNext: () => this.quizNext(),
@@ -2627,7 +2705,7 @@ export default class NotionTogglePlugin extends Plugin {
       });
     }
     this.scrollQuizTo(0);
-    new Notice(quizStartLabel(stops.length, this.settings));
+    if (!this.settings.scrollQuiet) new Notice(quizStartLabel(stops.length, this.settings));
     this.renderQuizHud();
     this.startQuizLoop();
   }
@@ -2638,20 +2716,23 @@ export default class NotionTogglePlugin extends Plugin {
       this.quizInterval = null;
     }
     const summary = this.quizState ? quizSummary(this.quizState) : "";
-    // v1.2.0 — restore the note to its pre-quiz shape so the document stays
-    // readable after a run (previously every toggle was left collapsed).
-    restoreToggles(
+    // v1.3.0 — drop every quiz class so the note is exactly what it was before
+    // the run; the reader never loses their own open/closed state.
+    clearQuizVisibility(
       this.quizStops.map((s) => s.el),
-      this.quizWasOpen
+      this.quizSnapshot
     );
+    document.body.classList.remove(QUIZ_ACTIVE_CLASS);
 
     this.quizState = null;
-    this.quizWasOpen = [];
+    this.quizSnapshot = [];
     this.quizStops = [];
     this.quizTitles = [];
     this.quizContainer = null;
-    this.quizHud?.destroy();
-    this.quizHud = null;
+    this.quizRing?.destroy();
+    this.quizRing = null;
+    this.quizBar?.destroy();
+    this.quizBar = null;
     if (notify) new Notice(summary || "Quiz stopped.");
   }
 
@@ -2665,7 +2746,9 @@ export default class NotionTogglePlugin extends Plugin {
       : resumeQuiz(this.quizState);
     this.quizLastFrame = Date.now();
     this.renderQuizHud();
-    new Notice(this.quizState.running ? "Quiz resumed." : "Quiz paused.");
+    if (!this.settings.scrollQuiet) {
+      new Notice(this.quizState.running ? "Quiz resumed." : "Quiz paused.");
+    }
   }
 
   quizRevealNow() {
@@ -2678,8 +2761,6 @@ export default class NotionTogglePlugin extends Plugin {
   quizNext() {
     if (!this.quizState) return;
     const { state, event } = skipQuestion(this.quizState, this.quizTitles, this.settings);
-    const previous = this.quizStops[this.quizState.at];
-    if (previous?.el && this.settings.quizCloseAfterReveal) this.setToggleOpen(previous.el, false);
     this.quizState = state;
     this.applyQuizEvent(event);
   }
@@ -2688,9 +2769,10 @@ export default class NotionTogglePlugin extends Plugin {
   private applyQuizEvent(event: "reveal" | "next" | "done" | null) {
     if (!this.quizState) return;
     if (event === "reveal") {
-      const stop = this.quizStops[this.quizState.at];
-      if (stop?.el) this.setToggleOpen(stop.el, true);
-      if (this.settings.quizBeepOnTimeUp) new Notice("⏰ Time up — answer revealed.");
+      this.applyQuizVisibility(this.quizState.at, true);
+      if (this.settings.quizBeepOnTimeUp && !this.settings.scrollQuiet) {
+        new Notice("⏰ Time up — answer revealed.");
+      }
     } else if (event === "next") {
       this.scrollQuizTo(this.quizState.at);
     } else if (event === "done") {
@@ -2702,20 +2784,37 @@ export default class NotionTogglePlugin extends Plugin {
     this.renderQuizHud();
   }
 
+  /** Only the current question may show its answer, and only after the reveal. */
+  private applyQuizVisibility(index: number, revealed: boolean) {
+    applyQuizVisibilityClasses(
+      this.quizStops.map((s) => s.el),
+      index,
+      revealed,
+      this.settings.quizCloseAfterReveal
+    );
+  }
+
   /** Close every other toggle and bring question `index` into view. */
   private scrollQuizTo(index: number) {
     const container = this.quizContainer;
     const stop = this.quizStops[index];
     if (!container || !stop) return;
-    for (let i = 0; i < this.quizStops.length; i++) {
-      const el = this.quizStops[i].el;
-      if (el && i !== index && this.settings.quizCloseAfterReveal) this.setToggleOpen(el, false);
-    }
-    const quizFilter = this.settings.quizUseColorFilter ? this.settings.scrollFilter : [];
-    const fresh = this.collectStops(container, quizFilter) as (ToggleStop & { el?: HTMLElement })[];
-    const match = stop.el ? fresh.find((f) => f.el === stop.el) : undefined;
-    const top = match ? match.top : stop.top;
-    container.scrollTo({ top: targetOffset(top, container.clientHeight), behavior: "smooth" });
+    this.applyQuizVisibility(index, false);
+    const el = stop.el;
+    // v1.3.0 — measure *after* the visibility change has landed, and read the
+    // element directly instead of re-scanning the whole note: that re-scan on
+    // every question is what made the page jump mid-animation.
+    const scroll = () => {
+      const top =
+        el && el.isConnected
+          ? el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop
+          : stop.top;
+      container.scrollTo({ top: targetOffset(top, container.clientHeight), behavior: "smooth" });
+      if (el) this.quizRing?.mount(el);
+      this.renderQuizHud();
+    };
+    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(scroll);
+    else scroll();
   }
 
   private startQuizLoop() {
@@ -2741,17 +2840,27 @@ export default class NotionTogglePlugin extends Plugin {
     else this.renderQuizHud();
   }
 
+  /** Paint the inline ring (and the optional dock) from the engine state. */
   private renderQuizHud() {
-    if (!this.quizState) return;
-    this.quizHud?.render({
-      time: formatQuizTime(this.quizState.remaining),
-      progress: quizProgressLabel(this.quizState),
-      phase: quizPhaseLabel(this.quizState),
-      running: this.quizState.running,
-      revealing: this.quizState.phase === "reveal",
-      ratio: quizProgressRatio(this.quizState),
+    const st = this.quizState;
+    if (!st) return;
+    const el = this.quizStops[st.at]?.el;
+    if (el && el.isConnected) this.quizRing?.mount(el);
+    this.quizRing?.render({
+      remaining: st.remaining,
+      ratio: quizPhaseRatio(st, this.quizTitles, this.settings),
+      phase: st.phase,
+      running: st.running,
+      index: st.at + 1,
+      total: st.total,
+    });
+    this.quizBar?.render({
+      progress: quizProgressLabel(st),
+      running: st.running,
+      revealing: st.phase === "reveal",
     });
   }
+
 
 
   /**
@@ -2871,6 +2980,42 @@ class ScrollFilterModal extends Modal {
     this.contentEl.empty();
   }
 }
+
+/** v1.3.0 — the same picker, but for quiz mode. */
+export const QUIZ_FILTER_OPTIONS: { label: string; filter: RecallColor[] }[] = [
+  { label: "⚪ Default — every toggle", filter: [] },
+  { label: "🔴 Red only", filter: ["red"] },
+  { label: "🟡 Yellow only", filter: ["yellow"] },
+  { label: "🟢 Green only", filter: ["green"] },
+  { label: "🔴🟡 Red + Yellow (weak spots)", filter: ["red", "yellow"] },
+  { label: "🔴🟡🟢 All graded toggles", filter: ["red", "yellow", "green"] },
+];
+
+class QuizFilterModal extends Modal {
+  constructor(app: App, private plugin: NotionTogglePlugin) {
+    super(app);
+  }
+
+  onOpen() {
+    this.setTitle("Quiz — ask about which toggles?");
+    const list = this.contentEl.createDiv({ cls: "notion-toggle-color-list" });
+    const active = this.plugin.quizFilterColors();
+    for (const opt of QUIZ_FILTER_OPTIONS) {
+      const btn = list.createEl("button", { text: opt.label, cls: "notion-toggle-color-btn" });
+      if (sameFilter(opt.filter, active)) btn.addClass("is-suggested");
+      btn.onclick = async () => {
+        await this.plugin.setQuizFilter(opt.filter);
+        this.close();
+      };
+    }
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+
 
 /* ---------- v1.1.1: pause-at mode, dwell and speed pickers ---------- */
 
@@ -3145,6 +3290,28 @@ class ScrollSheetModal extends Modal {
           await this.plugin.saveSettings();
         })
       );
+
+    // v1.3.0 — quiz ka apna colour filter, autoscroll wale picker jaisa.
+    new Setting(this.contentEl)
+      .setName("Quiz — kaunse toggle")
+      .setDesc(`Abhi ${filterLabel(this.plugin.quizFilterColors())} — default, 🔴, 🟡, 🟢 …`)
+      .addButton((b) =>
+        b.setButtonText("Filter").onClick(() => {
+          this.close();
+          new QuizFilterModal(this.app, this.plugin).open();
+        })
+      );
+
+    new Setting(this.contentEl)
+      .setName("Quiz — minimal UI")
+      .setDesc("Sirf question par chhota timer ring, koi floating box nahi.")
+      .addToggle((tg) =>
+        tg.setValue(s.quizMinimalUi).onChange(async (v) => {
+          s.quizMinimalUi = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
 
     new Setting(this.contentEl)
       .setName("Quiz — loop")
@@ -4157,15 +4324,34 @@ class NotionToggleSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Use the colour filter")
-      .setDesc(
-        `Quiz only the colours chosen above — currently ${filterLabel(this.plugin.settings.scrollFilter)}.`
-      )
+      .setDesc("Quiz only the chosen colours instead of every toggle.")
       .addToggle((tg) =>
         tg.setValue(this.plugin.settings.quizUseColorFilter).onChange(async (v) => {
           this.plugin.settings.quizUseColorFilter = v;
           await this.plugin.saveSettings();
+          this.display();
         })
       );
+
+    new Setting(containerEl)
+      .setName("Quiz colours")
+      .setDesc(`Currently ${filterLabel(this.plugin.quizFilterColors())}.`)
+      .addButton((b) =>
+        b
+          .setButtonText("Choose")
+          .onClick(() => new QuizFilterModal(this.app, this.plugin).open())
+      );
+
+    new Setting(containerEl)
+      .setName("Minimal quiz UI")
+      .setDesc("Only the small timer ring on the question — no floating control strip.")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.quizMinimalUi).onChange(async (v) => {
+          this.plugin.settings.quizMinimalUi = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
 
     new Setting(containerEl)
       .setName("Loop the quiz")
