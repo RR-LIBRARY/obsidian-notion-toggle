@@ -49,12 +49,15 @@ import {
   atEnd,
   clampHold,
   clampSpeed,
+  colorCounts,
   colorOf,
   filterLabel,
   firstStopFrom,
   frameDelta,
   matchesFilter,
+  normalizeFilter,
   planStops,
+  sameFilter,
   reachedTarget,
   sessionLabel,
   targetOffset,
@@ -63,6 +66,7 @@ import {
   type ToggleStop,
 } from "./src/autoscroll";
 import { ScrollDebugOverlay, type DebugFrame } from "./src/debug-overlay";
+import { TRAFFIC_CYCLE, calloutTypeOfLine, nextTrafficColor, recolorHeaderLine } from "./src/recolor";
 import { orderExplainer, rowLabel, weakRows } from "./src/stats-panel";
 import { ScrollBar } from "./src/autoscroll-ui";
 import { HoldPause } from "./src/hold-pause";
@@ -144,6 +148,7 @@ import {
 } from "./src/quiz";
 import {
   collectToggleEls,
+  collectToggleElsFiltered,
   isToggleOpen as isToggleOpenDom,
   restoreToggles,
   setToggleOpen as setToggleOpenDom,
@@ -233,8 +238,7 @@ export const TOGGLE_COLORS: { id: string; label: string; callout: string }[] = [
   { id: "plain", label: "⬛ Black / plain — clean Notion look", callout: "recall-plain" },
 ];
 
-/** Traffic-light order used by the "Cycle colour" command. */
-export const TRAFFIC_CYCLE = ["recall-red", "recall-yellow", "recall-green"];
+export { TRAFFIC_CYCLE };
 
 export function calloutForColor(colorId: string, fallback: string): string {
   const found = TOGGLE_COLORS.find((c) => c.id === colorId);
@@ -990,7 +994,7 @@ export default class NotionTogglePlugin extends Plugin {
   recolorToggleAtCursor(editor: Editor, callout: string): boolean {
     const found = this.findHeaderLine(editor);
     if (!found) return false;
-    const updated = found.text.replace(/^>\s*\[![^\]]+\]/, `> [!${callout}]`);
+    const updated = recolorHeaderLine(found.text, callout);
     editor.setLine(found.line, updated);
     return true;
   }
@@ -1218,9 +1222,7 @@ export default class NotionTogglePlugin extends Plugin {
       new Notice("Cursor is not inside a toggle.");
       return;
     }
-    const current = found.text.match(/^>\s*\[!([^\]]+)\]/)?.[1] ?? "";
-    const idx = TRAFFIC_CYCLE.indexOf(current);
-    const next = TRAFFIC_CYCLE[(idx + 1) % TRAFFIC_CYCLE.length];
+    const next = nextTrafficColor(calloutTypeOfLine(found.text));
     this.recolorToggleAtCursor(editor, next);
   }
 
@@ -1742,8 +1744,15 @@ export default class NotionTogglePlugin extends Plugin {
   }
 
   /** Every rendered toggle in the active note, with its offset and colour. */
-  private collectStops(container: HTMLElement): ToggleStop[] {
-    const nodes = collectToggleEls(container);
+  private collectStops(container: HTMLElement, filter: RecallColor[] = []): ToggleStop[] {
+    // v1.2.5 — apply the colour filter *while* resolving nesting, so a 🔴
+    // toggle nested inside a plain !note is not swallowed by its parent.
+    const nodes =
+      filter.length === 0
+        ? collectToggleEls(container)
+        : collectToggleElsFiltered(container, (el) =>
+            matchesFilter(colorOf(toggleTypeOf(el)), filter)
+          );
     const base = container.getBoundingClientRect().top - container.scrollTop;
     return nodes.map((el, index) => {
       const rect = el.getBoundingClientRect();
@@ -1859,7 +1868,10 @@ export default class NotionTogglePlugin extends Plugin {
    * (every / odd / even / custom / route / shuffle) and tall-toggle chunking.
    */
   private buildScrollPlan(container: HTMLElement) {
-    const all = this.collectStops(container) as (ToggleStop & { el: HTMLElement; height: number })[];
+    const all = this.collectStops(container, this.settings.scrollFilter) as (ToggleStop & {
+      el: HTMLElement;
+      height: number;
+    })[];
     const kept = all.filter((s) => matchesFilter(s.color, this.settings.scrollFilter));
     this.scrollTotalItems = kept.length;
     const cfg = this.modeConfig();
@@ -2127,7 +2139,7 @@ export default class NotionTogglePlugin extends Plugin {
   }
 
   async setScrollFilter(filter: RecallColor[]) {
-    this.settings.scrollFilter = filter;
+    this.settings.scrollFilter = normalizeFilter(filter);
     await this.saveSettings();
     if (this.scrollContainer && this.scrollPlan.length) {
       this.refreshScrollPlan();
@@ -2209,8 +2221,33 @@ export default class NotionTogglePlugin extends Plugin {
       lastEvent: this.scrollLastEvent,
       lastGrade: this.scrollLastGrade,
       progress: `progress ${this.scrollProgressLabel()}`,
+      ...this.filterTelemetry(container),
       ...frame,
     });
+  }
+
+  /**
+   * v1.2.5 — colour-filter read-out for the debug overlay: what was found,
+   * what survived the filter, and which raw type the current target was
+   * graded from. This is what makes a "Red only finds nothing" report
+   * diagnosable from the phone screen.
+   */
+  private filterTelemetry(container: HTMLElement): Partial<DebugFrame> {
+    const filter = this.settings.scrollFilter;
+    const all = this.collectStops(container, filter) as (ToggleStop & { el?: HTMLElement })[];
+    const found = collectToggleEls(container);
+    const target = this.scrollPlan[this.scrollAt] as (ToggleStop & { el?: HTMLElement }) | undefined;
+    const rawType = target?.el ? toggleTypeOf(target.el) : null;
+    return {
+      filter: filterLabel(filter),
+      stopsFound: Math.max(found.length, all.length),
+      stopsKept: all.filter((s) => matchesFilter(s.color, filter)).length,
+      colors: colorCounts(
+        (this.collectStops(container) as ToggleStop[]).map((s) => s.color)
+      ),
+      targetColor: target ? target.color : null,
+      targetType: rawType,
+    };
   }
 
   private renderScrollBar() {
@@ -2243,7 +2280,10 @@ export default class NotionTogglePlugin extends Plugin {
 
   /** Measure the colour-filtered toggles as page boxes in content space. */
   private measureScrollBoxes(container: HTMLElement) {
-    const all = this.collectStops(container) as (ToggleStop & { el: HTMLElement; height: number })[];
+    const all = this.collectStops(container, this.settings.scrollFilter) as (ToggleStop & {
+      el: HTMLElement;
+      height: number;
+    })[];
     const kept = all.filter((st) => matchesFilter(st.color, this.settings.scrollFilter));
     this.scrollTotalItems = kept.length;
     this.scrollElByOrdinal = new Map();
@@ -2545,7 +2585,7 @@ export default class NotionTogglePlugin extends Plugin {
     }
     const filter = this.settings.quizUseColorFilter ? this.settings.scrollFilter : [];
     const stops = planStops(
-      this.collectStops(container),
+      this.collectStops(container, filter),
       filter,
       this.settings.scrollReverse
     ) as (ToggleStop & { el?: HTMLElement })[];
@@ -2671,7 +2711,8 @@ export default class NotionTogglePlugin extends Plugin {
       const el = this.quizStops[i].el;
       if (el && i !== index && this.settings.quizCloseAfterReveal) this.setToggleOpen(el, false);
     }
-    const fresh = this.collectStops(container) as (ToggleStop & { el?: HTMLElement })[];
+    const quizFilter = this.settings.quizUseColorFilter ? this.settings.scrollFilter : [];
+    const fresh = this.collectStops(container, quizFilter) as (ToggleStop & { el?: HTMLElement })[];
     const match = stop.el ? fresh.find((f) => f.el === stop.el) : undefined;
     const top = match ? match.top : stop.top;
     container.scrollTo({ top: targetOffset(top, container.clientHeight), behavior: "smooth" });
@@ -2812,13 +2853,13 @@ class ScrollFilterModal extends Modal {
       { label: "🔴🟡 Red + Yellow (weak spots)", filter: ["red", "yellow"] },
       { label: "🔴🟡🟢 All graded toggles", filter: ["red", "yellow", "green"] },
     ];
-    const active = filterLabel(this.plugin.settings.scrollFilter);
+    const active = this.plugin.settings.scrollFilter;
     for (const opt of options) {
       const btn = list.createEl("button", {
         text: opt.label,
         cls: "notion-toggle-color-btn",
       });
-      if (filterLabel(opt.filter) === active) btn.addClass("is-suggested");
+      if (sameFilter(opt.filter, active)) btn.addClass("is-suggested");
       btn.onclick = async () => {
         await this.plugin.setScrollFilter(opt.filter);
         this.close();

@@ -1002,6 +1002,23 @@ function firstStopFrom(plan, scrollTop, reverse) {
 function targetOffset(stopTop, viewportHeight) {
   return Math.max(0, Math.round(stopTop - viewportHeight * 0.3));
 }
+var COLOR_ORDER = ["red", "yellow", "green", "other"];
+function normalizeFilter(filter) {
+  if (!filter || filter.length === 0)
+    return [];
+  return COLOR_ORDER.filter((c) => filter.includes(c));
+}
+function sameFilter(a, b) {
+  const na = normalizeFilter(a);
+  const nb = normalizeFilter(b);
+  return na.length === nb.length && na.every((c, i) => c === nb[i]);
+}
+function colorCounts(colors) {
+  const out = { red: 0, yellow: 0, green: 0, other: 0 };
+  for (const c of colors)
+    out[c] += 1;
+  return out;
+}
 function filterLabel(filter) {
   if (!filter || filter.length === 0)
     return "all toggles";
@@ -1011,7 +1028,7 @@ function filterLabel(filter) {
     green: "\u{1F7E2}",
     other: "\u26AA"
   };
-  return filter.map((c) => icon[c]).join(" ");
+  return normalizeFilter(filter).map((c) => icon[c]).join(" ");
 }
 function sessionLabel(s, stops) {
   const dir = s.scrollReverse ? "reverse \u2191" : "forward \u2193";
@@ -1023,7 +1040,7 @@ function sessionLabel(s, stops) {
 // src/debug-overlay.ts
 var px = (n) => `${Math.round(n)}`;
 function debugLines(f) {
-  var _a;
+  var _a, _b, _c, _d, _e, _f;
   const lines = [
     `pos ${f.pos.toFixed(2)} \u2192 top ${px(f.scrollTop)} / ${px(f.max)}`,
     `dir ${f.dir > 0 ? "down \u2193" : "up \u2191"} \xB7 ${f.speed.toFixed(2)} px/s \xB7 frac ${(f.pos - Math.floor(f.pos)).toFixed(2)}`,
@@ -1037,6 +1054,18 @@ function debugLines(f) {
     lines.push(`stop index ${f.at < 0 ? "\u2014" : f.at}`);
   }
   lines.push(`dwellKey ${(_a = f.dwellKey) != null ? _a : "\u2014"} \xB7 ${f.dwellLeft > 0 ? `paused ${(f.dwellLeft / 1e3).toFixed(1)}s` : "running"}`);
+  if (f.filter !== void 0) {
+    const c = (_b = f.colors) != null ? _b : { red: 0, yellow: 0, green: 0, other: 0 };
+    const found = (_c = f.stopsFound) != null ? _c : 0;
+    const kept = (_d = f.stopsKept) != null ? _d : 0;
+    lines.push(
+      `filter ${f.filter} \xB7 kept ${kept}/${found} (\u{1F534}${c.red} \u{1F7E1}${c.yellow} \u{1F7E2}${c.green} \u26AA${c.other})`
+    );
+    if (f.filter !== "all toggles" && kept === 0) {
+      lines.push(`\u26A0 filter matches 0 of ${found} toggles`);
+    }
+    lines.push(`target ${(_e = f.targetColor) != null ? _e : "\u2014"} \u2190 "${(_f = f.targetType) != null ? _f : "\u2014"}"`);
+  }
   lines.push(`event ${f.lastEvent || "\u2014"}`);
   lines.push(`grade ${f.lastGrade || "\u2014"}`);
   if (f.progress)
@@ -1071,6 +1100,22 @@ var ScrollDebugOverlay = class {
     this.body = null;
   }
 };
+
+// src/recolor.ts
+var TRAFFIC_CYCLE = ["recall-red", "recall-yellow", "recall-green"];
+function calloutTypeOfLine(line) {
+  var _a, _b, _c;
+  return (_c = (_b = (_a = line.match(/^>\s*\[!([^\]]+)\]/)) == null ? void 0 : _a[1]) == null ? void 0 : _b.trim()) != null ? _c : "";
+}
+function nextTrafficColor(current) {
+  const idx = TRAFFIC_CYCLE.indexOf(current.trim());
+  if (idx < 0)
+    return TRAFFIC_CYCLE[0];
+  return TRAFFIC_CYCLE[(idx + 1) % TRAFFIC_CYCLE.length];
+}
+function recolorHeaderLine(line, callout) {
+  return line.replace(/^(>\s*)\[![^\]]+\]([+-]?)/, `$1[!${callout}]$2`);
+}
 
 // src/reader/fsrsScheduler.ts
 var FSRS_W = [
@@ -2047,9 +2092,12 @@ function quizStartLabel(count, s) {
 
 // src/toggle-dom.ts
 var TOGGLE_SELECTOR = ".callout, details, [data-callout]";
-function collectToggleEls(root) {
-  const nodes = Array.from(root.querySelectorAll(TOGGLE_SELECTOR));
+function collectToggleElsFiltered(root, keep) {
+  const nodes = Array.from(root.querySelectorAll(TOGGLE_SELECTOR)).filter(keep);
   return nodes.filter((el) => !nodes.some((other) => other !== el && other.contains(el)));
+}
+function collectToggleEls(root) {
+  return collectToggleElsFiltered(root, () => true);
 }
 function toggleTypeOf(el) {
   var _a;
@@ -2236,7 +2284,6 @@ var TOGGLE_COLORS = [
   { id: "gray", label: "\u26AA Gray \u2014 extra", callout: "recall-gray" },
   { id: "plain", label: "\u2B1B Black / plain \u2014 clean Notion look", callout: "recall-plain" }
 ];
-var TRAFFIC_CYCLE = ["recall-red", "recall-yellow", "recall-green"];
 function calloutForColor(colorId, fallback) {
   const found = TOGGLE_COLORS.find((c) => c.id === colorId);
   return found && found.callout ? found.callout : fallback;
@@ -2883,7 +2930,7 @@ var NotionTogglePlugin = class extends import_obsidian.Plugin {
     const found = this.findHeaderLine(editor);
     if (!found)
       return false;
-    const updated = found.text.replace(/^>\s*\[![^\]]+\]/, `> [!${callout}]`);
+    const updated = recolorHeaderLine(found.text, callout);
     editor.setLine(found.line, updated);
     return true;
   }
@@ -3089,15 +3136,12 @@ ${summaryOpen}${num2}${summaryClose}
   }
   /** Cycle the toggle at the cursor through red → yellow → green. */
   cycleColorAtCursor(editor) {
-    var _a, _b;
     const found = this.findHeaderLine(editor);
     if (!found) {
       new import_obsidian.Notice("Cursor is not inside a toggle.");
       return;
     }
-    const current = (_b = (_a = found.text.match(/^>\s*\[!([^\]]+)\]/)) == null ? void 0 : _a[1]) != null ? _b : "";
-    const idx = TRAFFIC_CYCLE.indexOf(current);
-    const next = TRAFFIC_CYCLE[(idx + 1) % TRAFFIC_CYCLE.length];
+    const next = nextTrafficColor(calloutTypeOfLine(found.text));
     this.recolorToggleAtCursor(editor, next);
   }
   /** One button, five outcomes — decided by the cursor context. */
@@ -3585,8 +3629,11 @@ ${row}`, { line: cursor.line, ch: line.length });
     return /^>\s*\[![^\]]+\][+-]?/m.test(text) || /<details[\s>]/i.test(text);
   }
   /** Every rendered toggle in the active note, with its offset and colour. */
-  collectStops(container) {
-    const nodes = collectToggleEls(container);
+  collectStops(container, filter = []) {
+    const nodes = filter.length === 0 ? collectToggleEls(container) : collectToggleElsFiltered(
+      container,
+      (el) => matchesFilter(colorOf(toggleTypeOf(el)), filter)
+    );
     const base = container.getBoundingClientRect().top - container.scrollTop;
     return nodes.map((el, index) => {
       const rect = el.getBoundingClientRect();
@@ -3701,7 +3748,7 @@ ${row}`, { line: cursor.line, ch: line.length });
    * (every / odd / even / custom / route / shuffle) and tall-toggle chunking.
    */
   buildScrollPlan(container) {
-    const all = this.collectStops(container);
+    const all = this.collectStops(container, this.settings.scrollFilter);
     const kept = all.filter((s) => matchesFilter(s.color, this.settings.scrollFilter));
     this.scrollTotalItems = kept.length;
     const cfg = this.modeConfig();
@@ -3971,7 +4018,7 @@ ${deckSummary(
     this.say(reverse ? "Autoscroll: reverse \u2191" : "Autoscroll: forward \u2193");
   }
   async setScrollFilter(filter) {
-    this.settings.scrollFilter = filter;
+    this.settings.scrollFilter = normalizeFilter(filter);
     await this.saveSettings();
     if (this.scrollContainer && this.scrollPlan.length) {
       this.refreshScrollPlan();
@@ -4053,8 +4100,32 @@ ${deckSummary(
       lastEvent: this.scrollLastEvent,
       lastGrade: this.scrollLastGrade,
       progress: `progress ${this.scrollProgressLabel()}`,
+      ...this.filterTelemetry(container),
       ...frame
     });
+  }
+  /**
+   * v1.2.5 — colour-filter read-out for the debug overlay: what was found,
+   * what survived the filter, and which raw type the current target was
+   * graded from. This is what makes a "Red only finds nothing" report
+   * diagnosable from the phone screen.
+   */
+  filterTelemetry(container) {
+    const filter = this.settings.scrollFilter;
+    const all = this.collectStops(container, filter);
+    const found = collectToggleEls(container);
+    const target = this.scrollPlan[this.scrollAt];
+    const rawType = (target == null ? void 0 : target.el) ? toggleTypeOf(target.el) : null;
+    return {
+      filter: filterLabel(filter),
+      stopsFound: Math.max(found.length, all.length),
+      stopsKept: all.filter((s) => matchesFilter(s.color, filter)).length,
+      colors: colorCounts(
+        this.collectStops(container).map((s) => s.color)
+      ),
+      targetColor: target ? target.color : null,
+      targetType: rawType
+    };
   }
   renderScrollBar() {
     var _a;
@@ -4084,7 +4155,7 @@ ${deckSummary(
   }
   /** Measure the colour-filtered toggles as page boxes in content space. */
   measureScrollBoxes(container) {
-    const all = this.collectStops(container);
+    const all = this.collectStops(container, this.settings.scrollFilter);
     const kept = all.filter((st) => matchesFilter(st.color, this.settings.scrollFilter));
     this.scrollTotalItems = kept.length;
     this.scrollElByOrdinal = /* @__PURE__ */ new Map();
@@ -4366,7 +4437,7 @@ ${deckSummary(
     }
     const filter = this.settings.quizUseColorFilter ? this.settings.scrollFilter : [];
     const stops = planStops(
-      this.collectStops(container),
+      this.collectStops(container, filter),
       filter,
       this.settings.scrollReverse
     );
@@ -4483,7 +4554,8 @@ ${deckSummary(
       if (el && i !== index && this.settings.quizCloseAfterReveal)
         this.setToggleOpen(el, false);
     }
-    const fresh = this.collectStops(container);
+    const quizFilter = this.settings.quizUseColorFilter ? this.settings.scrollFilter : [];
+    const fresh = this.collectStops(container, quizFilter);
     const match = stop.el ? fresh.find((f) => f.el === stop.el) : void 0;
     const top = match ? match.top : stop.top;
     container.scrollTo({ top: targetOffset(top, container.clientHeight), behavior: "smooth" });
@@ -4612,13 +4684,13 @@ var ScrollFilterModal = class extends import_obsidian.Modal {
       { label: "\u{1F534}\u{1F7E1} Red + Yellow (weak spots)", filter: ["red", "yellow"] },
       { label: "\u{1F534}\u{1F7E1}\u{1F7E2} All graded toggles", filter: ["red", "yellow", "green"] }
     ];
-    const active = filterLabel(this.plugin.settings.scrollFilter);
+    const active = this.plugin.settings.scrollFilter;
     for (const opt of options) {
       const btn = list.createEl("button", {
         text: opt.label,
         cls: "notion-toggle-color-btn"
       });
-      if (filterLabel(opt.filter) === active)
+      if (sameFilter(opt.filter, active))
         btn.addClass("is-suggested");
       btn.onclick = async () => {
         await this.plugin.setScrollFilter(opt.filter);

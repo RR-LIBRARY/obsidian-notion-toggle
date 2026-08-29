@@ -6,11 +6,27 @@
 
 export const TOGGLE_SELECTOR = ".callout, details, [data-callout]";
 
-/** Every rendered toggle in `root`, outermost only (nested ones belong to their parent). */
-export function collectToggleEls(root: ParentNode): HTMLElement[] {
-  const nodes = Array.from(root.querySelectorAll(TOGGLE_SELECTOR)) as HTMLElement[];
+/**
+ * Every rendered toggle in `root` that passes `keep`, outermost-first.
+ *
+ * v1.2.5 — nesting is resolved *after* `keep`, not before. With the old
+ * outermost-only pass a 🔴 toggle nested inside a plain `!note` was dropped
+ * before the colour filter ever saw it, so "Red only" reported "no toggles"
+ * on notes that clearly had red ones.
+ */
+export function collectToggleElsFiltered(
+  root: ParentNode,
+  keep: (el: HTMLElement) => boolean
+): HTMLElement[] {
+  const nodes = (Array.from(root.querySelectorAll(TOGGLE_SELECTOR)) as HTMLElement[]).filter(keep);
   return nodes.filter((el) => !nodes.some((other) => other !== el && other.contains(el)));
 }
+
+/** Every rendered toggle in `root`, outermost only (nested ones belong to their parent). */
+export function collectToggleEls(root: ParentNode): HTMLElement[] {
+  return collectToggleElsFiltered(root, () => true);
+}
+
 
 /** Callout type / class string used for the colour filter. */
 export function toggleTypeOf(el: HTMLElement): string {

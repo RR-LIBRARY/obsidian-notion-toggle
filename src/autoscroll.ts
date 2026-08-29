@@ -172,6 +172,31 @@ export function atEnd(
   return reverse ? scrollTop <= 0 : scrollTop >= scrollHeight - viewportHeight - 1;
 }
 
+/** Canonical colour order — so ["yellow","red"] and ["red","yellow"] are one filter. */
+export const COLOR_ORDER: RecallColor[] = ["red", "yellow", "green", "other"];
+
+/** De-duplicate a filter and put it in canonical order. */
+export function normalizeFilter(filter: RecallColor[] | null | undefined): RecallColor[] {
+  if (!filter || filter.length === 0) return [];
+  return COLOR_ORDER.filter((c) => filter.includes(c));
+}
+
+/** Same selection, regardless of the order it was stored in. */
+export function sameFilter(a: RecallColor[], b: RecallColor[]): boolean {
+  const na = normalizeFilter(a);
+  const nb = normalizeFilter(b);
+  return na.length === nb.length && na.every((c, i) => c === nb[i]);
+}
+
+/** How many toggles of each colour a plan contains. */
+export function colorCounts(
+  colors: RecallColor[]
+): Record<RecallColor, number> {
+  const out: Record<RecallColor, number> = { red: 0, yellow: 0, green: 0, other: 0 };
+  for (const c of colors) out[c] += 1;
+  return out;
+}
+
 export function filterLabel(filter: RecallColor[]): string {
   if (!filter || filter.length === 0) return "all toggles";
   const icon: Record<RecallColor, string> = {
@@ -180,8 +205,11 @@ export function filterLabel(filter: RecallColor[]): string {
     green: "🟢",
     other: "⚪",
   };
-  return filter.map((c) => icon[c]).join(" ");
+  return normalizeFilter(filter)
+    .map((c) => icon[c])
+    .join(" ");
 }
+
 
 export function sessionLabel(s: AutoScrollSettings, stops: number): string {
   const dir = s.scrollReverse ? "reverse ↑" : "forward ↓";

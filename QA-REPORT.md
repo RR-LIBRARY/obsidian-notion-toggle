@@ -175,3 +175,60 @@ the wrong state. It now verifies the result and syncs `is-collapsed` itself.
 | Notice durations (6000 ms) | main.ts | Minor | consistent but not configurable |
 
 **Verdict:** no blocking hardcoded values; every timing constant is exported and unit-tested, the two "minor" rows are cosmetic-only.
+
+---
+
+## v1.2.5 — Red / Yellow / Green filter: bug hunt, live monitor, full code rating
+
+### 1. Bugs found (each reproduced by a failing test first, then fixed)
+
+| # | Bug | Impact | Root cause | Fix | Test |
+|---|---|---|---|---|---|
+| 1 | **A coloured toggle nested inside a plain toggle was invisible to the filter** | "🔴 Red only" said *"No toggles match this selection"* on notes that clearly had red toggles (any 🔴 answer nested under a `!note` / `!question` parent) | `collectToggleEls()` reduced to outermost toggles **before** the colour filter ran, so the nested red child was swallowed by its uncoloured parent | New `collectToggleElsFiltered(root, keep)` in `src/toggle-dom.ts` — nesting is now resolved **after** `keep`; `collectStops(container, filter)` passes the active filter | `tests/filter-dom.test.ts` → "BUG v1.2.4: a coloured toggle nested in a plain one was dropped" |
+| 2 | **Filter picker highlighted the wrong row** | After a per-note pref round-trip, `["yellow","red"]` and `["red","yellow"]` were treated as different filters — the modal showed no active row and the status label flipped between `🟡 🔴` and `🔴 🟡` | Active row was matched by comparing `filterLabel()` strings; nothing normalised the order | `normalizeFilter()` / `sameFilter()` / canonical `COLOR_ORDER` in `src/autoscroll.ts`; `setScrollFilter()` normalises before saving, the modal compares with `sameFilter()` | `tests/filter-dom.test.ts` → "filter selection is order-independent" |
+| 3 | **Quiz re-measure ignored the quiz filter** | With `quizUseColorFilter` on, `scrollQuizTo()` looked the current toggle up in an *unfiltered* re-scan; for a nested coloured question the lookup missed and it scrolled to a stale offset | Same nesting cause as #1, second call site | `scrollQuizTo()` now re-scans with the quiz filter | covered by #1's collection tests + `tests/quiz-dom.test.ts` |
+| 4 | **First tap of "Cycle colour" on an ungraded toggle was ambiguous** | `TRAFFIC_CYCLE.indexOf(-1) + 1` happened to land on red, but the behaviour was accidental and untested; the recolour regex also dropped the fold marker in a `[!note]-` header edge case | Inline regex + index arithmetic in `main.ts` with no coverage | Extracted `src/recolor.ts` (`calloutTypeOfLine`, `nextTrafficColor`, `recolorHeaderLine`); fold marker `+`/`-` is now explicitly preserved | `tests/filter-cycle.test.ts` (12 assertions, incl. 3-lap round trip) |
+
+Verified-as-correct (no change needed): `colorOf` case-insensitivity, `<details class="recall-green">`, Live Preview `cm-callout` wrapper markup, `"other"` exclusion from "All graded toggles" (intentional), empty-plan message instead of a silent full-speed run.
+
+### 2. Live monitor (debug overlay)
+
+`src/debug-overlay.ts` now prints colour telemetry each frame, fed by `filterTelemetry()` in `main.ts`:
+
+```text
+filter 🔴 🟡 · kept 5/12 (🔴3 🟡2 🟢4 ⚪3)
+⚠ filter matches 0 of 9 toggles
+target red ← "recall-red"
+```
+
+`target … ← "raw type"` shows the exact `data-callout` / class string the colour was graded from — a mis-detected toggle is now readable on the phone screen without a debugger. Fields are optional, so the overlay is unchanged when telemetry is not supplied. Covered by 3 new cases in `tests/debug-stats.test.ts`.
+
+### 3. Full plugin rating
+
+| Module | LOC | Score | Notes |
+|---|---|---|---|
+| `main.ts` | 4667 | **6.5/10** | Works and is well commented, but it is the one real weakness: plugin lifecycle, 30+ commands, editor ops, scroll loop, quiz runner, 4 modals and 2 settings tabs in a single file. Every bug in this round lived here, in logic that had no seam for a test. Extractions are steadily fixing it. |
+| `src/autoscroll.ts` | 219 | **9/10** | Pure, clamped, fully tested; now order-normalised. |
+| `src/scrollmode.ts` | 268 | **9/10** | Pause-at modes (odd/even/custom/route/shuffle) + A4 chunking, all pure and covered. |
+| `src/reader/dwellEngine.ts` | 313 | **8.5/10** | The loop's brain; good tests, but the dwell-key guard logic is dense and deserves a diagram. |
+| `src/reader/fsrsScheduler.ts` | 397 | **9/10** | Faithful FSRS implementation, deterministic tests. |
+| `src/quiz.ts` | 252 | **9/10** | Duration parsing (6 marker formats), clamps, auto-next/loop — all covered. |
+| `src/toggle-dom.ts` | 99 | **9/10** | The right seam; now the single source of truth for collection + open/close. |
+| `src/timer.ts` / `timer-ui.ts` | 317 / 298 | **8/10** | Solid; UI half is DOM-heavy and only indirectly tested. |
+| `src/srs.ts`, `fsrs.ts` | 168 | **8.5/10** | Grade suggestion from traffic-light stats is neat and tested. |
+| `src/scroll-fab.ts` | 210 | **9/10** | Single FAB, long-press, auto-hide, full ARIA + keyboard parity. |
+| `src/guide.ts`, `naming.ts` | 165 | **8.5/10** | Command names/hotkeys centralised — good de-duplication. |
+| `src/debug-overlay.ts` | 127 | **9/10** | Pure `debugLines`, DOM-only class; now the main diagnostic tool. |
+| `src/hold-pause.ts`, `maintenance.ts`, `stats-panel.ts`, `quiz-ui.ts` | ~420 | **8.5/10** | Small, focused, tested. |
+| `styles.css` | 746 | **8/10** | Theme-variable driven, dark mode + high-contrast handled; a few fixed px values (FAB size/offset) could be CSS vars. |
+| Tests | 283 tests / 18 files | **8.5/10** | Strong on pure logic and, since v1.2.3/1.2.5, on real DOM paths. Still no end-to-end run inside Obsidian itself. |
+| Build & release | — | **9/10** | esbuild + dist page, GitHub Actions attaches `main.js` / `manifest.json` / `styles.css` for BRAT automatically. |
+
+**Overall: 8.4/10** — a genuinely capable, well-tested plugin whose only structural liability is the size of `main.ts`.
+
+Highest-value follow-ups, ranked:
+1. Split `main.ts` into `commands/`, `scroll-session.ts`, `quiz-session.ts`, `settings-tab.ts`, `modals/` — most remaining risk lives in untestable glue there.
+2. Add a smoke test that mounts the whole reading-view markup and runs one autoscroll + one quiz end to end.
+3. Promote FAB size/offset and notice duration to settings/CSS vars.
+4. Consolidate the three filter call sites (plan, page boxes, quiz) behind one `plannedStops()` helper so they cannot drift again.
+5. Document the dwell-key guard with a state diagram.

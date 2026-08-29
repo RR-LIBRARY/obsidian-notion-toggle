@@ -89,3 +89,33 @@ describe("weak toggle stats", () => {
     expect(orderExplainer([])).toContain("No revision history");
   });
 });
+
+describe("debug overlay — colour filter telemetry (v1.2.5)", () => {
+  it("prints the active filter with the kept/found split and colour counts", () => {
+    const lines = debugLines(
+      frame({
+        filter: "🔴 🟡",
+        stopsFound: 12,
+        stopsKept: 5,
+        colors: { red: 3, yellow: 2, green: 4, other: 3 },
+        targetColor: "red",
+        targetType: "recall-red",
+      })
+    );
+    expect(lines).toContain("filter 🔴 🟡 · kept 5/12 (🔴3 🟡2 🟢4 ⚪3)");
+    expect(lines).toContain('target red ← "recall-red"');
+  });
+
+  it("warns when a filter matches nothing", () => {
+    const lines = debugLines(
+      frame({ filter: "🔴", stopsFound: 9, stopsKept: 0, colors: { red: 0, yellow: 4, green: 5, other: 0 } })
+    );
+    expect(lines).toContain("⚠ filter matches 0 of 9 toggles");
+  });
+
+  it("stays quiet for an unfiltered run and when telemetry is absent", () => {
+    const all = debugLines(frame({ filter: "all toggles", stopsFound: 9, stopsKept: 9 }));
+    expect(all.some((l) => l.startsWith("⚠"))).toBe(false);
+    expect(debugLines(frame()).some((l) => l.startsWith("filter "))).toBe(false);
+  });
+});

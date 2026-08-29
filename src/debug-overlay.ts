@@ -43,7 +43,21 @@ export interface DebugFrame {
   /** Last dwell → FSRS grade decision, e.g. "toggle 3 · 6.2s → Good (3)". */
   lastGrade: string;
   progress: string;
+  /* --- v1.2.5 colour-filter telemetry (optional: overlay works without it) --- */
+  /** Human label of the active filter, e.g. "🔴 🟡" or "all toggles". */
+  filter?: string;
+  /** Toggles found in the note before the colour filter. */
+  stopsFound?: number;
+  /** Toggles left after the colour filter. */
+  stopsKept?: number;
+  /** Colour breakdown of everything found. */
+  colors?: { red: number; yellow: number; green: number; other: number };
+  /** Colour of the stop the loop is heading to. */
+  targetColor?: string | null;
+  /** Raw `data-callout` / class string the colour was read from. */
+  targetType?: string | null;
 }
+
 
 const px = (n: number) => `${Math.round(n)}`;
 
@@ -66,11 +80,24 @@ export function debugLines(f: DebugFrame): string[] {
     lines.push(`stop index ${f.at < 0 ? "—" : f.at}`);
   }
   lines.push(`dwellKey ${f.dwellKey ?? "—"} · ${f.dwellLeft > 0 ? `paused ${(f.dwellLeft / 1000).toFixed(1)}s` : "running"}`);
+  if (f.filter !== undefined) {
+    const c = f.colors ?? { red: 0, yellow: 0, green: 0, other: 0 };
+    const found = f.stopsFound ?? 0;
+    const kept = f.stopsKept ?? 0;
+    lines.push(
+      `filter ${f.filter} · kept ${kept}/${found} (🔴${c.red} 🟡${c.yellow} 🟢${c.green} ⚪${c.other})`
+    );
+    if (f.filter !== "all toggles" && kept === 0) {
+      lines.push(`⚠ filter matches 0 of ${found} toggles`);
+    }
+    lines.push(`target ${f.targetColor ?? "—"} ← "${f.targetType ?? "—"}"`);
+  }
   lines.push(`event ${f.lastEvent || "—"}`);
   lines.push(`grade ${f.lastGrade || "—"}`);
   if (f.progress) lines.push(f.progress);
   return lines;
 }
+
 
 export class ScrollDebugOverlay {
   private root: HTMLElement | null = null;
