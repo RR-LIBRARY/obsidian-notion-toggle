@@ -2,7 +2,7 @@
 
 Notion-style collapsible toggles for Obsidian, plus a recall workflow built on top of them: traffic-light grading, a floating Pomodoro timer, and SM-2 spaced repetition. You never type `<details>`, `<summary>` or `>` brackets by hand.
 
-Works on desktop and mobile. Version 1.1.6.
+Works on desktop and mobile. Version 1.4.0.
 
 Full guide: **[MANUAL.md](MANUAL.md)** — install/enable, **every setting explained one by one** (Toggle basics, Recall timer, Focus guard, Minimal mode, Auto-scroll revision, Quiz mode), commands list for the mobile toolbar, ready-made presets, debug overlay, stats panel and troubleshooting.
 
@@ -15,7 +15,7 @@ Full guide: **[MANUAL.md](MANUAL.md)** — install/enable, **every setting expla
 3. Enable **Notion Toggle** in *Settings → Community plugins*.
 4. Later updates: BRAT → *Check for updates*.
 
-> If BRAT reports *"A manifest.json file does not exist in the latest release"*, the release is missing its assets. The `v1.1.6` release ships `manifest.json`, `main.js` and `styles.css` as attached assets — remove and re-add the plugin in BRAT, then restart Obsidian.
+> If BRAT reports *"A manifest.json file does not exist in the latest release"*, the release is missing its assets. Every release since v1.2.0 ships `manifest.json`, `main.js` and `styles.css` as attached assets — remove and re-add the plugin in BRAT, then restart Obsidian.
 
 ### Manual
 
@@ -96,7 +96,7 @@ A timed, Telegram-quiz style run through the toggles of the current note:
 4. The next question scrolls into view and its timer starts.
 
 - **Quiz (timed question run)** — primary command; a floating HUD shows `00:14`, `Q 3/12`, the phase, a progress bar, and pause / reveal-now / next / stop buttons.
-- **Time per question** and **answer time** are set in settings; `Quiz: set time per question` offers 10 / 15 / 20 / 30 / 45 / 60 / 90 or a custom value.
+- **Time per question** (1s–12h) and **answer time** (1s–1h) are set in settings or the quick-controls sheet (slider + exact number input); `Quiz: set time per question` offers 10s / 30s / 1m / 5m / 15m / 1h or a custom value. Per-question overrides in the title: `⏱30`, `⏱15m`, `⏱2h`.
 - **Per-question override** — write `⏱30` (also `[30s]`, `(30s)`, `@30s`) in a toggle title and that question gets its own time.
 - **Colour filter** — quiz only red, yellow or green toggles, reusing the auto-scroll filter.
 - **Auto-next**, **close after the answer**, **loop the quiz** and **notify when the time is up** are all optional.
@@ -185,6 +185,14 @@ The rules were already the reader's; now the **loop mechanics** are too (ported 
 - **Debug overlay** (toggle in settings) — a fixed read-out while autoscroll runs: float position and sub-pixel remainder, direction, `waypointReached` / `crossedTarget` events, the dwell guard key, the last dwell → FSRS grade, and route progress.
 - **Revision stats panel** — command `Autoscroll: revision stats (weak toggles)`, or the *Show stats* button in settings: deck summary, 7-day due forecast, and one row per toggle (`#7 · 42% recall · D 7.4 · S 3.1d · 2 lapses`) with a plain reason such as "forgotten 2× — kept close".
 - **Smoke test checklist** for a real vault in `SMOKE-TEST.md`.
+
+## v1.4.0 — 12-hour quiz timer, clipboard perf report, store-ready
+
+- **Quiz time range 1s–12h** (`QUIZ_SECONDS_MAX = 43200`) with slider + exact seconds input in settings and the quick-controls sheet.
+- Per-question title overrides now accept units: `⏱30` (seconds), `⏱15m`, `⏱2h`, plus `[5m]` / `(1 h)` / `@30m`.
+- Durations render as friendly labels (`45s`, `15m`, `2h 30m`); the HUD ring shows `h:mm:ss` for hour-long questions.
+- **Performance report** command now copies the telemetry report (quiz-timer jitter, re-measure latency) to the clipboard, and optionally appends it to `perf-log.md` (Settings → Quiz mode → *Log performance to perf-log.md*) for real-device profiling.
+- `SUBMISSION.md` added — official community-plugin store metadata and checklist.
 
 ## v1.1.6 — ON/OFF switch, one-tap reverse, default hotkeys
 

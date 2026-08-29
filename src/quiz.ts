@@ -34,9 +34,13 @@ export const DEFAULT_QUIZ: QuizSettings = {
   quizBeepOnTimeUp: true,
 };
 
-export const QUIZ_SECONDS_MIN = 3;
-export const QUIZ_SECONDS_MAX = 600;
-export const QUIZ_PRESETS = [10, 15, 20, 30, 45, 60, 90];
+export const QUIZ_SECONDS_MIN = 1;
+/** v1.4.0 — quiz time now goes up to 12 hours. */
+export const QUIZ_SECONDS_MAX = 43200;
+export const QUIZ_PRESETS = [10, 30, 60, 300, 900, 3600];
+
+/** v1.4.0 — reveal (answer open) can now run up to 1 hour. */
+export const REVEAL_SECONDS_MAX = 3600;
 
 export function clampQuizSeconds(seconds: number): number {
   if (!Number.isFinite(seconds)) return DEFAULT_QUIZ.quizSeconds;
@@ -45,28 +49,49 @@ export function clampQuizSeconds(seconds: number): number {
 
 export function clampRevealSeconds(seconds: number): number {
   if (!Number.isFinite(seconds)) return DEFAULT_QUIZ.quizRevealSeconds;
-  return Math.min(120, Math.max(1, Math.round(seconds)));
+  return Math.min(REVEAL_SECONDS_MAX, Math.max(1, Math.round(seconds)));
+}
+
+/**
+ * v1.4.0 — friendly label for a duration in seconds:
+ *  45 → "45s", 900 → "15m", 7200 → "2h", 9000 → "2h 30m".
+ */
+export function formatQuizSeconds(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s}s`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  const remS = s % 60;
+  return remS > 0 ? `${m}m ${remS}s` : `${m}m`;
+}
+
+/** v1.4.0 — unit suffix → multiplier (s = 1, m = 60, h = 3600). */
+function unitMultiplier(unit: string | undefined): number {
+  const u = (unit ?? "s").toLowerCase();
+  return u === "h" ? 3600 : u === "m" ? 60 : 1;
 }
 
 /**
  * Per-question override written in the toggle title.
- * Supported: "⏱30", "⏱ 30s", "[30s]", "(45 s)", "@20s".
+ * Supported: "⏱30", "⏱ 30s", "⏱15m", "⏱2h", "[30s]", "[15m]", "(45 s)", "@20s".
  */
 export function parseQuestionSeconds(
   title: string | null | undefined,
   fallback: number
 ): number {
   const text = title ?? "";
+  const unit = "([smh])(?![a-z])";
   const patterns = [
-    /⏱\s*(\d{1,3})\s*s?/i,
-    /⏲\s*(\d{1,3})\s*s?/i,
-    /\[\s*(\d{1,3})\s*s\s*\]/i,
-    /\(\s*(\d{1,3})\s*s\s*\)/i,
-    /@\s*(\d{1,3})\s*s/i,
+    new RegExp(`⏱\\s*(\\d{1,6})\\s*(?:${unit})?`, "i"),
+    new RegExp(`⏲\\s*(\\d{1,6})\\s*(?:${unit})?`, "i"),
+    new RegExp(`\\[\\s*(\\d{1,6})\\s*${unit}\\s*\\]`, "i"),
+    new RegExp(`\\(\\s*(\\d{1,6})\\s*${unit}\\s*\\)`, "i"),
+    new RegExp(`@\\s*(\\d{1,6})\\s*${unit}`, "i"),
   ];
   for (const re of patterns) {
     const m = text.match(re);
-    if (m) return clampQuizSeconds(Number(m[1]));
+    if (m) return clampQuizSeconds(Number(m[1]) * unitMultiplier(m[2]));
   }
   return clampQuizSeconds(fallback);
 }
@@ -216,8 +241,11 @@ export function resumeQuiz(state: QuizState): QuizState {
 
 export function formatQuizTime(ms: number): string {
   const total = Math.max(0, Math.ceil(ms / 1000));
-  const m = Math.floor(total / 60);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
   const sec = total % 60;
+  // v1.4.0 — hour-long questions render as h:mm:ss.
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
@@ -264,7 +292,7 @@ export function quizSummary(state: QuizState): string {
 }
 
 export function quizStartLabel(count: number, s: QuizSettings): string {
-  return `Quiz started — ${count} question${count === 1 ? "" : "s"} · ${clampQuizSeconds(
-    s.quizSeconds
-  )}s each · reveal ${clampRevealSeconds(s.quizRevealSeconds)}s`;
+  return `Quiz started — ${count} question${count === 1 ? "" : "s"} · ${formatQuizSeconds(
+    clampQuizSeconds(s.quizSeconds)
+  )} each · reveal ${formatQuizSeconds(clampRevealSeconds(s.quizRevealSeconds))}`;
 }

@@ -20,7 +20,7 @@ import {
 import { formatDwell, modeLabel, multiplierFromSpeed } from "./scrollmode";
 import { scheduleStoreSummary } from "./maintenance";
 import { hotkeyLabel } from "./guide";
-import { QUIZ_SECONDS_MIN, clampQuizSeconds, clampRevealSeconds } from "./quiz";
+import { QUIZ_SECONDS_MAX, QUIZ_SECONDS_MIN, REVEAL_SECONDS_MAX, clampQuizSeconds, clampRevealSeconds } from "./quiz";
 import { HOTKEYS } from "./guide";
 import { POMODORO_PRESETS, clampMinutes, resolvePreset } from "./timer";
 import {
@@ -31,6 +31,7 @@ import {
   ScrollModeModal,
   ScrollSpeedModal,
   ScrollStatsModal,
+  addSecondsPicker,
 } from "./modals";
 
 export class NotionToggleSettingTab extends PluginSettingTab {
@@ -649,35 +650,38 @@ export class NotionToggleSettingTab extends PluginSettingTab {
     /* ---------- v1.1.0: quiz mode ---------- */
     new Setting(containerEl).setName("Quiz mode").setHeading();
 
-    new Setting(containerEl)
+    // v1.4.0 — slider for quick tweaks + number input for anything up to 12h.
+    const qRow = new Setting(containerEl)
       .setName("Time per question")
       .setDesc(
-        "Seconds before the answer is revealed. Write ⏱30 (or [30s]) in a toggle title to override it for that question."
-      )
-      .addSlider((sl) =>
-        sl
-          .setLimits(QUIZ_SECONDS_MIN, 120, 1)
-          .setValue(clampQuizSeconds(this.plugin.settings.quizSeconds))
-          .setDynamicTooltip()
-          .onChange(async (v) => {
-            this.plugin.settings.quizSeconds = clampQuizSeconds(v);
-            await this.plugin.saveSettings();
-          })
+        "How long before the answer is revealed (1s–12h). Write ⏱30, ⏱15m or ⏱2h in a toggle title to override it for that question."
       );
+    addSecondsPicker(qRow, {
+      sliderMin: QUIZ_SECONDS_MIN,
+      sliderMax: 120,
+      max: QUIZ_SECONDS_MAX,
+      get: () => clampQuizSeconds(this.plugin.settings.quizSeconds),
+      clamp: clampQuizSeconds,
+      save: async (v) => {
+        this.plugin.settings.quizSeconds = v;
+        await this.plugin.saveSettings();
+      },
+    });
 
-    new Setting(containerEl)
+    const rRow = new Setting(containerEl)
       .setName("Answer time")
-      .setDesc("Seconds the revealed answer stays open before the toggle closes.")
-      .addSlider((sl) =>
-        sl
-          .setLimits(1, 60, 1)
-          .setValue(clampRevealSeconds(this.plugin.settings.quizRevealSeconds))
-          .setDynamicTooltip()
-          .onChange(async (v) => {
-            this.plugin.settings.quizRevealSeconds = clampRevealSeconds(v);
-            await this.plugin.saveSettings();
-          })
-      );
+      .setDesc("How long the revealed answer stays open before the toggle closes (1s–1h).");
+    addSecondsPicker(rRow, {
+      sliderMin: 1,
+      sliderMax: 60,
+      max: REVEAL_SECONDS_MAX,
+      get: () => clampRevealSeconds(this.plugin.settings.quizRevealSeconds),
+      clamp: clampRevealSeconds,
+      save: async (v) => {
+        this.plugin.settings.quizRevealSeconds = v;
+        await this.plugin.saveSettings();
+      },
+    });
 
     new Setting(containerEl)
       .setName("Go to the next question automatically")
@@ -735,6 +739,19 @@ export class NotionToggleSettingTab extends PluginSettingTab {
       .addToggle((tg) =>
         tg.setValue(this.plugin.settings.quizLoop).onChange(async (v) => {
           this.plugin.settings.quizLoop = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    // v1.4.0 — real-device profiling switch.
+    new Setting(containerEl)
+      .setName("Log performance to perf-log.md")
+      .setDesc(
+        'When on, "Performance report" also appends quiz-timer and scroll metrics to perf-log.md in your vault.'
+      )
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.perfLog).onChange(async (v) => {
+          this.plugin.settings.perfLog = v;
           await this.plugin.saveSettings();
         })
       );

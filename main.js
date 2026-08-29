@@ -1906,9 +1906,10 @@ var DEFAULT_QUIZ = {
   quizLoop: false,
   quizBeepOnTimeUp: true
 };
-var QUIZ_SECONDS_MIN = 3;
-var QUIZ_SECONDS_MAX = 600;
-var QUIZ_PRESETS = [10, 15, 20, 30, 45, 60, 90];
+var QUIZ_SECONDS_MIN = 1;
+var QUIZ_SECONDS_MAX = 43200;
+var QUIZ_PRESETS = [10, 30, 60, 300, 900, 3600];
+var REVEAL_SECONDS_MAX = 3600;
 function clampQuizSeconds(seconds) {
   if (!Number.isFinite(seconds))
     return DEFAULT_QUIZ.quizSeconds;
@@ -1917,21 +1918,37 @@ function clampQuizSeconds(seconds) {
 function clampRevealSeconds(seconds) {
   if (!Number.isFinite(seconds))
     return DEFAULT_QUIZ.quizRevealSeconds;
-  return Math.min(120, Math.max(1, Math.round(seconds)));
+  return Math.min(REVEAL_SECONDS_MAX, Math.max(1, Math.round(seconds)));
+}
+function formatQuizSeconds(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60)
+    return `${s}s`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor(s % 3600 / 60);
+  if (h > 0)
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  const remS = s % 60;
+  return remS > 0 ? `${m}m ${remS}s` : `${m}m`;
+}
+function unitMultiplier(unit) {
+  const u = (unit != null ? unit : "s").toLowerCase();
+  return u === "h" ? 3600 : u === "m" ? 60 : 1;
 }
 function parseQuestionSeconds(title, fallback) {
   const text = title != null ? title : "";
+  const unit = "([smh])(?![a-z])";
   const patterns = [
-    /⏱\s*(\d{1,3})\s*s?/i,
-    /⏲\s*(\d{1,3})\s*s?/i,
-    /\[\s*(\d{1,3})\s*s\s*\]/i,
-    /\(\s*(\d{1,3})\s*s\s*\)/i,
-    /@\s*(\d{1,3})\s*s/i
+    new RegExp(`\u23F1\\s*(\\d{1,6})\\s*(?:${unit})?`, "i"),
+    new RegExp(`\u23F2\\s*(\\d{1,6})\\s*(?:${unit})?`, "i"),
+    new RegExp(`\\[\\s*(\\d{1,6})\\s*${unit}\\s*\\]`, "i"),
+    new RegExp(`\\(\\s*(\\d{1,6})\\s*${unit}\\s*\\)`, "i"),
+    new RegExp(`@\\s*(\\d{1,6})\\s*${unit}`, "i")
   ];
   for (const re of patterns) {
     const m = text.match(re);
     if (m)
-      return clampQuizSeconds(Number(m[1]));
+      return clampQuizSeconds(Number(m[1]) * unitMultiplier(m[2]));
   }
   return clampQuizSeconds(fallback);
 }
@@ -2053,9 +2070,9 @@ function quizSummary(state) {
   return `Quiz finished \u2014 ${q} question${q === 1 ? "" : "s"} \xB7 ${minutes}m`;
 }
 function quizStartLabel(count, s) {
-  return `Quiz started \u2014 ${count} question${count === 1 ? "" : "s"} \xB7 ${clampQuizSeconds(
-    s.quizSeconds
-  )}s each \xB7 reveal ${clampRevealSeconds(s.quizRevealSeconds)}s`;
+  return `Quiz started \u2014 ${count} question${count === 1 ? "" : "s"} \xB7 ${formatQuizSeconds(
+    clampQuizSeconds(s.quizSeconds)
+  )} each \xB7 reveal ${formatQuizSeconds(clampRevealSeconds(s.quizRevealSeconds))}`;
 }
 
 // src/toggle-dom.ts
@@ -2670,6 +2687,34 @@ function orderExplainer(rows) {
 }
 
 // src/modals.ts
+function addSecondsPicker(setting, opts) {
+  let text = null;
+  setting.addSlider(
+    (sl) => sl.setLimits(opts.sliderMin, opts.sliderMax, 1).setValue(Math.min(opts.sliderMax, Math.max(opts.sliderMin, opts.get()))).setDynamicTooltip().onChange(async (v) => {
+      const value = opts.clamp(v);
+      text == null ? void 0 : text.setValue(String(value));
+      await opts.save(value);
+    })
+  );
+  setting.addText((txt) => {
+    text = txt;
+    txt.inputEl.type = "number";
+    txt.inputEl.min = String(opts.sliderMin);
+    txt.inputEl.max = String(opts.max);
+    txt.inputEl.setAttribute("aria-label", "seconds");
+    txt.setValue(String(opts.get())).setPlaceholder(`${opts.sliderMin}\u2013${opts.max}s`);
+    txt.inputEl.addClass("ntt-seconds-input");
+    const commit = async () => {
+      const value = opts.clamp(Number(txt.getValue()));
+      txt.setValue(String(value));
+      await opts.save(value);
+      const slider = setting.controlEl.querySelector('input[type="range"]');
+      if (slider)
+        slider.value = String(Math.min(opts.sliderMax, Math.max(opts.sliderMin, value)));
+    };
+    txt.inputEl.addEventListener("change", () => void commit());
+  });
+}
 var ScrollStatsModal = class extends import_obsidian.Modal {
   constructor(app, plugin) {
     super(app);
@@ -2965,18 +3010,32 @@ var ScrollSheetModal = class extends import_obsidian.Modal {
         tg.setValue(!!this.plugin.quizState);
       })
     );
-    new import_obsidian.Setting(this.contentEl).setName("Quiz \u2014 time per question").setDesc("Seconds before the answer khud reveal ho. Toggle title me \u23F130 / [30s] likho to us question par wahi chalega.").addSlider(
-      (sl) => sl.setLimits(QUIZ_SECONDS_MIN, 120, 1).setValue(clampQuizSeconds(s.quizSeconds)).setDynamicTooltip().onChange(async (v) => {
-        s.quizSeconds = clampQuizSeconds(v);
-        await this.plugin.saveSettings();
-      })
+    const qRow = new import_obsidian.Setting(this.contentEl).setName("Quiz \u2014 time per question").setDesc(
+      "Kitne second baad answer khud reveal ho (1s\u201312h). Title me \u23F130 / \u23F115m / \u23F12h likho to us question par wahi chalega."
     );
-    new import_obsidian.Setting(this.contentEl).setName("Quiz \u2014 answer time").setDesc("Reveal hone ke baad answer kitne second khula rahe.").addSlider(
-      (sl) => sl.setLimits(1, 60, 1).setValue(clampRevealSeconds(s.quizRevealSeconds)).setDynamicTooltip().onChange(async (v) => {
-        s.quizRevealSeconds = clampRevealSeconds(v);
+    addSecondsPicker(qRow, {
+      sliderMin: QUIZ_SECONDS_MIN,
+      sliderMax: 120,
+      max: QUIZ_SECONDS_MAX,
+      get: () => clampQuizSeconds(s.quizSeconds),
+      clamp: clampQuizSeconds,
+      save: async (v) => {
+        s.quizSeconds = v;
         await this.plugin.saveSettings();
-      })
-    );
+      }
+    });
+    const rRow = new import_obsidian.Setting(this.contentEl).setName("Quiz \u2014 answer time").setDesc("Reveal hone ke baad answer kitni der khula rahe (1s\u20131h).");
+    addSecondsPicker(rRow, {
+      sliderMin: 1,
+      sliderMax: 60,
+      max: REVEAL_SECONDS_MAX,
+      get: () => clampRevealSeconds(s.quizRevealSeconds),
+      clamp: clampRevealSeconds,
+      save: async (v) => {
+        s.quizRevealSeconds = v;
+        await this.plugin.saveSettings();
+      }
+    });
     new import_obsidian.Setting(this.contentEl).setName("Quiz \u2014 auto next").setDesc("ON = answer ke baad agla question khud, OFF = wahin ruk jao.").addToggle(
       (tg) => tg.setValue(s.quizAutoNext).onChange(async (v) => {
         s.quizAutoNext = v;
@@ -3150,7 +3209,8 @@ var QuizSecondsModal = class extends import_obsidian.Modal {
     const current = clampQuizSeconds(this.plugin.settings.quizSeconds);
     for (const seconds of QUIZ_PRESETS) {
       const btn = list.createEl("button", {
-        text: `${seconds} seconds`,
+        // v1.4.0 — friendly labels ("10s", "5m", "1h") since presets span units now.
+        text: formatQuizSeconds(seconds),
         cls: "notion-toggle-color-btn"
       });
       if (seconds === current)
@@ -3158,7 +3218,7 @@ var QuizSecondsModal = class extends import_obsidian.Modal {
       btn.onclick = async () => {
         this.plugin.settings.quizSeconds = clampQuizSeconds(seconds);
         await this.plugin.saveSettings();
-        new import_obsidian.Notice(`Quiz: ${seconds}s per question.`);
+        new import_obsidian.Notice(`Quiz: ${formatQuizSeconds(clampQuizSeconds(seconds))} per question.`);
         this.close();
       };
     }
@@ -3167,7 +3227,7 @@ var QuizSecondsModal = class extends import_obsidian.Modal {
     input.min = String(QUIZ_SECONDS_MIN);
     input.max = String(QUIZ_SECONDS_MAX);
     input.value = String(current);
-    input.placeholder = "Custom seconds";
+    input.placeholder = `Custom seconds (${QUIZ_SECONDS_MIN}\u2013${QUIZ_SECONDS_MAX})`;
     const actions = this.contentEl.createDiv({ cls: "ntt-modal-actions" });
     const save = actions.createEl("button", { text: "Save" });
     save.addClass("mod-cta");
@@ -3175,7 +3235,7 @@ var QuizSecondsModal = class extends import_obsidian.Modal {
       const seconds = clampQuizSeconds(Number(input.value));
       this.plugin.settings.quizSeconds = seconds;
       await this.plugin.saveSettings();
-      new import_obsidian.Notice(`Quiz: ${seconds}s per question.`);
+      new import_obsidian.Notice(`Quiz: ${formatQuizSeconds(seconds)} per question.`);
       this.close();
     };
   }
@@ -3642,20 +3702,32 @@ var NotionToggleSettingTab = class extends import_obsidian2.PluginSettingTab {
       })
     );
     new import_obsidian2.Setting(containerEl).setName("Quiz mode").setHeading();
-    new import_obsidian2.Setting(containerEl).setName("Time per question").setDesc(
-      "Seconds before the answer is revealed. Write \u23F130 (or [30s]) in a toggle title to override it for that question."
-    ).addSlider(
-      (sl) => sl.setLimits(QUIZ_SECONDS_MIN, 120, 1).setValue(clampQuizSeconds(this.plugin.settings.quizSeconds)).setDynamicTooltip().onChange(async (v) => {
-        this.plugin.settings.quizSeconds = clampQuizSeconds(v);
-        await this.plugin.saveSettings();
-      })
+    const qRow = new import_obsidian2.Setting(containerEl).setName("Time per question").setDesc(
+      "How long before the answer is revealed (1s\u201312h). Write \u23F130, \u23F115m or \u23F12h in a toggle title to override it for that question."
     );
-    new import_obsidian2.Setting(containerEl).setName("Answer time").setDesc("Seconds the revealed answer stays open before the toggle closes.").addSlider(
-      (sl) => sl.setLimits(1, 60, 1).setValue(clampRevealSeconds(this.plugin.settings.quizRevealSeconds)).setDynamicTooltip().onChange(async (v) => {
-        this.plugin.settings.quizRevealSeconds = clampRevealSeconds(v);
+    addSecondsPicker(qRow, {
+      sliderMin: QUIZ_SECONDS_MIN,
+      sliderMax: 120,
+      max: QUIZ_SECONDS_MAX,
+      get: () => clampQuizSeconds(this.plugin.settings.quizSeconds),
+      clamp: clampQuizSeconds,
+      save: async (v) => {
+        this.plugin.settings.quizSeconds = v;
         await this.plugin.saveSettings();
-      })
-    );
+      }
+    });
+    const rRow = new import_obsidian2.Setting(containerEl).setName("Answer time").setDesc("How long the revealed answer stays open before the toggle closes (1s\u20131h).");
+    addSecondsPicker(rRow, {
+      sliderMin: 1,
+      sliderMax: 60,
+      max: REVEAL_SECONDS_MAX,
+      get: () => clampRevealSeconds(this.plugin.settings.quizRevealSeconds),
+      clamp: clampRevealSeconds,
+      save: async (v) => {
+        this.plugin.settings.quizRevealSeconds = v;
+        await this.plugin.saveSettings();
+      }
+    });
     new import_obsidian2.Setting(containerEl).setName("Go to the next question automatically").addToggle(
       (tg) => tg.setValue(this.plugin.settings.quizAutoNext).onChange(async (v) => {
         this.plugin.settings.quizAutoNext = v;
@@ -3687,6 +3759,14 @@ var NotionToggleSettingTab = class extends import_obsidian2.PluginSettingTab {
     new import_obsidian2.Setting(containerEl).setName("Loop the quiz").setDesc("Start again from the first question instead of finishing.").addToggle(
       (tg) => tg.setValue(this.plugin.settings.quizLoop).onChange(async (v) => {
         this.plugin.settings.quizLoop = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian2.Setting(containerEl).setName("Log performance to perf-log.md").setDesc(
+      'When on, "Performance report" also appends quiz-timer and scroll metrics to perf-log.md in your vault.'
+    ).addToggle(
+      (tg) => tg.setValue(this.plugin.settings.perfLog).onChange(async (v) => {
+        this.plugin.settings.perfLog = v;
         await this.plugin.saveSettings();
       })
     );
@@ -4011,7 +4091,8 @@ var DEFAULT_SETTINGS = {
   scrollBarClassic: false,
   scrollQuiet: true,
   quizFilter: [],
-  quizMinimalUi: true
+  quizMinimalUi: true,
+  perfLog: false
 };
 var NotionTogglePlugin = class extends import_obsidian3.Plugin {
   constructor() {
@@ -4094,6 +4175,47 @@ var NotionTogglePlugin = class extends import_obsidian3.Plugin {
     this.quizRetryPending = false;
     /** v1.3.0 — pre-quiz state of every toggle, restored on stop. */
     this.quizSnapshot = [];
+  }
+  /**
+   * v1.4.0 — real-device profiling: copies the telemetry report to the
+   * clipboard (falls back to a Notice) and, when Settings → "Log performance
+   * to perf-log.md" is on, appends it to the note for later analysis.
+   */
+  async exportPerfReport() {
+    var _a, _b;
+    const note = (_b = (_a = this.app.workspace.getActiveFile()) == null ? void 0 : _a.basename) != null ? _b : "no note";
+    const stamp = (/* @__PURE__ */ new Date()).toISOString().replace("T", " ").slice(0, 19);
+    const body = formatTelemetry(this.perf.report());
+    const report = `# Performance report \u2014 ${note} \xB7 ${stamp} UTC
+
+${body}
+`;
+    try {
+      await navigator.clipboard.writeText(report);
+      new import_obsidian3.Notice("Performance report copied to clipboard.", 5e3);
+    } catch (e) {
+      new import_obsidian3.Notice(body, 12e3);
+    }
+    if (!this.settings.perfLog)
+      return;
+    try {
+      const path = "perf-log.md";
+      const entry = `
+## ${note} \u2014 ${stamp} UTC
+
+${body}
+`;
+      if (await this.app.vault.adapter.exists(path)) {
+        await this.app.vault.adapter.append(path, entry);
+      } else {
+        await this.app.vault.adapter.write(path, `# Autoscroll performance log
+${entry}`);
+      }
+      new import_obsidian3.Notice(`Performance report appended to ${path}.`, 4e3);
+    } catch (err) {
+      console.error("[notion-toggle] perf log", err);
+      new import_obsidian3.Notice("Could not write perf-log.md (see console).", 6e3);
+    }
   }
   /**
    * v1.0.7: every command goes through here, so the toolbar list stays short.
@@ -4552,7 +4674,8 @@ var NotionTogglePlugin = class extends import_obsidian3.Plugin {
       id: "perf-report",
       icon: "activity",
       name: "Performance report (quiz timer + re-measure)",
-      callback: () => new import_obsidian3.Notice(formatTelemetry(this.perf.report()), 8e3)
+      // v1.4.0 — copies to clipboard and optionally appends to perf-log.md.
+      callback: () => void this.exportPerfReport()
     });
     this.addCommand({
       id: "show-due-notes",

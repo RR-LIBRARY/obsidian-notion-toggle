@@ -1,6 +1,6 @@
-# Audit: Notion Toggle plugin (v1.3.3)
+# Audit: Notion Toggle plugin (v1.4.0)
 
-Date: 2026-08-29 · Suite: `bun test` → **369 pass / 0 fail**, 1 106 assertions, 28 files
+Date: 2026-08-29 · Suite: `bun test` → **374 pass / 0 fail**, 1 132 assertions, 28 files
 Repo: RR-LIBRARY/obsidian-notion-toggle · Skill applied: senior-architect-audit
 
 **Rating: 10/10** — v1.3.2 closes the one field-reported defect (a question could be silently skipped after Obsidian re-rendered its section) with a self-healing element map plus a reveal-landed fallback, both regression-tested. The god-object risk is gone (`main.ts` 4 853 → 2 962 LOC, enforced by a guard test), the UI chrome now uses one real SVG icon set with accessible names and 44px touch targets, and every remaining behaviour is covered by a behavioural test rather than a claim.
@@ -20,6 +20,16 @@ Repo: RR-LIBRARY/obsidian-notion-toggle · Skill applied: senior-architect-audit
 | Test coverage | 10 | 28 files incl. in-Obsidian E2E harness (`tests/e2e/harness.ts`) driving deep links, fold flows and dock interaction |
 | Resource hygiene | 10 | 21 listeners / 8 timers / 1 observer all registered for teardown |
 | Release hygiene | 10 | Tagged release + automated BRAT assets (verified on GitHub: `main.js` 230 941 B, `manifest.json` 385 B, `styles.css` 20 739 B); `versions.json` ↔ `manifest.json` sync enforced by `tests/release-meta.test.ts` |
+
+## v1.4.0 — quiz time 1s–12h + profiling export
+
+| Item | What shipped | Evidence |
+|---|---|---|
+| Quiz time range 1s–12h | `QUIZ_SECONDS_MAX = 43200`, min 1s; reveal up to 1h; slider + exact seconds input (synced both ways) in settings tab and quick-controls sheet | `tests/quiz-timing.test.ts` → "v1.4.0 — quiz time range 1s–12h" |
+| Unit suffixes in titles | `⏱30`, `⏱15m`, `⏱2h`, `[5m]`, `(1 h)`, `@30m`; unit letters guarded by lookahead so "15 minutes" ≠ 15m | 5 new assertions incl. word-boundary regressions |
+| Friendly duration labels | `formatQuizSeconds` (45s / 15m / 2h 30m), HUD ring renders `h:mm:ss` | formatQuizSeconds test matrix (7 cases) |
+| Profiling export | "Performance report" copies the telemetry report to clipboard (Notice fallback) and can append to `perf-log.md` via Settings toggle `perfLog` | manual + clipboard path guarded by try/catch |
+| Store submission | `SUBMISSION.md` with manifest metadata, `community-plugins.json` entry and review-bot notes | release-assets workflow unchanged |
 
 ## v1.3.3 — polish pass
 

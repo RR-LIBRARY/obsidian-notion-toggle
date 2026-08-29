@@ -12,6 +12,7 @@ import {
   QUIZ_SECONDS_MIN,
   advance,
   clampQuizSeconds,
+  formatQuizSeconds,
   parseQuestionSeconds,
   pauseQuiz,
   questionMs,
@@ -58,7 +59,8 @@ describe("per-question duration parsing", () => {
     expect(parseQuestionSeconds("plain question", 17)).toBe(17);
     expect(parseQuestionSeconds(null, 17)).toBe(17);
     expect(parseQuestionSeconds("⏱1", 20)).toBe(QUIZ_SECONDS_MIN);
-    expect(parseQuestionSeconds("⏱999", 20)).toBe(QUIZ_SECONDS_MAX);
+    expect(parseQuestionSeconds("⏱999", 20)).toBe(999);
+    expect(parseQuestionSeconds("⏱99999", 20)).toBe(QUIZ_SECONDS_MAX);
     expect(clampQuizSeconds(Number.NaN)).toBe(DEFAULT_QUIZ.quizSeconds);
   });
 
@@ -160,5 +162,44 @@ describe("manual controls", () => {
     const second = skipQuestion(first.state, titles, S);
     expect(second.event).toBe("done");
     expect(second.state.phase).toBe("done");
+  });
+});
+
+describe("v1.4.0 — quiz time range 1s–12h", () => {
+  it("accepts minute and hour suffixes in toggle titles", () => {
+    expect(parseQuestionSeconds("Q1 ⏱15m", 10)).toBe(900);
+    expect(parseQuestionSeconds("Q1 ⏱2h", 10)).toBe(7200);
+    expect(parseQuestionSeconds("Q1 [5m]", 10)).toBe(300);
+    expect(parseQuestionSeconds("Q1 (1 h)", 10)).toBe(3600);
+    expect(parseQuestionSeconds("Q1 @30m", 10)).toBe(1800);
+  });
+
+  it("clamps to the 1s–12h bounds", () => {
+    expect(clampQuizSeconds(0)).toBe(QUIZ_SECONDS_MIN);
+    expect(clampQuizSeconds(1)).toBe(1);
+    expect(clampQuizSeconds(43200)).toBe(43200);
+    expect(clampQuizSeconds(999999)).toBe(QUIZ_SECONDS_MAX);
+    expect(parseQuestionSeconds("⏱48h", 20)).toBe(QUIZ_SECONDS_MAX);
+  });
+
+  it("does not eat the first letter of the next word as a unit", () => {
+    // "30 seconds" must stay 30s, and "15 minutes" must NOT become 15m.
+    expect(parseQuestionSeconds("⏱30 seconds", 10)).toBe(30);
+    expect(parseQuestionSeconds("⏱15 minutes", 10)).toBe(15);
+    expect(parseQuestionSeconds("⏱15m", 10)).toBe(900);
+  });
+
+  it("formats durations across units", () => {
+    expect(formatQuizSeconds(1)).toBe("1s");
+    expect(formatQuizSeconds(45)).toBe("45s");
+    expect(formatQuizSeconds(60)).toBe("1m");
+    expect(formatQuizSeconds(900)).toBe("15m");
+    expect(formatQuizSeconds(3600)).toBe("1h");
+    expect(formatQuizSeconds(9000)).toBe("2h 30m");
+    expect(formatQuizSeconds(43200)).toBe("12h");
+  });
+
+  it("questionMs honours hour-long per-question overrides", () => {
+    expect(questionMs("Essay ⏱1h", { ...DEFAULT_QUIZ, quizSeconds: 30 })).toBe(3600_000);
   });
 });

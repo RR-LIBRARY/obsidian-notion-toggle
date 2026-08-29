@@ -26,15 +26,18 @@ const titles = ["Q1. What is a cell?", "Q2. Photosynthesis ⏱30", "Q3. Mitosis 
 
 describe("clamps", () => {
   it("clamps question seconds into range", () => {
-    expect(clampQuizSeconds(1)).toBe(3);
-    expect(clampQuizSeconds(9999)).toBe(600);
+    expect(clampQuizSeconds(0)).toBe(1);
+    expect(clampQuizSeconds(1)).toBe(1);
+    expect(clampQuizSeconds(9999)).toBe(9999);
+    expect(clampQuizSeconds(999999)).toBe(43200);
     expect(clampQuizSeconds(Number.NaN)).toBe(DEFAULT_QUIZ.quizSeconds);
     expect(clampQuizSeconds(20.4)).toBe(20);
   });
 
   it("clamps reveal seconds", () => {
     expect(clampRevealSeconds(0)).toBe(1);
-    expect(clampRevealSeconds(500)).toBe(120);
+    expect(clampRevealSeconds(500)).toBe(500);
+    expect(clampRevealSeconds(99999)).toBe(3600);
     expect(clampRevealSeconds(Number.NaN)).toBe(DEFAULT_QUIZ.quizRevealSeconds);
   });
 });
@@ -53,7 +56,7 @@ describe("parseQuestionSeconds", () => {
 
   it("falls back to the default and clamps it", () => {
     expect(parseQuestionSeconds("Plain question", 25)).toBe(25);
-    expect(parseQuestionSeconds(null, 1)).toBe(3);
+    expect(parseQuestionSeconds(null, 1)).toBe(1);
     expect(parseQuestionSeconds(undefined, Number.NaN)).toBe(DEFAULT_QUIZ.quizSeconds);
   });
 

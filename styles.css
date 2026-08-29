@@ -403,6 +403,11 @@ body.is-mobile .ntt-due-btn {
   width: 100%;
   margin-bottom: 12px;
 }
+.ntt-seconds-input {
+  width: 84px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
 .ntt-modal-actions {
   display: flex;
   justify-content: flex-end;

@@ -263,6 +263,8 @@ interface NotionToggleSettings extends PomodoroSettings, AutoScrollSettings, Qui
   quizFilter: RecallColor[];
   /** v1.3.0: only the inline ring on the question — no docked control strip. */
   quizMinimalUi: boolean;
+  /** v1.4.0: also append the performance report to perf-log.md (real-device profiling). */
+  perfLog: boolean;
 }
 
 const DEFAULT_SETTINGS: NotionToggleSettings = {
@@ -288,6 +290,7 @@ const DEFAULT_SETTINGS: NotionToggleSettings = {
   scrollQuiet: true,
   quizFilter: [],
   quizMinimalUi: true,
+  perfLog: false,
 };
 
 
@@ -364,6 +367,38 @@ export default class NotionTogglePlugin extends Plugin {
   /* v1.1.0 quiz mode state */
   /** v1.3.3 — lightweight perf telemetry (quiz paint cadence, re-measure latency). */
   readonly perf = new Telemetry();
+
+  /**
+   * v1.4.0 — real-device profiling: copies the telemetry report to the
+   * clipboard (falls back to a Notice) and, when Settings → "Log performance
+   * to perf-log.md" is on, appends it to the note for later analysis.
+   */
+  async exportPerfReport(): Promise<void> {
+    const note = this.app.workspace.getActiveFile()?.basename ?? "no note";
+    const stamp = new Date().toISOString().replace("T", " ").slice(0, 19);
+    const body = formatTelemetry(this.perf.report());
+    const report = `# Performance report — ${note} · ${stamp} UTC\n\n${body}\n`;
+    try {
+      await navigator.clipboard.writeText(report);
+      new Notice("Performance report copied to clipboard.", 5000);
+    } catch {
+      new Notice(body, 12000);
+    }
+    if (!this.settings.perfLog) return;
+    try {
+      const path = "perf-log.md";
+      const entry = `\n## ${note} — ${stamp} UTC\n\n${body}\n`;
+      if (await this.app.vault.adapter.exists(path)) {
+        await this.app.vault.adapter.append(path, entry);
+      } else {
+        await this.app.vault.adapter.write(path, `# Autoscroll performance log\n${entry}`);
+      }
+      new Notice(`Performance report appended to ${path}.`, 4000);
+    } catch (err) {
+      console.error("[notion-toggle] perf log", err);
+      new Notice("Could not write perf-log.md (see console).", 6000);
+    }
+  }
   quizBar: QuizBar | null = null;
   /** v1.3.0 — inline Telegram-style countdown that rides on the question. */
   quizRing: QuizRing | null = null;
@@ -927,7 +962,8 @@ export default class NotionTogglePlugin extends Plugin {
       id: "perf-report",
       icon: "activity",
       name: "Performance report (quiz timer + re-measure)",
-      callback: () => new Notice(formatTelemetry(this.perf.report()), 8000),
+      // v1.4.0 — copies to clipboard and optionally appends to perf-log.md.
+      callback: () => void this.exportPerfReport(),
     });
 
     this.addCommand({

@@ -26,12 +26,62 @@ import {
   QUIZ_PRESETS,
   QUIZ_SECONDS_MAX,
   QUIZ_SECONDS_MIN,
+  REVEAL_SECONDS_MAX,
   clampQuizSeconds,
   clampRevealSeconds,
+  formatQuizSeconds,
 } from "./quiz";
 import { TOOLBAR_COMMANDS, TOOLBAR_STEPS, guideProgress, toggleGuideDone } from "./guide";
 import { deckSummary } from "./fsrs";
 import { orderExplainer, rowLabel, weakRows } from "./stats-panel";
+
+/**
+ * v1.4.0 — slider for the common range + a free number input for anything up
+ * to `max` (e.g. 2h = 7200s). Both stay in sync; the slider pins to its max
+ * when the stored value is above the slider range.
+ */
+export function addSecondsPicker(
+  setting: Setting,
+  opts: {
+    sliderMin: number;
+    sliderMax: number;
+    max: number;
+    get(): number;
+    clamp(v: number): number;
+    save(v: number): Promise<void> | void;
+  }
+): void {
+  let text: import("obsidian").TextComponent | null = null;
+  setting.addSlider((sl) =>
+    sl
+      .setLimits(opts.sliderMin, opts.sliderMax, 1)
+      .setValue(Math.min(opts.sliderMax, Math.max(opts.sliderMin, opts.get())))
+      .setDynamicTooltip()
+      .onChange(async (v) => {
+        const value = opts.clamp(v);
+        text?.setValue(String(value));
+        await opts.save(value);
+      })
+  );
+  setting.addText((txt) => {
+    text = txt;
+    txt.inputEl.type = "number";
+    txt.inputEl.min = String(opts.sliderMin);
+    txt.inputEl.max = String(opts.max);
+    txt.inputEl.setAttribute("aria-label", "seconds");
+    txt.setValue(String(opts.get())).setPlaceholder(`${opts.sliderMin}–${opts.max}s`);
+    txt.inputEl.addClass("ntt-seconds-input");
+    const commit = async () => {
+      const value = opts.clamp(Number(txt.getValue()));
+      txt.setValue(String(value));
+      await opts.save(value);
+      // Pin the paired slider without re-saving.
+      const slider = setting.controlEl.querySelector<HTMLInputElement>('input[type="range"]');
+      if (slider) slider.value = String(Math.min(opts.sliderMax, Math.max(opts.sliderMin, value)));
+    };
+    txt.inputEl.addEventListener("change", () => void commit());
+  });
+}
 
 /* ---------- v1.0.9: autoscroll colour filter ---------- */
 
@@ -390,33 +440,37 @@ export class ScrollSheetModal extends Modal {
       );
 
     // v1.2.1 — quiz timing + auto-next are tunable right here in the sheet.
-    new Setting(this.contentEl)
+    const qRow = new Setting(this.contentEl)
       .setName("Quiz — time per question")
-      .setDesc("Seconds before the answer khud reveal ho. Toggle title me ⏱30 / [30s] likho to us question par wahi chalega.")
-      .addSlider((sl) =>
-        sl
-          .setLimits(QUIZ_SECONDS_MIN, 120, 1)
-          .setValue(clampQuizSeconds(s.quizSeconds))
-          .setDynamicTooltip()
-          .onChange(async (v) => {
-            s.quizSeconds = clampQuizSeconds(v);
-            await this.plugin.saveSettings();
-          })
+      .setDesc(
+        "Kitne second baad answer khud reveal ho (1s–12h). Title me ⏱30 / ⏱15m / ⏱2h likho to us question par wahi chalega."
       );
+    addSecondsPicker(qRow, {
+      sliderMin: QUIZ_SECONDS_MIN,
+      sliderMax: 120,
+      max: QUIZ_SECONDS_MAX,
+      get: () => clampQuizSeconds(s.quizSeconds),
+      clamp: clampQuizSeconds,
+      save: async (v) => {
+        s.quizSeconds = v;
+        await this.plugin.saveSettings();
+      },
+    });
 
-    new Setting(this.contentEl)
+    const rRow = new Setting(this.contentEl)
       .setName("Quiz — answer time")
-      .setDesc("Reveal hone ke baad answer kitne second khula rahe.")
-      .addSlider((sl) =>
-        sl
-          .setLimits(1, 60, 1)
-          .setValue(clampRevealSeconds(s.quizRevealSeconds))
-          .setDynamicTooltip()
-          .onChange(async (v) => {
-            s.quizRevealSeconds = clampRevealSeconds(v);
-            await this.plugin.saveSettings();
-          })
-      );
+      .setDesc("Reveal hone ke baad answer kitni der khula rahe (1s–1h).");
+    addSecondsPicker(rRow, {
+      sliderMin: 1,
+      sliderMax: 60,
+      max: REVEAL_SECONDS_MAX,
+      get: () => clampRevealSeconds(s.quizRevealSeconds),
+      clamp: clampRevealSeconds,
+      save: async (v) => {
+        s.quizRevealSeconds = v;
+        await this.plugin.saveSettings();
+      },
+    });
 
     new Setting(this.contentEl)
       .setName("Quiz — auto next")
@@ -676,14 +730,15 @@ export class QuizSecondsModal extends Modal {
     const current = clampQuizSeconds(this.plugin.settings.quizSeconds);
     for (const seconds of QUIZ_PRESETS) {
       const btn = list.createEl("button", {
-        text: `${seconds} seconds`,
+        // v1.4.0 — friendly labels ("10s", "5m", "1h") since presets span units now.
+        text: formatQuizSeconds(seconds),
         cls: "notion-toggle-color-btn",
       });
       if (seconds === current) btn.addClass("is-suggested");
       btn.onclick = async () => {
         this.plugin.settings.quizSeconds = clampQuizSeconds(seconds);
         await this.plugin.saveSettings();
-        new Notice(`Quiz: ${seconds}s per question.`);
+        new Notice(`Quiz: ${formatQuizSeconds(clampQuizSeconds(seconds))} per question.`);
         this.close();
       };
     }
@@ -693,7 +748,7 @@ export class QuizSecondsModal extends Modal {
     input.min = String(QUIZ_SECONDS_MIN);
     input.max = String(QUIZ_SECONDS_MAX);
     input.value = String(current);
-    input.placeholder = "Custom seconds";
+    input.placeholder = `Custom seconds (${QUIZ_SECONDS_MIN}–${QUIZ_SECONDS_MAX})`;
 
     const actions = this.contentEl.createDiv({ cls: "ntt-modal-actions" });
     const save = actions.createEl("button", { text: "Save" });
@@ -702,7 +757,7 @@ export class QuizSecondsModal extends Modal {
       const seconds = clampQuizSeconds(Number(input.value));
       this.plugin.settings.quizSeconds = seconds;
       await this.plugin.saveSettings();
-      new Notice(`Quiz: ${seconds}s per question.`);
+      new Notice(`Quiz: ${formatQuizSeconds(seconds)} per question.`);
       this.close();
     };
   }
