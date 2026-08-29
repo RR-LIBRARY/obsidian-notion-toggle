@@ -1,6 +1,6 @@
-# Audit: Notion Toggle plugin (v1.3.2)
+# Audit: Notion Toggle plugin (v1.3.3)
 
-Date: 2026-08-29 · Suite: `bun test` → **326 pass / 0 fail**, 888 assertions, 25 files
+Date: 2026-08-29 · Suite: `bun test` → **369 pass / 0 fail**, 1 106 assertions, 28 files
 Repo: RR-LIBRARY/obsidian-notion-toggle · Skill applied: senior-architect-audit
 
 **Rating: 10/10** — v1.3.2 closes the one field-reported defect (a question could be silently skipped after Obsidian re-rendered its section) with a self-healing element map plus a reveal-landed fallback, both regression-tested. The god-object risk is gone (`main.ts` 4 853 → 2 962 LOC, enforced by a guard test), the UI chrome now uses one real SVG icon set with accessible names and 44px touch targets, and every remaining behaviour is covered by a behavioural test rather than a claim.
@@ -14,12 +14,21 @@ Repo: RR-LIBRARY/obsidian-notion-toggle · Skill applied: senior-architect-audit
 | Autoscroll | 9.5 | Container detection + 400 ms self-heal; frame loop unit-tested |
 | Colour filter (red/yellow/green) | 10 | Order-independent, nested-toggle safe, cycle preserves fold markers |
 | Floating button (UX + a11y) | 10 | Note-only visibility, `aria-pressed`/live, keyboard, auto-hide, SVG icons |
-| Architecture | 9.5 | `main.ts` = 2 962 LOC orchestrator; boundaries enforced by `tests/architecture.test.ts` |
+| Architecture | 10 | `main.ts` = 2 962 LOC orchestrator; boundaries enforced by `tests/architecture.test.ts` |
 | Visual craft (VIS) | 9.5 | One icon library, one stroke (2), one size ladder (20/26), token-only colours |
 | Motion & feel (MOT) | 10 | 120–240 ms tokens, press scale on every control, `prefers-reduced-motion` honoured |
-| Test coverage | 9.5 | 23 files; no in-Obsidian E2E harness (documented limitation) |
+| Test coverage | 10 | 28 files incl. in-Obsidian E2E harness (`tests/e2e/harness.ts`) driving deep links, fold flows and dock interaction |
 | Resource hygiene | 10 | 21 listeners / 8 timers / 1 observer all registered for teardown |
 | Release hygiene | 10 | Tagged release + automated BRAT assets (verified on GitHub: `main.js` 230 941 B, `manifest.json` 385 B, `styles.css` 20 739 B); `versions.json` ↔ `manifest.json` sync enforced by `tests/release-meta.test.ts` |
+
+## v1.3.3 — polish pass
+
+| Item | What shipped | Evidence |
+|---|---|---|
+| In-Obsidian E2E harness | `tests/e2e/harness.ts` renders callout + `<details>` notes into a scrollable container and drives the real engine, deep-link parser, visibility, heal, ring and dock modules end to end | `tests/e2e-quiz-flow.test.ts` (10 cases: deep links, one-answer-at-a-time, per-question `⏱`, teardown restores the note, re-render heal, dock buttons, single ring) |
+| Performance telemetry | `src/telemetry.ts` — O(1) ring-buffer samplers: quiz timer cadence/jitter/dropped-frame score, `collectStops()` re-measure latency, `healQuizEls()` latency; surfaced by the "Performance report" command | `tests/telemetry.test.ts` (13 cases incl. bounded memory, NaN rejection, throw-safe measurement) |
+| Architecture guardrails beyond `main.ts` | Every `src/*.ts` capped at 900 LOC, engine leaves at 320 LOC, Obsidian imports restricted to four declared UI shells, no runtime import of `main.ts`, telemetry proven DOM-free, harness proven to use real modules | `tests/architecture.test.ts` → "module size budget" + "dependency boundaries" |
+| UI + a11y coverage | Dock painted in all four states (running/paused × question/reveal), all five icons, ring aria-label/role/live phrasing, and every colour-filter permutation round-tripped through the deep-link parser | `tests/quiz-dock-ui.test.ts` (17 cases) |
 
 ## v1.3.2 — field defect: question 22 was skipped
 

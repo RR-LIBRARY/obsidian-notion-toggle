@@ -2384,6 +2384,160 @@ function parseDeepLink(params) {
   return link;
 }
 
+// src/telemetry.ts
+var Samples = class {
+  constructor(capacity = 120) {
+    this.capacity = capacity;
+    this.buf = [];
+    this.next = 0;
+    this.seen = 0;
+  }
+  add(value) {
+    if (!Number.isFinite(value))
+      return;
+    this.seen++;
+    if (this.buf.length < this.capacity)
+      this.buf.push(value);
+    else {
+      this.buf[this.next] = value;
+      this.next = (this.next + 1) % this.capacity;
+    }
+  }
+  get count() {
+    return this.seen;
+  }
+  values() {
+    return [...this.buf];
+  }
+  reset() {
+    this.buf = [];
+    this.next = 0;
+    this.seen = 0;
+  }
+  percentile(p) {
+    var _a;
+    if (!this.buf.length)
+      return 0;
+    const sorted = [...this.buf].sort((a, b) => a - b);
+    const idx = Math.min(
+      sorted.length - 1,
+      Math.max(0, Math.round((sorted.length - 1) * Math.min(100, Math.max(0, p)) / 100))
+    );
+    return (_a = sorted[idx]) != null ? _a : 0;
+  }
+  get mean() {
+    if (!this.buf.length)
+      return 0;
+    return this.buf.reduce((a, b) => a + b, 0) / this.buf.length;
+  }
+  get max() {
+    return this.buf.length ? Math.max(...this.buf) : 0;
+  }
+};
+var RenderStability = class {
+  /** @param expectedGap the cadence the caller aims for (quiz loop = 250 ms). */
+  constructor(expectedGap = 250) {
+    this.expectedGap = expectedGap;
+    this.gaps = new Samples(120);
+    this.last = null;
+    this.paints = 0;
+    this.dropped = 0;
+  }
+  mark(now) {
+    if (!Number.isFinite(now))
+      return;
+    this.paints++;
+    if (this.last !== null) {
+      const gap = now - this.last;
+      if (gap >= 0) {
+        this.gaps.add(gap);
+        if (gap > this.expectedGap * 2)
+          this.dropped++;
+      }
+    }
+    this.last = now;
+  }
+  reset() {
+    this.gaps.reset();
+    this.last = null;
+    this.paints = 0;
+    this.dropped = 0;
+  }
+  report() {
+    const values = this.gaps.values();
+    const jitter = values.length ? values.reduce((a, g) => a + Math.abs(g - this.expectedGap), 0) / values.length : 0;
+    const score = values.length ? Math.max(0, Math.min(1, 1 - jitter / this.expectedGap)) : 1;
+    return {
+      paints: this.paints,
+      meanGap: round(this.gaps.mean),
+      p95Gap: round(this.gaps.percentile(95)),
+      jitter: round(jitter),
+      dropped: this.dropped,
+      score: Math.round(score * 100) / 100
+    };
+  }
+};
+var Latency = class {
+  constructor() {
+    this.s = new Samples(60);
+  }
+  add(ms) {
+    this.s.add(ms);
+  }
+  /** Time `fn`, record it, return its value. */
+  measure(now, fn) {
+    const t0 = now();
+    try {
+      return fn();
+    } finally {
+      this.add(now() - t0);
+    }
+  }
+  reset() {
+    this.s.reset();
+  }
+  report() {
+    return {
+      count: this.s.count,
+      mean: round(this.s.mean),
+      p95: round(this.s.percentile(95)),
+      max: round(this.s.max)
+    };
+  }
+};
+var Telemetry = class {
+  constructor() {
+    this.quizRender = new RenderStability(250);
+    this.remeasure = new Latency();
+    this.quizHeal = new Latency();
+  }
+  reset() {
+    this.quizRender.reset();
+    this.remeasure.reset();
+    this.quizHeal.reset();
+  }
+  report() {
+    return {
+      quizRender: this.quizRender.report(),
+      remeasure: this.remeasure.report(),
+      quizHeal: this.quizHeal.report()
+    };
+  }
+};
+function round(n) {
+  return Math.round(n * 10) / 10;
+}
+function formatTelemetry(r) {
+  const q = r.quizRender;
+  const line = (name, l) => `${name}: ${l.count}\xD7 \xB7 avg ${l.mean}ms \xB7 p95 ${l.p95}ms \xB7 max ${l.max}ms`;
+  return [
+    `Quiz timer: ${q.paints} paints \xB7 avg ${q.meanGap}ms \xB7 p95 ${q.p95Gap}ms`,
+    `Jitter ${q.jitter}ms \xB7 dropped ${q.dropped} \xB7 stability ${Math.round(q.score * 100)}%`,
+    line("Re-measure", r.remeasure),
+    line("Quiz heal", r.quizHeal)
+  ].join("\n");
+}
+
 // src/maintenance.ts
 function renameCardKey(store, oldPath, newPath) {
   if (oldPath === newPath)
@@ -3831,6 +3985,10 @@ function planBackspace(text, col, opts) {
 }
 
 // main.ts
+function nowMs() {
+  const perf = globalThis.performance;
+  return typeof (perf == null ? void 0 : perf.now) === "function" ? perf.now() : Date.now();
+}
 var DEFAULT_SETTINGS = {
   ...DEFAULT_POMODORO,
   ...DEFAULT_AUTOSCROLL,
@@ -3921,6 +4079,8 @@ var NotionTogglePlugin = class extends import_obsidian3.Plugin {
     this.scrollHoldPaused = false;
     this.scrollHoldAt = 0;
     /* v1.1.0 quiz mode state */
+    /** v1.3.3 — lightweight perf telemetry (quiz paint cadence, re-measure latency). */
+    this.perf = new Telemetry();
     this.quizBar = null;
     /** v1.3.0 — inline Telegram-style countdown that rides on the question. */
     this.quizRing = null;
@@ -4387,6 +4547,12 @@ var NotionTogglePlugin = class extends import_obsidian3.Plugin {
       icon: "timer-reset",
       name: "Quiz: set time per question",
       callback: () => new QuizSecondsModal(this.app, this).open()
+    });
+    this.addCommand({
+      id: "perf-report",
+      icon: "activity",
+      name: "Performance report (quiz timer + re-measure)",
+      callback: () => new import_obsidian3.Notice(formatTelemetry(this.perf.report()), 8e3)
     });
     this.addCommand({
       id: "show-due-notes",
@@ -5240,6 +5406,9 @@ ${row}`, { line: cursor.line, ch: line.length });
   }
   /** Every rendered toggle in the active note, with its offset and colour. */
   collectStops(container, filter = []) {
+    return this.perf.remeasure.measure(() => nowMs(), () => this.collectStopsNow(container, filter));
+  }
+  collectStopsNow(container, filter = []) {
     const nodes = filter.length === 0 ? collectToggleEls(container) : collectToggleElsFiltered(
       container,
       (el) => matchesFilter(colorOf(toggleTypeOf(el)), filter)
@@ -6164,6 +6333,7 @@ ${deckSummary(
       return;
     if (!needsHeal(this.quizStops.map((s) => s.el)))
       return;
+    const healStart = nowMs();
     const fresh = this.collectStops(container, this.quizFilterColors()).map((s) => s.el).filter((el) => !!el);
     const healed = healQuizEls(
       this.quizStops.map((s) => s.el),
@@ -6172,6 +6342,7 @@ ${deckSummary(
       (el) => this.quizTitleOf(el)
     );
     this.quizStops = this.quizStops.map((s, i) => ({ ...s, el: healed[i] }));
+    this.perf.quizHeal.add(nowMs() - healStart);
   }
   /** React to an engine event: open the answer, move on, or finish. */
   applyQuizEvent(event) {
@@ -6261,6 +6432,7 @@ ${deckSummary(
     const st = this.quizState;
     if (!st)
       return;
+    this.perf.quizRender.mark(nowMs());
     this.ensureQuizEls();
     const el = (_a = this.quizStops[st.at]) == null ? void 0 : _a.el;
     if (el && el.isConnected)

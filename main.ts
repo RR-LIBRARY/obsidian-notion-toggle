@@ -165,6 +165,13 @@ import {
 } from "./src/quiz-visibility";
 import { healQuizEls, needsHeal, revealLanded } from "./src/quiz-heal";
 import { parseDeepLink } from "./src/deeplink";
+import { Telemetry, formatTelemetry } from "./src/telemetry";
+
+/** High-resolution clock when available, wall clock otherwise (mobile webviews). */
+function nowMs(): number {
+  const perf = (globalThis as { performance?: { now?: () => number } }).performance;
+  return typeof perf?.now === "function" ? perf.now() : Date.now();
+}
 import {
   pruneCards,
   removeCardKey,
@@ -355,6 +362,8 @@ export default class NotionTogglePlugin extends Plugin {
   private scrollHoldAt = 0;
 
   /* v1.1.0 quiz mode state */
+  /** v1.3.3 — lightweight perf telemetry (quiz paint cadence, re-measure latency). */
+  readonly perf = new Telemetry();
   quizBar: QuizBar | null = null;
   /** v1.3.0 — inline Telegram-style countdown that rides on the question. */
   quizRing: QuizRing | null = null;
@@ -913,6 +922,13 @@ export default class NotionTogglePlugin extends Plugin {
       callback: () => new QuizSecondsModal(this.app, this).open(),
     });
 
+
+    this.addCommand({
+      id: "perf-report",
+      icon: "activity",
+      name: "Performance report (quiz timer + re-measure)",
+      callback: () => new Notice(formatTelemetry(this.perf.report()), 8000),
+    });
 
     this.addCommand({
       id: "show-due-notes",
@@ -1831,6 +1847,10 @@ export default class NotionTogglePlugin extends Plugin {
 
   /** Every rendered toggle in the active note, with its offset and colour. */
   private collectStops(container: HTMLElement, filter: RecallColor[] = []): ToggleStop[] {
+    return this.perf.remeasure.measure(() => nowMs(), () => this.collectStopsNow(container, filter));
+  }
+
+  private collectStopsNow(container: HTMLElement, filter: RecallColor[] = []): ToggleStop[] {
     // v1.2.5 — apply the colour filter *while* resolving nesting, so a 🔴
     // toggle nested inside a plain !note is not swallowed by its parent.
     const nodes =
@@ -2803,6 +2823,7 @@ export default class NotionTogglePlugin extends Plugin {
     const container = this.quizContainer;
     if (!container || !this.quizStops.length) return;
     if (!needsHeal(this.quizStops.map((s) => s.el))) return;
+    const healStart = nowMs();
     const fresh = (
       this.collectStops(container, this.quizFilterColors()) as (ToggleStop & {
         el?: HTMLElement;
@@ -2817,6 +2838,7 @@ export default class NotionTogglePlugin extends Plugin {
       (el) => this.quizTitleOf(el)
     );
     this.quizStops = this.quizStops.map((s, i) => ({ ...s, el: healed[i] }));
+    this.perf.quizHeal.add(nowMs() - healStart);
   }
 
   /** React to an engine event: open the answer, move on, or finish. */
@@ -2911,6 +2933,7 @@ export default class NotionTogglePlugin extends Plugin {
   private renderQuizHud() {
     const st = this.quizState;
     if (!st) return;
+    this.perf.quizRender.mark(nowMs());
     this.ensureQuizEls();
     const el = this.quizStops[st.at]?.el;
     if (el && el.isConnected) this.quizRing?.mount(el);
