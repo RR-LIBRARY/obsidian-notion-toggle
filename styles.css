@@ -762,6 +762,51 @@ body.is-mobile .ntt-fab {
   --ntt-fab-size: 64px;
 }
 
+/* v1.4.4 — kill the grey chip for good. Obsidian mobile (and several themes)
+   style raw <button> through selectors such as `.is-mobile button`, which out-
+   specifies a bare `.ntt-fab` rule and paints a rounded square behind the mark.
+   These overrides cover every state and every host; they only touch the button
+   surface, never the layered icon or its stepping animation. */
+.ntt-fab,
+.ntt-fab:hover,
+.ntt-fab:active,
+.ntt-fab:focus,
+.ntt-fab:focus-visible,
+.ntt-fab.is-running,
+.ntt-fab.is-reverse,
+.ntt-fab.is-pressed,
+body.is-mobile .ntt-fab,
+body.is-mobile .ntt-fab:hover,
+body.is-mobile .ntt-fab:active,
+body.is-mobile .ntt-fab:focus,
+body.is-mobile .ntt-fab.is-running,
+body.is-mobile .ntt-fab.is-pressed,
+.ntt-fab-wrap .ntt-fab,
+.ntt-fab-wrap .ntt-fab:hover,
+.ntt-fab-wrap .ntt-fab:active,
+.ntt-fab-wrap .ntt-fab:focus,
+.ntt-fab-wrap .ntt-fab.is-running,
+.ntt-fab-wrap .ntt-fab.is-pressed {
+  background: none !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  filter: none;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+}
+.ntt-fab-wrap {
+  background: none !important;
+  box-shadow: none !important;
+}
+/* Focus stays visible for keyboard users — an outline, never a filled chip. */
+.ntt-fab:focus-visible {
+  outline: 3px solid var(--interactive-accent, #2563eb) !important;
+  outline-offset: 4px;
+}
+
+
 /* The mark itself: three plates that step downwards while autoscroll runs. */
 .ntt-fab-layers.is-reverse {
   transform: rotate(180deg);
