@@ -116,6 +116,12 @@ export interface ModeConfig {
   picks: number[];
   /** 1-based toggle numbers, in visit order, for "route" / "shuffle". */
   route: number[];
+  /** Replay the route from the start when it finishes. */
+  loopRoute?: boolean;
+  /** Limit shuffle stops to this 1-based range (0 = whole note). */
+  shuffleFrom?: number;
+  /** Upper bound of the shuffle range (0 = whole note). */
+  shuffleTo?: number;
 }
 
 export interface ModeItem {
@@ -131,20 +137,31 @@ export interface ModeStop {
   key: string;
 }
 
+/**
+ * A custom / route selection with no numbers yet would produce zero stops and a
+ * dead run — fall back to "every toggle" until the reader fills the list in.
+ */
+export function effectiveMode(cfg: ModeConfig): ScrollMode {
+  if (cfg.mode === "custom" && cfg.picks.length === 0) return "all";
+  if ((cfg.mode === "route" || cfg.mode === "shuffle") && cfg.route.length === 0) return "all";
+  return cfg.mode;
+}
+
 /** ModeConfig → the reader's DwellSettings shape, so the exact rules apply. */
 export function toDwellSettings(cfg: ModeConfig, seconds = DEFAULT_DWELL.seconds, a4 = true): DwellSettings {
   return normalizeDwell({
     enabled: true,
-    parity: cfg.mode,
+    parity: effectiveMode(cfg),
     seconds,
     pages: cfg.picks,
     route: cfg.route,
-    loopRoute: false,
+    loopRoute: !!cfg.loopRoute,
     a4,
-    shuffleFrom: 0,
-    shuffleTo: 0,
+    shuffleFrom: cfg.shuffleFrom ?? 0,
+    shuffleTo: cfg.shuffleTo ?? 0,
   });
 }
+
 
 export const parsePicks = parsePageList;
 export const parseRoute = parseRouteList;
@@ -163,6 +180,16 @@ export function chunkTops(top: number, height: number, viewport: number): number
   return pageStops(top, height, viewport);
 }
 
+/** Is this toggle number inside the configured shuffle range? */
+export function inShuffleRange(cfg: ModeConfig, ordinal: number): boolean {
+  const from = Math.max(0, Math.floor(cfg.shuffleFrom ?? 0));
+  const to = Math.max(0, Math.floor(cfg.shuffleTo ?? 0));
+  if (!from && !to) return true;
+  const lo = from || 1;
+  const hi = to || Number.MAX_SAFE_INTEGER;
+  return ordinal >= Math.min(lo, hi) && ordinal <= Math.max(lo, hi);
+}
+
 /** Every stop for the current mode, ascending — `dwellTargets` under the hood. */
 export function buildModeStops(
   items: ModeItem[],
@@ -171,9 +198,13 @@ export function buildModeStops(
   chunkTall: boolean
 ): ModeStop[] {
   const boxes: PageBox[] = items.map((i) => ({ page: i.ordinal, top: i.top, height: i.height }));
-  return dwellTargets(boxes, toDwellSettings(cfg, DEFAULT_DWELL.seconds, chunkTall), viewport).map(
-    (t) => ({ ordinal: t.page, top: t.top, part: t.index, key: t.key })
-  );
+  const stops = dwellTargets(
+    boxes,
+    toDwellSettings(cfg, DEFAULT_DWELL.seconds, chunkTall),
+    viewport
+  ).map((t) => ({ ordinal: t.page, top: t.top, part: t.index, key: t.key }));
+  if (effectiveMode(cfg) !== "shuffle") return stops;
+  return stops.filter((s) => inShuffleRange(cfg, s.ordinal));
 }
 
 /**
@@ -181,7 +212,8 @@ export function buildModeStops(
  * kept, like the reader's route legs); everything else follows the note.
  */
 export function orderModeStops(stops: ModeStop[], cfg: ModeConfig, reverse: boolean): ModeStop[] {
-  if (cfg.mode === "route" || cfg.mode === "shuffle") {
+  const mode = effectiveMode(cfg);
+  if (mode === "route" || mode === "shuffle") {
     const byOrdinal = new Map<number, ModeStop[]>();
     for (const s of stops) {
       const list = byOrdinal.get(s.ordinal) ?? [];
@@ -190,6 +222,7 @@ export function orderModeStops(stops: ModeStop[], cfg: ModeConfig, reverse: bool
     }
     const out: ModeStop[] = [];
     for (const ordinal of cfg.route) {
+      if (mode === "shuffle" && !inShuffleRange(cfg, ordinal)) continue;
       const list = byOrdinal.get(ordinal);
       if (list) out.push(...list);
     }
@@ -198,6 +231,7 @@ export function orderModeStops(stops: ModeStop[], cfg: ModeConfig, reverse: bool
   const sorted = [...stops].sort((a, b) => a.top - b.top);
   return reverse ? sorted.reverse() : sorted;
 }
+
 
 export function modeLabel(cfg: ModeConfig): string {
   switch (cfg.mode) {
@@ -215,6 +249,26 @@ export function modeLabel(cfg: ModeConfig): string {
       return `shuffle (${cfg.route.length})`;
   }
 }
+
+/**
+ * v1.4.3 — one line that confirms what the plan actually does, including the
+ * two options that used to change silently: "Loop the route" and the shuffle
+ * range. Shown as a toast whenever either one is edited.
+ */
+export function planSummary(cfg: ModeConfig): string {
+  const parts = [`Plan: ${modeLabel(cfg)}`];
+  const mode = effectiveMode(cfg);
+  if (mode === "route" || mode === "shuffle") {
+    parts.push(cfg.loopRoute ? "loop ON" : "loop OFF");
+  }
+  const from = Math.max(0, Math.floor(cfg.shuffleFrom || 0));
+  const to = Math.max(0, Math.floor(cfg.shuffleTo || 0));
+  if (mode === "shuffle") {
+    parts.push(from > 0 || to > 0 ? `range ${from || 1}–${to || "end"}` : "range: whole note");
+  }
+  return parts.join(" · ");
+}
+
 
 export function modeIcon(mode: ScrollMode): string {
   return mode === "odd"
@@ -256,6 +310,31 @@ export function advancePosition(
 ): number {
   return Math.max(0, Math.min(max, pos + perFrame * dt * dir));
 }
+
+/**
+ * v1.4.2 — where a run should begin.
+ *
+ * Reverse autoscroll started at the very top used to clamp at 0 on the first
+ * frame and instantly report "finished". A run whose direction points at the
+ * edge it is already sitting on starts from the *opposite* edge instead.
+ */
+export function seedStartOffset(scrollTop: number, max: number, reverse: boolean): number {
+  const top = Math.max(0, Math.min(Math.max(0, max), scrollTop));
+  if (max <= 2) return top;
+  if (reverse && top <= 1) return max;
+  if (!reverse && top >= max - 1) return 0;
+  return top;
+}
+
+/**
+ * v1.4.2 — an edge only finishes the run once the loop actually moved.
+ * Without `movedPx` a reverse run could "finish" on frame one.
+ */
+export function finishedAtEdge(pos: number, max: number, dir: 1 | -1, movedPx: number): boolean {
+  if (movedPx <= 1) return false;
+  return dir < 0 ? pos <= 1 : pos >= max - 1;
+}
+
 
 /** Frame delta factor, capped like the reader (avoids jumps after tab-away). */
 export function frameFactor(deltaMs: number): number {

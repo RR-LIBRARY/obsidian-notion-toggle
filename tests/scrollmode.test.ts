@@ -2,6 +2,9 @@ import { describe, expect, it } from "bun:test";
 import {
   DWELL_PRESETS,
   buildModeStops,
+  effectiveMode,
+  inShuffleRange,
+  toDwellSettings,
   chunkTops,
   clampDwellSeconds,
   formatDwell,
@@ -24,6 +27,10 @@ import {
   normalizeDwell,
   parseDwell,
   waypointReached,
+  seedStartOffset,
+  finishedAtEdge,
+  seedStartOffset,
+  finishedAtEdge,
 } from "../src/scrollmode";
 
 const cfg = (over: Partial<Parameters<typeof matchesMode>[0]> = {}) => ({
@@ -166,5 +173,68 @@ describe("loop helpers (reader parity)", () => {
     expect(shouldPark("3:0", { key: "3:0" })).toBe(false);
     expect(shouldPark("3:0", { key: "3:1" })).toBe(true);
     expect(shouldPark("3:0", undefined)).toBe(false);
+  });
+});
+
+/* v1.4.1 — pause-at sheet actually drives the plan */
+describe("v1.4.1 — pause-at options reach the plan", () => {
+  const items = [1, 2, 3, 4, 5].map((n) => ({ ordinal: n, top: n * 1000, height: 200 }));
+  const base = { picks: [], route: [], loopRoute: false, shuffleFrom: 0, shuffleTo: 0 };
+
+  it("falls back to every toggle when custom / route lists are empty", () => {
+    expect(effectiveMode({ ...base, mode: "custom" })).toBe("all");
+    expect(effectiveMode({ ...base, mode: "route" })).toBe("all");
+    expect(effectiveMode({ ...base, mode: "shuffle" })).toBe("all");
+    expect(effectiveMode({ ...base, mode: "custom", picks: [2] })).toBe("custom");
+    const stops = buildModeStops(items, { ...base, mode: "route" }, 800, false);
+    expect(stops.map((s) => s.ordinal)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("keeps the custom / route selection once numbers exist", () => {
+    const custom = { ...base, mode: "custom" as const, picks: [2, 4] };
+    expect(buildModeStops(items, custom, 800, false).map((s) => s.ordinal)).toEqual([2, 4]);
+    const route = { ...base, mode: "route" as const, route: [4, 1, 4] };
+    const ordered = orderModeStops(buildModeStops(items, route, 800, false), route, false);
+    expect(ordered.map((s) => s.ordinal)).toEqual([4, 1, 4]);
+  });
+
+  it("limits shuffle stops to the configured range", () => {
+    const cfg = { ...base, mode: "shuffle" as const, route: [5, 1, 3], shuffleFrom: 2, shuffleTo: 4 };
+    expect(inShuffleRange(cfg, 1)).toBe(false);
+    expect(inShuffleRange(cfg, 3)).toBe(true);
+    const ordered = orderModeStops(buildModeStops(items, cfg, 800, false), cfg, false);
+    expect(ordered.map((s) => s.ordinal)).toEqual([3]);
+  });
+
+  it("passes loop and range through to the dwell settings", () => {
+    const cfg = { ...base, mode: "route" as const, route: [2], loopRoute: true, shuffleFrom: 1, shuffleTo: 3 };
+    const dwell = toDwellSettings(cfg);
+    expect(dwell.loopRoute).toBe(true);
+    expect(dwell.shuffleFrom).toBe(1);
+    expect(dwell.shuffleTo).toBe(3);
+    expect(toDwellSettings({ ...base, mode: "all" }).loopRoute).toBe(false);
+  });
+});
+
+describe("v1.4.2 — reverse autoscroll edges", () => {
+  it("reverse from the top jumps to the bottom instead of finishing", () => {
+    expect(seedStartOffset(0, 4000, true)).toBe(4000);
+    expect(seedStartOffset(1200, 4000, true)).toBe(1200);
+  });
+
+  it("forward from the very bottom restarts at the top", () => {
+    expect(seedStartOffset(4000, 4000, false)).toBe(0);
+    expect(seedStartOffset(10, 4000, false)).toBe(10);
+  });
+
+  it("a note that cannot scroll keeps its position", () => {
+    expect(seedStartOffset(0, 0, true)).toBe(0);
+  });
+
+  it("an edge only finishes a run that actually moved", () => {
+    expect(finishedAtEdge(0, 4000, -1, 0)).toBe(false);
+    expect(finishedAtEdge(0, 4000, -1, 500)).toBe(true);
+    expect(finishedAtEdge(4000, 4000, 1, 500)).toBe(true);
+    expect(finishedAtEdge(2000, 4000, 1, 500)).toBe(false);
   });
 });

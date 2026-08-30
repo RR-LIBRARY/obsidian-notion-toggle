@@ -6,9 +6,12 @@
  *  2. every control ships an accessible name and a real <svg> node.
  */
 import { describe, expect, test } from "bun:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { readFileSync } from "node:fs";
 import { buildPauseIcon, buildPlayIcon } from "../src/scroll-fab";
 import { buildQuizIcon, QuizBar } from "../src/quiz-ui";
+
+if (!(globalThis as { document?: unknown }).document) GlobalRegistrator.register();
 
 describe("icon rendering", () => {
   test("FAB icons are real SVG element nodes", () => {

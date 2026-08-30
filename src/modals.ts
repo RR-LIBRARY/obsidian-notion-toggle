@@ -16,6 +16,8 @@ import {
   clampDwellSeconds,
   formatDwell,
   modeLabel,
+  planSummary,
+
   multiplierFromSpeed,
   parsePicks,
   parseRoute,
@@ -211,6 +213,46 @@ export class ScrollModeModal extends Modal {
     super(app);
   }
 
+  private modeBtns: { mode: ScrollMode; btn: HTMLButtonElement }[] = [];
+  private hintEl: HTMLElement | null = null;
+  private summaryEl: HTMLElement | null = null;
+  private resumeBtn: HTMLButtonElement | null = null;
+
+  /** Repaint selection + hint without closing the sheet. */
+  private paint() {
+    const s = this.plugin.settings;
+    for (const { mode, btn } of this.modeBtns) btn.toggleClass("is-suggested", s.scrollMode === mode);
+    const empty =
+      (s.scrollMode === "custom" && (s.scrollPicks ?? []).length === 0) ||
+      ((s.scrollMode === "route" || s.scrollMode === "shuffle") &&
+        (s.scrollRoute ?? []).length === 0);
+    if (this.hintEl) {
+      this.hintEl.setText(
+        empty
+          ? "Add toggle numbers below — until then autoscroll pauses at every toggle."
+          : `Autoscroll pauses at: ${modeLabel(this.plugin.modeConfig())}`
+      );
+      this.hintEl.toggleClass("is-warning", empty);
+    }
+    // v1.4.3 — one-click way out of the empty-list warning.
+    if (this.resumeBtn) this.resumeBtn.toggleClass("is-hidden", !empty);
+    if (this.summaryEl) {
+      const stats = this.plugin.scrollDeckStats();
+      this.summaryEl.setText(stats ? deckSummary(stats) : "");
+    }
+  }
+
+  /** Save + rebuild the live plan so edits apply to a running scroll. */
+  private async commit(toast = false) {
+    await this.plugin.saveSettings();
+    this.plugin.refreshScrollPlan();
+    if (toast && !this.plugin.settings.scrollQuiet) {
+      new Notice(planSummary(this.plugin.modeConfig()));
+    }
+    this.paint();
+  }
+
+
   onOpen() {
     this.setTitle("Autoscroll — pause at");
     const list = this.contentEl.createDiv({ cls: "notion-toggle-color-list" });
@@ -222,56 +264,81 @@ export class ScrollModeModal extends Modal {
       { label: "🧭 Route (my own order)", mode: "route" },
       { label: "🔀 Shuffle (weakest first)", mode: "shuffle" },
     ];
+    this.modeBtns = [];
     for (const opt of options) {
       const btn = list.createEl("button", { text: opt.label, cls: "notion-toggle-color-btn" });
-      if (this.plugin.settings.scrollMode === opt.mode) btn.addClass("is-suggested");
+      this.modeBtns.push({ mode: opt.mode, btn });
       btn.onclick = async () => {
         if (opt.mode === "shuffle") {
-          this.close();
           await this.plugin.rebuildShuffleRoute();
-          this.plugin.refreshScrollPlan();
+          await this.commit(true);
           return;
         }
+        // v1.4.3 — coming back to route mode restores the hand-written order
+        // that shuffle overwrote (it survives a vault reload).
+        if (opt.mode === "route") {
+          const saved = this.plugin.settings.scrollUserRoute ?? [];
+          if (saved.length) this.plugin.settings.scrollRoute = [...saved];
+        }
         this.plugin.settings.scrollMode = opt.mode;
-        await this.plugin.saveSettings();
-        this.plugin.refreshScrollPlan();
-        new Notice(`Autoscroll pauses at: ${modeLabel(this.plugin.modeConfig())}`);
-        this.close();
+        await this.commit();
       };
     }
+
+    this.hintEl = this.contentEl.createDiv({ cls: "notion-toggle-mode-hint" });
+
+    // v1.4.3 — the warning hint is now actionable: one tap falls back to
+    // "every toggle" and starts autoscroll again.
+    this.resumeBtn = this.contentEl.createEl("button", {
+      text: "▶ Resume with every toggle",
+      cls: "notion-toggle-color-btn ntt-resume-btn",
+    });
+    this.resumeBtn.onclick = async () => {
+      this.plugin.settings.scrollMode = "all";
+      await this.commit(true);
+      await this.plugin.setAutoScrollEnabled(true);
+      this.close();
+    };
 
     new Setting(this.contentEl)
       .setName("Custom list")
       .setDesc("Toggle numbers to stop at, e.g. 2, 5, 9.")
-      .addText((t) =>
-        t
-          .setPlaceholder("2, 5, 9")
+      .addText((t) => {
+        t.setPlaceholder("2, 5, 9")
           .setValue((this.plugin.settings.scrollPicks ?? []).join(", "))
           .onChange(async (v) => {
             this.plugin.settings.scrollPicks = parsePicks(v);
-            await this.plugin.saveSettings();
-          })
-      );
+            await this.commit();
+          });
+        t.inputEl.addEventListener("blur", () => void this.commit());
+      });
 
     new Setting(this.contentEl)
       .setName("Route")
-      .setDesc("Your own visit order, e.g. 7, 2, 9, 2.")
-      .addText((t) =>
-        t
-          .setPlaceholder("7, 2, 9")
-          .setValue((this.plugin.settings.scrollRoute ?? []).join(", "))
+      .setDesc("Your own visit order, e.g. 7, 2, 9, 2. Saved across vault reloads.")
+      .addText((t) => {
+        t.setPlaceholder("7, 2, 9")
+          .setValue(
+            (this.plugin.settings.scrollRoute ?? this.plugin.settings.scrollUserRoute ?? []).join(
+              ", "
+            )
+          )
           .onChange(async (v) => {
-            this.plugin.settings.scrollRoute = parseRoute(v);
-            await this.plugin.saveSettings();
-          })
-      );
+            const route = parseRoute(v);
+            this.plugin.settings.scrollRoute = route;
+            this.plugin.settings.scrollUserRoute = route;
+            await this.commit();
+          });
+        t.inputEl.addEventListener("blur", () => void this.commit());
+      });
 
     new Setting(this.contentEl)
       .setName("Loop the route")
+      .setDesc("Route khatam hone par phir se pehle waypoint se.")
       .addToggle((tg) =>
         tg.setValue(this.plugin.settings.scrollLoopRoute).onChange(async (v) => {
           this.plugin.settings.scrollLoopRoute = v;
-          await this.plugin.saveSettings();
+          await this.commit(true);
         })
       );
 
@@ -284,7 +351,7 @@ export class ScrollModeModal extends Modal {
           .setValue(String(this.plugin.settings.scrollShuffleFrom || ""))
           .onChange(async (v) => {
             this.plugin.settings.scrollShuffleFrom = Math.max(0, Math.floor(Number(v) || 0));
-            await this.plugin.saveSettings();
+            await this.commit(true);
           })
       )
       .addText((t) =>
@@ -293,16 +360,17 @@ export class ScrollModeModal extends Modal {
           .setValue(String(this.plugin.settings.scrollShuffleTo || ""))
           .onChange(async (v) => {
             this.plugin.settings.scrollShuffleTo = Math.max(0, Math.floor(Number(v) || 0));
-            await this.plugin.saveSettings();
+            await this.commit(true);
           })
       );
 
+
     const stats = this.plugin.scrollDeckStats();
+    this.summaryEl = this.contentEl.createDiv({
+      cls: "notion-toggle-deck-summary",
+      text: stats ? deckSummary(stats) : "",
+    });
     if (stats) {
-      this.contentEl.createDiv({
-        cls: "notion-toggle-deck-summary",
-        text: deckSummary(stats),
-      });
       const forecast = this.plugin.scrollForecast();
       if (forecast.some((n) => n > 0)) {
         this.contentEl.createDiv({
@@ -318,11 +386,13 @@ export class ScrollModeModal extends Modal {
       .addToggle((tg) =>
         tg.setValue(this.plugin.settings.scrollChunkTall).onChange(async (v) => {
           this.plugin.settings.scrollChunkTall = v;
-          await this.plugin.saveSettings();
-          this.plugin.refreshScrollPlan();
+          await this.commit();
         })
       );
+
+    this.paint();
   }
+
 
   onClose() {
     this.contentEl.empty();
@@ -398,248 +468,6 @@ export class ScrollSpeedModal extends Modal {
   }
 }
 
-/* ---------- v1.1.5: one sheet with every autoscroll control ---------- */
-
-export class ScrollSheetModal extends Modal {
-  constructor(app: App, private plugin: NotionTogglePlugin) {
-    super(app);
-  }
-
-  onClose() {
-    this.contentEl.empty();
-    this.plugin.scrollSheetOpen = false;
-    this.plugin.syncScrollFab();
-  }
-
-  onOpen() {
-    this.modalEl.addClass("ntt-sheet");
-    this.setTitle("Autoscroll — quick controls");
-    const s = this.plugin.settings;
-
-    // v1.1.8 — the sheet itself is the on/off switch (long-press ▶ opens it).
-    new Setting(this.contentEl)
-      .setName("Autoscroll")
-      .setDesc("ON = is note par autoscroll chalu, OFF = band. Screen ko dabaye rakho to jab tak hold hai scroll ruka rahega.")
-      .addToggle((tg) =>
-        tg.setValue(this.plugin.autoScrollActive() && this.plugin.scrollRunning).onChange(async (v) => {
-          await this.plugin.setAutoScrollEnabled(v);
-          tg.setValue(this.plugin.autoScrollActive() && this.plugin.scrollRunning);
-        })
-      );
-
-    // v1.1.9 — quiz mode is reachable from the same sheet (no toolbar needed).
-    new Setting(this.contentEl)
-      .setName("Quiz (timed question run)")
-      .setDesc("ON = timed quiz shuru — har toggle par timer, auto reveal, auto next.")
-      .addToggle((tg) =>
-        tg.setValue(!!this.plugin.quizState).onChange((v) => {
-          if (v) this.plugin.startQuizRun();
-          else this.plugin.stopQuiz(true);
-          tg.setValue(!!this.plugin.quizState);
-        })
-      );
-
-    // v1.2.1 — quiz timing + auto-next are tunable right here in the sheet.
-    const qRow = new Setting(this.contentEl)
-      .setName("Quiz — time per question")
-      .setDesc(
-        "Kitne second baad answer khud reveal ho (1s–12h). Title me ⏱30 / ⏱15m / ⏱2h likho to us question par wahi chalega."
-      );
-    addSecondsPicker(qRow, {
-      sliderMin: QUIZ_SECONDS_MIN,
-      sliderMax: 120,
-      max: QUIZ_SECONDS_MAX,
-      get: () => clampQuizSeconds(s.quizSeconds),
-      clamp: clampQuizSeconds,
-      save: async (v) => {
-        s.quizSeconds = v;
-        await this.plugin.saveSettings();
-      },
-    });
-
-    const rRow = new Setting(this.contentEl)
-      .setName("Quiz — answer time")
-      .setDesc("Reveal hone ke baad answer kitni der khula rahe (1s–1h).");
-    addSecondsPicker(rRow, {
-      sliderMin: 1,
-      sliderMax: 60,
-      max: REVEAL_SECONDS_MAX,
-      get: () => clampRevealSeconds(s.quizRevealSeconds),
-      clamp: clampRevealSeconds,
-      save: async (v) => {
-        s.quizRevealSeconds = v;
-        await this.plugin.saveSettings();
-      },
-    });
-
-    new Setting(this.contentEl)
-      .setName("Quiz — auto next")
-      .setDesc("ON = answer ke baad agla question khud, OFF = wahin ruk jao.")
-      .addToggle((tg) =>
-        tg.setValue(s.quizAutoNext).onChange(async (v) => {
-          s.quizAutoNext = v;
-          await this.plugin.saveSettings();
-        })
-      );
-
-    // v1.3.0 — quiz ka apna colour filter, autoscroll wale picker jaisa.
-    new Setting(this.contentEl)
-      .setName("Quiz — kaunse toggle")
-      .setDesc(`Abhi ${filterLabel(this.plugin.quizFilterColors())} — default, 🔴, 🟡, 🟢 …`)
-      .addButton((b) =>
-        b.setButtonText("Filter").onClick(() => {
-          this.close();
-          new QuizFilterModal(this.app, this.plugin).open();
-        })
-      );
-
-    new Setting(this.contentEl)
-      .setName("Quiz — minimal UI")
-      .setDesc("Sirf question par chhota timer ring, koi floating box nahi.")
-      .addToggle((tg) =>
-        tg.setValue(s.quizMinimalUi).onChange(async (v) => {
-          s.quizMinimalUi = v;
-          await this.plugin.saveSettings();
-        })
-      );
-
-
-    new Setting(this.contentEl)
-      .setName("Quiz — loop")
-      .setDesc("Aakhri question ke baad phir se question 1 se shuru.")
-      .addToggle((tg) =>
-        tg.setValue(s.quizLoop).onChange(async (v) => {
-          s.quizLoop = v;
-          await this.plugin.saveSettings();
-        })
-      );
-
-
-
-    // v1.2.0 — direction moved off the FAB into the sheet (single button UI).
-    new Setting(this.contentEl)
-      .setName("Direction")
-      .setDesc("Forward = neeche ki taraf, Reverse = upar ki taraf scroll.")
-      .addToggle((tg) =>
-        tg
-          .setTooltip("Reverse (upar)")
-          .setValue(!!s.scrollReverse)
-          .onChange(async (v) => {
-            await this.plugin.setScrollReverse(v);
-            tg.setValue(!!this.plugin.settings.scrollReverse);
-          })
-      );
-
-    new Setting(this.contentEl)
-      .setName("Speed")
-      .setDesc(`Currently ${multiplierFromSpeed(s.scrollSpeed)}x.`)
-      .addButton((btn) =>
-        btn.setButtonText("Choose").onClick(() => new ScrollSpeedModal(this.app, this.plugin).open())
-      );
-
-    new Setting(this.contentEl)
-      .setName("Pause for")
-      .setDesc(`Hold time — currently ${formatDwell(clampHold(s.scrollHold))}.`)
-      .addButton((btn) =>
-        btn.setButtonText("Choose").onClick(() => new ScrollDwellModal(this.app, this.plugin).open())
-      );
-
-    new Setting(this.contentEl)
-      .setName("Pause at")
-      .setDesc(`Currently ${modeLabel(this.plugin.modeConfig())}.`)
-      .addButton((btn) =>
-        btn.setButtonText("Choose").onClick(() => new ScrollModeModal(this.app, this.plugin).open())
-      );
-
-    new Setting(this.contentEl)
-      .setName("Colour filter")
-      .setDesc(`Currently ${filterLabel(s.scrollFilter)}.`)
-      .addButton((btn) =>
-        btn
-          .setButtonText("Choose")
-          .onClick(() => new ScrollFilterModal(this.app, this.plugin).open())
-      );
-
-    new Setting(this.contentEl).setName("Reverse direction ↑").addToggle((tg) =>
-      tg.setValue(s.scrollReverse).onChange(async (v) => {
-        await this.plugin.setScrollReverse(v);
-      })
-    );
-
-    new Setting(this.contentEl).setName("Loop the note").addToggle((tg) =>
-      tg.setValue(s.scrollLoop).onChange(async (v) => {
-        this.plugin.settings.scrollLoop = v;
-        await this.plugin.saveSettings();
-      })
-    );
-
-    new Setting(this.contentEl).setName("Open toggles automatically").addToggle((tg) =>
-      tg.setValue(s.scrollAutoOpen).onChange(async (v) => {
-        this.plugin.settings.scrollAutoOpen = v;
-        await this.plugin.saveSettings();
-      })
-    );
-
-    new Setting(this.contentEl).setName("Close them when leaving").addToggle((tg) =>
-      tg.setValue(s.scrollAutoClose).onChange(async (v) => {
-        this.plugin.settings.scrollAutoClose = v;
-        await this.plugin.saveSettings();
-      })
-    );
-
-    new Setting(this.contentEl)
-      .setName("Tall toggles screen-by-screen")
-      .addToggle((tg) =>
-        tg.setValue(s.scrollChunkTall).onChange(async (v) => {
-          this.plugin.settings.scrollChunkTall = v;
-          await this.plugin.saveSettings();
-          this.plugin.refreshScrollPlan();
-        })
-      );
-
-    new Setting(this.contentEl).setName("Debug overlay").addToggle((tg) =>
-      tg.setValue(s.scrollDebug).onChange(async (v) => {
-        this.plugin.settings.scrollDebug = v;
-        await this.plugin.saveSettings();
-        this.plugin.syncScrollDebugOverlay();
-      })
-    );
-
-    // v1.2.1 — silence the status popups straight from the sheet.
-    new Setting(this.contentEl)
-      .setName("Quiet mode (no popups)")
-      .setDesc("ON = speed / direction / plain-scroll wale notice nahi dikhenge.")
-      .addToggle((tg) =>
-        tg.setValue(s.scrollQuiet).onChange(async (v) => {
-          this.plugin.settings.scrollQuiet = v;
-          await this.plugin.saveSettings();
-        })
-      );
-
-
-    new Setting(this.contentEl)
-      .setName("More")
-      .addButton((btn) =>
-        btn.setButtonText("Go to first").onClick(() => {
-          this.close();
-          this.plugin.scrollToStart();
-        })
-      )
-      .addButton((btn) =>
-        btn
-          .setButtonText("Stats")
-          .onClick(() => new ScrollStatsModal(this.app, this.plugin).open())
-      )
-      .addButton((btn) =>
-        btn
-          .setButtonText("Toolbar guide")
-          .onClick(() => new MobileToolbarGuideModal(this.app, this.plugin).open())
-      );
-  }
-
-
-
-}
 
 /* ---------- v1.1.5: in-app guide — which mobile toolbar commands to add ---------- */
 

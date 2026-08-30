@@ -102,6 +102,8 @@ import {
   frameFactor,
   isRouteMode,
   legDirection,
+  seedStartOffset,
+  finishedAtEdge,
   shouldPark,
   pageStops,
   toDwellSettings,
@@ -132,6 +134,7 @@ import {
   clampQuizSeconds,
   clampRevealSeconds,
   pauseQuiz,
+  questionMs,
   quizProgressLabel,
   quizPhaseRatio,
   quizStartLabel,
@@ -154,7 +157,7 @@ import {
   toggleTypeOf,
 } from "./src/toggle-dom";
 import { QuizBar } from "./src/quiz-ui";
-import { QuizRing } from "./src/quiz-badge";
+import { QuizBoard } from "./src/quiz-badge";
 import {
   QUIZ_ACTIVE_CLASS,
   applyQuizVisibilityClasses,
@@ -191,10 +194,11 @@ import {
   ScrollDwellModal,
   ScrollFilterModal,
   ScrollModeModal,
-  ScrollSheetModal,
   ScrollSpeedModal,
   ScrollStatsModal,
 } from "./src/modals";
+import { ScrollSheetModal } from "./src/sheet-modal";
+
 
 import {
   ANSWER_LINE,
@@ -338,6 +342,8 @@ export default class NotionTogglePlugin extends Plugin {
   scrollDwellUntil = 0;
   scrollDwellKey: string | null = null;
   scrollDwellDir = 1;
+  /** v1.4.2 — pixels travelled this run; an edge only ends a run that moved. */
+  scrollMovedPx = 0;
   scrollBoxes: PageBox[] = [];
   scrollBoxesAt = 0;
   /** v1.2.1 — last time we tried to re-find a scrollable container. */
@@ -400,8 +406,8 @@ export default class NotionTogglePlugin extends Plugin {
     }
   }
   quizBar: QuizBar | null = null;
-  /** v1.3.0 — inline Telegram-style countdown that rides on the question. */
-  quizRing: QuizRing | null = null;
+  /** v1.4.2 — one inline countdown badge per question of the run. */
+  quizBoard: QuizBoard | null = null;
   quizState: QuizState | null = null;
   quizStops: (ToggleStop & { el?: HTMLElement })[] = [];
   quizTitles: string[] = [];
@@ -919,6 +925,23 @@ export default class NotionTogglePlugin extends Plugin {
       name: "Quiz: pause / resume",
       callback: () => this.toggleQuizPause(),
     });
+
+    // v1.4.3 — one-tap answer control, usable from the mobile toolbar too.
+    this.addCommand({
+      id: "answers-open-all",
+      icon: "unfold-vertical",
+      name: "Answers: open all toggles",
+      callback: () => this.setAllAnswersOpen(true),
+    });
+
+    this.addCommand({
+      id: "answers-close-all",
+      icon: "fold-vertical",
+      name: "Answers: close all toggles",
+      callback: () => this.setAllAnswersOpen(false),
+    });
+
+
 
     this.addCommand({
       id: "quiz-reveal-now",
@@ -1781,6 +1804,7 @@ export default class NotionTogglePlugin extends Plugin {
         },
       });
     }
+    this.scrollFabBtn.setReverse(!!this.settings.scrollReverse);
     this.scrollFabBtn.setRunning(this.scrollRunning);
     // v1.1.8 — auto-hide only while it is actually scrolling; when idle or
     // paused the button stays put so start / resume is one tap away.
@@ -1917,6 +1941,38 @@ export default class NotionTogglePlugin extends Plugin {
     setToggleOpenDom(el, open);
   }
 
+  /**
+   * v1.4.3 — open (or close) every answer toggle in the active note in one go.
+   * Works during a quiz too: the quiz's own classes are updated so the run
+   * does not fight the reader.
+   */
+  setAllAnswersOpen(open: boolean) {
+    const container = this.findScrollContainer();
+    if (!container) {
+      new Notice("Open a note first.");
+      return;
+    }
+    const stops = this.collectStops(container) as (ToggleStop & { el?: HTMLElement })[];
+    let n = 0;
+    for (const s of stops) {
+      if (!s.el) continue;
+      if (this.quizState) setQuizVisible(s.el, open);
+      else this.setToggleOpen(s.el, open);
+      n++;
+    }
+    if (!this.settings.scrollQuiet) {
+      new Notice(`${open ? "Opened" : "Closed"} ${n} answer toggle${n === 1 ? "" : "s"}.`);
+    }
+  }
+
+  /** Re-apply the quiz answer rule after the "keep answers open" switch flips. */
+  refreshQuizAnswerVisibility() {
+    if (!this.quizState) return;
+    this.applyQuizVisibility(this.quizState.at, this.quizState.phase === "reveal");
+  }
+
+
+
 
   /**
    * v1.1.8 — freeze the loop while a finger is held anywhere on the note.
@@ -1991,8 +2047,12 @@ export default class NotionTogglePlugin extends Plugin {
       mode: this.settings.scrollMode,
       picks: this.settings.scrollPicks ?? [],
       route: this.settings.scrollRoute ?? [],
+      loopRoute: !!this.settings.scrollLoopRoute,
+      shuffleFrom: this.settings.scrollShuffleFrom ?? 0,
+      shuffleTo: this.settings.scrollShuffleTo ?? 0,
     };
   }
+
 
   /** FSRS cards for the active note. */
   scrollCards(path = this.scrollNotePath ?? this.app.workspace.getActiveFile()?.path ?? ""): FsrsCard[] {
@@ -2054,9 +2114,15 @@ export default class NotionTogglePlugin extends Plugin {
       retention: this.settings.scrollRetention,
       newMix: this.settings.scrollNewMix,
     });
+    // v1.4.3 — keep the hand-written route so route mode can restore it later.
+    const typed = this.settings.scrollRoute ?? [];
+    if (this.settings.scrollMode === "route" && typed.length) {
+      this.settings.scrollUserRoute = [...typed];
+    }
     this.settings.scrollMode = "shuffle";
     this.settings.scrollRoute = order;
     await this.saveSettings();
+
     if (notify) {
       new Notice(
         `🔀 Shuffle ready — ${order.length} toggles.\n${deckSummary(
@@ -2161,7 +2227,17 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollOpenedAt = 0;
     this.scrollRunning = true;
     this.scrollLastFrame = 0;
-    this.scrollPos = container.scrollTop;
+    // v1.4.2 — a reverse run started at the top (or a forward run at the very
+    // bottom) used to clamp on frame one and report "finished" immediately.
+    this.scrollPos = seedStartOffset(
+      container.scrollTop,
+      container.scrollHeight - container.clientHeight,
+      this.settings.scrollReverse
+    );
+    if (Math.floor(this.scrollPos) !== container.scrollTop) {
+      container.scrollTop = Math.floor(this.scrollPos);
+    }
+    this.scrollMovedPx = 0;
     this.scrollDir = this.settings.scrollReverse ? -1 : 1;
     this.scrollDwellDir = this.scrollDir;
     this.scrollDwellUntil = 0;
@@ -2273,6 +2349,20 @@ export default class NotionTogglePlugin extends Plugin {
     await this.saveSettings();
     if (this.scrollPlan.length && this.scrollContainer) {
       this.refreshScrollPlan();
+      // v1.4.2 — flipping direction mid-run: re-seed from the live position
+      // (jumping off the edge when needed) and let stops fire the other way.
+      const container = this.scrollContainer;
+      const max = container.scrollHeight - container.clientHeight;
+      this.scrollPos = seedStartOffset(container.scrollTop, max, reverse);
+      if (Math.floor(this.scrollPos) !== container.scrollTop) {
+        container.scrollTop = Math.floor(this.scrollPos);
+      }
+      this.scrollDir = reverse ? -1 : 1;
+      this.scrollDwellDir = this.scrollDir;
+      this.scrollDwellKey = null;
+      this.scrollDwellUntil = 0;
+      this.scrollMovedPx = 0;
+      this.scrollAt = firstStopFrom(this.scrollPlan, this.scrollPos, reverse);
     }
     await this.rememberPerNoteScrollPrefs();
     this.renderScrollBar();
@@ -2591,6 +2681,7 @@ export default class NotionTogglePlugin extends Plugin {
 
       const prevPos = this.scrollPos;
       this.scrollPos = advancePosition(this.scrollPos, perFrame, dt, this.scrollDir as 1 | -1, max);
+      this.scrollMovedPx += Math.abs(this.scrollPos - prevPos);
       const whole = Math.floor(this.scrollPos);
       container.scrollTop = whole;
 
@@ -2668,12 +2759,13 @@ export default class NotionTogglePlugin extends Plugin {
         this.scrollSmoothEl.style.transform = `translate3d(0, ${-frac}px, 0)`;
       }
 
-      const atEdge = this.scrollDir < 0 ? this.scrollPos <= 1 : this.scrollPos >= max - 1;
+      const atEdge = finishedAtEdge(this.scrollPos, max, this.scrollDir as 1 | -1, this.scrollMovedPx);
       if (atEdge && !routeMode) {
         if (this.settings.scrollLoop) {
           this.scrollPos = this.scrollDir < 0 ? max : 0;
           container.scrollTop = Math.floor(this.scrollPos);
           this.scrollDwellKey = null;
+          this.scrollMovedPx = 0;
         } else {
           this.say("Autoscroll finished — every selected toggle revised.");
           this.stopAutoScroll(false);
@@ -2776,10 +2868,13 @@ export default class NotionTogglePlugin extends Plugin {
     // no rewritten reading view).
     this.quizSnapshot = snapshotToggles(stops.map((s) => s.el));
     document.body.classList.add(QUIZ_ACTIVE_CLASS);
-    for (const s of stops) if (s.el) setQuizVisible(s.el, false);
+    for (const s of stops) {
+      if (s.el) setQuizVisible(s.el, this.settings.quizKeepAnswersOpen);
+    }
+
     this.quizState = startQuiz(this.quizTitles, this.settings);
 
-    if (!this.quizRing) this.quizRing = new QuizRing(document);
+    if (!this.quizBoard) this.quizBoard = new QuizBoard(document);
     if (!this.settings.quizMinimalUi && !this.quizBar) {
       this.quizBar = new QuizBar({
         onTogglePause: () => this.toggleQuizPause(),
@@ -2813,8 +2908,8 @@ export default class NotionTogglePlugin extends Plugin {
     this.quizStops = [];
     this.quizTitles = [];
     this.quizContainer = null;
-    this.quizRing?.destroy();
-    this.quizRing = null;
+    this.quizBoard?.destroy();
+    this.quizBoard = null;
     this.quizBar?.destroy();
     this.quizBar = null;
     if (notify) new Notice(summary || "Quiz stopped.");
@@ -2905,6 +3000,11 @@ export default class NotionTogglePlugin extends Plugin {
 
   /** Only the current question may show its answer, and only after the reveal. */
   private applyQuizVisibility(index: number, revealed: boolean) {
+    // v1.4.3 — "open with auto-quiz": every answer stays open the whole run.
+    if (this.settings.quizKeepAnswersOpen) {
+      for (const s of this.quizStops) if (s.el) setQuizVisible(s.el, true);
+      return;
+    }
     applyQuizVisibilityClasses(
       this.quizStops.map((s) => s.el),
       index,
@@ -2912,6 +3012,7 @@ export default class NotionTogglePlugin extends Plugin {
       this.settings.quizCloseAfterReveal
     );
   }
+
 
   /** Close every other toggle and bring question `index` into view. */
   private scrollQuizTo(index: number) {
@@ -2934,7 +3035,6 @@ export default class NotionTogglePlugin extends Plugin {
             container.scrollTop
           : stop.top;
       container.scrollTo({ top: targetOffset(top, container.clientHeight), behavior: "smooth" });
-      if (live && live.isConnected) this.quizRing?.mount(live);
       this.renderQuizHud();
     };
     if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(scroll);
@@ -2971,16 +3071,24 @@ export default class NotionTogglePlugin extends Plugin {
     if (!st) return;
     this.perf.quizRender.mark(nowMs());
     this.ensureQuizEls();
-    const el = this.quizStops[st.at]?.el;
-    if (el && el.isConnected) this.quizRing?.mount(el);
-    this.quizRing?.render({
-      remaining: st.remaining,
-      ratio: quizPhaseRatio(st, this.quizTitles, this.settings),
-      phase: st.phase,
-      running: st.running,
-      index: st.at + 1,
-      total: st.total,
-    });
+    // v1.4.2 — every question carries its own badge: pending questions show
+    // the time they will get, the active one counts down (question phase =
+    // its own ⏱ / setting, reveal phase = the answer time).
+    this.quizBoard?.render(
+      this.quizStops.map((s, i) => ({
+        el: s.el,
+        totalMs: questionMs(this.quizTitles[i] ?? "", this.settings),
+      })),
+      st.at,
+      {
+        remaining: st.remaining,
+        ratio: quizPhaseRatio(st, this.quizTitles, this.settings),
+        phase: st.phase,
+        running: st.running,
+        index: st.at + 1,
+        total: st.total,
+      }
+    );
     this.quizBar?.render({
       progress: quizProgressLabel(st),
       running: st.running,
@@ -3014,7 +3122,21 @@ export default class NotionTogglePlugin extends Plugin {
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    // v1.4.3 — the saved plan must come back exactly as it was typed, even if
+    // an older/edited data.json stored junk in those arrays.
+    const nums = (v: unknown) =>
+      Array.isArray(v) ? v.map((n) => Math.floor(Number(n))).filter((n) => n > 0) : [];
+    this.settings.scrollPicks = nums(this.settings.scrollPicks);
+    this.settings.scrollRoute = nums(this.settings.scrollRoute);
+    this.settings.scrollUserRoute = nums(this.settings.scrollUserRoute);
+    if (!this.settings.scrollUserRoute.length && this.settings.scrollMode === "route") {
+      this.settings.scrollUserRoute = [...this.settings.scrollRoute];
+    }
+    this.settings.scrollLoopRoute = !!this.settings.scrollLoopRoute;
+    this.settings.scrollShuffleFrom = Math.max(0, Math.floor(Number(this.settings.scrollShuffleFrom) || 0));
+    this.settings.scrollShuffleTo = Math.max(0, Math.floor(Number(this.settings.scrollShuffleTo) || 0));
   }
+
 
 
   async saveSettings() {

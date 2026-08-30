@@ -35,8 +35,11 @@ export function isProgrammaticScroll(now = Date.now()): boolean {
   return now < programmaticUntil;
 }
 
-/* v1.2.2 — screenshot style: plain white circle, dark double-chevron down.
-   v1.3.1 — built with real SVG DOM nodes (no innerHTML anywhere). */
+/* v1.4.3 — the user's own transparent "stacked layers" mark, rebuilt as pure
+   SVG: one diamond plate on top and two chevron plates under it. No chip, no
+   halo, no circle — just the artwork. While autoscroll runs the plates step
+   downwards (CSS animation on `.is-running`).
+   Built with real SVG DOM nodes (no innerHTML anywhere). */
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 function svgEl<K extends keyof SVGElementTagNameMap>(
@@ -48,39 +51,46 @@ function svgEl<K extends keyof SVGElementTagNameMap>(
   return el;
 }
 
-/** Double chevron pointing down = "scroll on". */
-export function buildPlayIcon(): SVGSVGElement {
+/** The layered-plates mark. `reverse` flips it so the stack points upwards. */
+export function buildLayersIcon(reverse = false, running = false): SVGSVGElement {
   const svg = svgEl("svg", {
     viewBox: "0 0 24 24",
-    width: "26",
-    height: "26",
+    width: "40",
+    height: "40",
     "aria-hidden": "true",
     fill: "none",
     stroke: "currentColor",
-    "stroke-width": "2.6",
+    "stroke-width": "2",
     "stroke-linecap": "round",
     "stroke-linejoin": "round",
   });
-  svg.appendChild(svgEl("path", { d: "M5 7l7 6 7-6" }));
-  svg.appendChild(svgEl("path", { d: "M5 13l7 6 7-6" }));
+  svg.classList.add("ntt-fab-layers");
+  if (reverse) svg.classList.add("is-reverse");
+  if (running) svg.classList.add("is-stepping");
+
+  const plate = svgEl("path", { d: "M12 2.6 21.2 8 12 13.4 2.8 8Z" });
+  plate.classList.add("ntt-layer", "ntt-layer-1");
+  const mid = svgEl("path", { d: "M3 12.1 12 17.3 21 12.1" });
+  mid.classList.add("ntt-layer", "ntt-layer-2");
+  const low = svgEl("path", { d: "M3 16.2 12 21.4 21 16.2" });
+  low.classList.add("ntt-layer", "ntt-layer-3");
+
+  svg.appendChild(plate);
+  svg.appendChild(mid);
+  svg.appendChild(low);
   return svg;
 }
 
-/** Two rounded bars = "running, tap to pause". */
-export function buildPauseIcon(): SVGSVGElement {
-  const svg = svgEl("svg", {
-    viewBox: "0 0 24 24",
-    width: "26",
-    height: "26",
-    "aria-hidden": "true",
-  });
-  for (const x of ["6.5", "13.5"]) {
-    svg.appendChild(
-      svgEl("rect", { x, y: "5", width: "4", height: "14", rx: "1.4", fill: "currentColor" })
-    );
-  }
-  return svg;
+/** Idle state — the static mark. */
+export function buildPlayIcon(reverse = false): SVGSVGElement {
+  return buildLayersIcon(reverse, false);
 }
+
+/** Running state — the same mark, stepping down (tap to pause). */
+export function buildPauseIcon(reverse = false): SVGSVGElement {
+  return buildLayersIcon(reverse, true);
+}
+
 
 
 export class ScrollFab {
@@ -95,6 +105,8 @@ export class ScrollFab {
   /* v1.1.8 auto-hide state (ported from the reader's useReaderChrome). */
   private hideTimer: number | null = null;
   private pinned = false;
+  private reverse = false;
+  private running = false;
   private wake = () => this.show();
   private wakeScroll = () => {
     if (isProgrammaticScroll()) return;
@@ -122,6 +134,8 @@ export class ScrollFab {
     this.sr.setAttribute("aria-live", "polite");
     this.sr.textContent = "Autoscroll stopped";
     this.root.appendChild(this.sr);
+    // v1.4.2 — one source of truth for icon + labels, including direction.
+    this.setRunning(false);
     // Keyboard parity: Enter/Space = tap, Shift+Enter or context key = sheet.
     this.root.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -190,16 +204,30 @@ export class ScrollFab {
     }
   }
 
+  /** v1.4.2 — direction indicator: the chevron flips while reverse is on. */
+  setReverse(reverse: boolean) {
+    if (this.reverse === reverse) return;
+    this.reverse = reverse;
+    this.setRunning(this.running);
+  }
+
   setRunning(running: boolean) {
+    this.running = running;
     this.icon.textContent = "";
-    this.icon.appendChild(running ? buildPauseIcon() : buildPlayIcon());
+    this.icon.appendChild(buildLayersIcon(this.reverse, running));
+    this.root.classList.toggle("is-reverse", this.reverse);
     this.root.setAttribute("aria-pressed", running ? "true" : "false");
-    if (this.sr) this.sr.textContent = running ? "Autoscroll running" : "Autoscroll stopped";
+    const dir = this.reverse ? "reverse, upwards" : "forward, downwards";
+    if (this.sr) {
+      this.sr.textContent = running ? `Autoscroll running ${dir}` : `Autoscroll stopped (${dir})`;
+    }
     this.root.classList.toggle("is-running", running);
     this.wrap.classList.toggle("is-running", running);
     this.root.setAttribute(
       "aria-label",
-      running ? "Autoscroll running — tap to pause" : "Autoscroll — tap to start, hold for settings"
+      running
+        ? `Autoscroll running ${dir} — tap to pause`
+        : `Autoscroll (${dir}) — tap to start, hold for settings`
     );
     this.root.title = this.root.getAttribute("aria-label") ?? "";
   }

@@ -47,23 +47,38 @@ describe("ScrollFab accessibility (v1.2.4)", () => {
     const { fab, btn } = mount();
     const sr = btn.querySelector(".ntt-fab-sr") as HTMLElement;
     expect(sr.getAttribute("aria-live")).toBe("polite");
-    expect(sr.textContent).toBe("Autoscroll stopped");
+    expect(sr.textContent).toContain("Autoscroll stopped");
     fab.setRunning(true);
-    expect(sr.textContent).toBe("Autoscroll running");
+    expect(sr.textContent).toContain("Autoscroll running");
     expect(btn.getAttribute("aria-pressed")).toBe("true");
     expect(btn.getAttribute("aria-label")).toContain("pause");
     fab.destroy();
   });
 
-  it("running state uses the solid blue circle class and the pause icon", () => {
+  it("v1.4.3 — running state animates the layered mark", () => {
     const { fab, btn } = mount();
     expect(btn.classList.contains("is-running")).toBe(false);
+    expect(btn.innerHTML).toContain("ntt-fab-layers");
     fab.setRunning(true);
     expect(btn.classList.contains("is-running")).toBe(true);
-    expect(btn.innerHTML).toContain("<rect"); // pause bars
+    expect(btn.innerHTML).toContain("is-stepping");
     fab.setRunning(false);
     expect(btn.classList.contains("is-running")).toBe(false);
-    expect(btn.innerHTML).toContain("<path"); // chevrons
+    expect(btn.innerHTML).not.toContain("is-stepping");
+    fab.destroy();
+  });
+
+
+  it("v1.4.2 — the chevron and the label report the scroll direction", () => {
+    const { fab, btn } = mount();
+    expect(btn.getAttribute("aria-label")).toContain("forward");
+    fab.setReverse(true);
+    expect(btn.classList.contains("is-reverse")).toBe(true);
+    expect(btn.getAttribute("aria-label")).toContain("reverse");
+    const sr = btn.querySelector(".ntt-fab-sr") as HTMLElement;
+    expect(sr.textContent).toContain("reverse");
+    fab.setReverse(false);
+    expect(btn.classList.contains("is-reverse")).toBe(false);
     fab.destroy();
   });
 

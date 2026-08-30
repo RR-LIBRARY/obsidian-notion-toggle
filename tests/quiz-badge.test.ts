@@ -4,11 +4,13 @@
 import { describe, expect, it } from "bun:test";
 import { Window } from "happy-dom";
 import {
+  QuizBoard,
   QuizRing,
   RING_CIRCUMFERENCE,
   clampRatio,
   formatRingTime,
   ringOffset,
+  strictTitleRowOf,
   titleRowOf,
 } from "../src/quiz-badge";
 import { DEFAULT_QUIZ, quizPhaseRatio, startQuiz, quizTick } from "../src/quiz";
@@ -99,5 +101,83 @@ describe("badge mounting", () => {
     ring.render({ remaining: 1_000, ratio: 1, phase: "reveal", running: false, index: 2, total: 8 });
     expect(ring.root.classList.contains("is-reveal")).toBe(true);
     expect(ring.root.classList.contains("is-paused")).toBe(true);
+  });
+});
+
+
+describe("v1.4.2 — a badge on every question", () => {
+  const callout = (d: Document, title: string) => {
+    const el = d.createElement("div");
+    el.setAttribute("data-callout", "question");
+    const row = d.createElement("div");
+    row.className = "callout-title";
+    row.textContent = title;
+    el.appendChild(row);
+    d.body.appendChild(el);
+    return el;
+  };
+
+  it("hours read as h:mm:ss so a 2h question is unmistakable", () => {
+    expect(formatRingTime(7_200_000)).toBe("2:00:00");
+    expect(formatRingTime(3_661_000)).toBe("1:01:01");
+  });
+
+  it("never mounts on body text — a toggle without a title row gets no badge", () => {
+    const d = doc();
+    const para = d.createElement("p");
+    para.textContent = "just a note paragraph";
+    d.body.appendChild(para);
+    expect(strictTitleRowOf(para)).toBeNull();
+    const details = d.createElement("details");
+    d.body.appendChild(details);
+    expect(new QuizRing(d).mount(details)).toBe(false);
+  });
+
+  it("pending questions show their allotted time, the active one counts down", () => {
+    const d = doc();
+    const stops = ["Q1", "Q2", "Q3"].map((t) => callout(d, t));
+    const board = new QuizBoard(d);
+    board.render(
+      stops.map((el) => ({ el, totalMs: 30_000 })),
+      1,
+      { remaining: 7_000, ratio: 0.4, phase: "question", running: true, index: 2, total: 3 }
+    );
+    const rings = [...d.querySelectorAll(".ntt-quiz-ring")] as HTMLElement[];
+    expect(rings.length).toBe(3);
+    expect(board.size).toBe(3);
+    expect(rings[0]?.classList.contains("is-done")).toBe(true);
+    expect(rings[1]?.classList.contains("is-active")).toBe(true);
+    expect(rings[1]?.textContent).toContain("0:07");
+    expect(rings[2]?.classList.contains("is-pending")).toBe(true);
+    expect(rings[2]?.textContent).toContain("0:30");
+    board.destroy();
+    expect(d.querySelectorAll(".ntt-quiz-ring").length).toBe(0);
+  });
+
+  it("drops badges for questions Obsidian unmounted", () => {
+    const d = doc();
+    const stops = ["Q1", "Q2"].map((t) => callout(d, t));
+    const board = new QuizBoard(d);
+    const live = {
+      remaining: 1_000,
+      ratio: 1,
+      phase: "question" as const,
+      running: true,
+      index: 1,
+      total: 2,
+    };
+    board.render(
+      stops.map((el) => ({ el, totalMs: 5_000 })),
+      0,
+      live
+    );
+    expect(board.size).toBe(2);
+    stops[1]?.remove();
+    board.render(
+      stops.map((el) => ({ el, totalMs: 5_000 })),
+      0,
+      live
+    );
+    expect(board.size).toBe(1);
   });
 });

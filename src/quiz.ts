@@ -22,6 +22,11 @@ export interface QuizSettings {
   quizLoop: boolean;
   /** Small notice / sound when the time is up. */
   quizBeepOnTimeUp: boolean;
+  /**
+   * v1.4.3 — "open with autoquiz": every answer toggle is open for the whole
+   * run and is never closed again (reading mode with a timer on top).
+   */
+  quizKeepAnswersOpen: boolean;
 }
 
 export const DEFAULT_QUIZ: QuizSettings = {
@@ -32,7 +37,9 @@ export const DEFAULT_QUIZ: QuizSettings = {
   quizUseColorFilter: true,
   quizLoop: false,
   quizBeepOnTimeUp: true,
+  quizKeepAnswersOpen: false,
 };
+
 
 export const QUIZ_SECONDS_MIN = 1;
 /** v1.4.0 — quiz time now goes up to 12 hours. */

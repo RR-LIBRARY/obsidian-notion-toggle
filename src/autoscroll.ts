@@ -35,8 +35,15 @@ export interface AutoScrollSettings {
   scrollPicks: number[];
   /** 1-based toggle numbers, in visit order, used by "route" / "shuffle". */
   scrollRoute: number[];
+  /**
+   * v1.4.3 — the route the *user* typed. `scrollRoute` is overwritten every
+   * time shuffle rebuilds an order, so the hand-written plan is kept here and
+   * restored when route mode is picked again (survives a vault reload).
+   */
+  scrollUserRoute: number[];
   /** Replay the route from the start when it finishes. */
   scrollLoopRoute: boolean;
+
   /** v1.1.3 — show the loop's live state (waypoints, stops, grades) on screen. */
   scrollDebug: boolean;
   /** Read tall toggles screen-by-screen before moving on. */
@@ -67,7 +74,10 @@ export const DEFAULT_AUTOSCROLL: AutoScrollSettings = {
   scrollMode: "all",
   scrollPicks: [],
   scrollRoute: [],
+  scrollUserRoute: [],
   scrollLoopRoute: false,
+
+
   scrollDebug: false,
   scrollChunkTall: true,
   scrollShuffleFrom: 0,

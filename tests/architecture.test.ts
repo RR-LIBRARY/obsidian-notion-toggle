@@ -56,6 +56,8 @@ const srcFiles = readdirSync("src")
 /** Modules allowed to talk to Obsidian at all (UI shells and settings). */
 const OBSIDIAN_SHELLS = new Set([
   "src/modals.ts",
+  "src/sheet-modal.ts",
+
   "src/settings-tab.ts",
   "src/guide.ts",
   "src/stats-panel.ts",
