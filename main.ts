@@ -2493,7 +2493,8 @@ export default class NotionTogglePlugin extends Plugin {
 
   /** v1.4.7 — a fresh leg: no stop is "already used" any more. */
   private resetDwell() {
-    this.resetDwell();
+    this.scrollDwellKey = null;
+    this.scrollVisited.clear();
   }
 
   /** Repaint the debug overlay (when on) and queue the next frame. */

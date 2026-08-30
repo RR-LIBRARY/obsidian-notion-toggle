@@ -1,5 +1,15 @@
 # Strongwincode.md — plugin ki strength aur weakness
 
+## v1.4.8 update (2026-08-30)
+
+**Strength (nayi):** ab 624 tests / 1,990 assertions, 35 files. `tests/no-self-recursion.test.ts`
+ek poori class of refactor-bug (method jo khud ko call kare) ko build par hi rok deta hai.
+
+**Weakness (jo v1.4.8 ne saaf-saaf dikhayi):** `main.ts` ke private methods pure-logic modules
+se bahar hain, isliye unka koi direct test nahi tha — `resetDwell()` ka self-call bug isi
+blind spot me 1.4.7 tak zinda raha. **Kya karna chahiye:** autoscroll ka dwell/visited state
+`src/` ke ek chhote pure module me nikaalo, taaki wo bhi unit-tested ho jaaye.
+
 Honest review, v1.4.6 (2026-08-30). Har point ke saath actual code / number diya hai —
 marketing line nahi. Weakness ke saath "kya karna chahiye" bhi likha hai.
 

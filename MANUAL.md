@@ -1,5 +1,7 @@
 # Notion Toggle — Poora Manual (v1.1.6)
 
+> **v1.4.8** — bug fix: autoscroll ka internal dwell reset khud ko call kar raha tha, jisse run start/pause/reverse par crash ho sakta tha. Ab theek hai; baaki saare features waise hi kaam karte hain.
+
 Ye manual me **har ek setting** ka matlab, use karne ka tarika aur recommended value hai —
 exactly usi order me jaisa Obsidian ke settings tab me dikhta hai.
 

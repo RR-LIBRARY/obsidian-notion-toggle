@@ -1,5 +1,26 @@
 # issue.md — issue register
 
+## v1.4.8 audit (2026-08-30) — 1 real defect, fixed
+
+### #A1 — Autoscroll crashed on every start/pause/leg change · **Critical** · FIXED
+- **Kahan:** `main.ts` → `private resetDwell()`.
+- **Kya hota tha:** method ka poora body `this.resetDwell();` tha — yaani khud ko hi call
+  kar raha tha. Jaise hi autoscroll start / pause / reverse / route-leg change hota,
+  infinite recursion se stack overflow ho jata aur run wahin mar jata.
+  Ye v1.4.7 ke module extraction ke waqt aaya tha; koi bhi purana test isko nahi pakadta
+  kyunki `resetDwell` private hai aur pure-logic modules me nahi hai.
+- **Fix:** body wapas asli kaam karta hai — `scrollDwellKey = null` aur `scrollVisited.clear()`,
+  taaki nayi leg par koi bhi stop "already used" na rahe.
+- **Regression guard:** `tests/no-self-recursion.test.ts` — `main.ts` + poore `src/` me koi bhi
+  method jiska body sirf apne aap ko call karta hai, build fail kar dega.
+
+### Jo audit me sahi nikla (koi bug nahi)
+`tests/feature-logic-v148.test.ts` (61 tests / 257 assertions) ne colour palette + filters,
+saare scroll modes aur route ordering, portrait/landscape anchoring, skip recovery,
+quiz lifecycle + healing + visibility, focus/recall timers, SM-2 + FSRS scheduling,
+maintenance rename/prune, deep links, command naming, FAB visibility aur performance
+report — sabko spec ke against verify kiya. In sab me expected behaviour hi mila.
+
 Har entry ek real finding hai jo v1.4.6 ke logic audit (`tests/logic-audit.test.ts`,
 50 tests / 226 assertions) me actually reproduce hui. Koi imaginary / "hypothetical"
 issue yahan nahi likha gaya.

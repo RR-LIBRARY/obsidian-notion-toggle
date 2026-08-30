@@ -1,5 +1,27 @@
 # Test-Verify.md — Deep verification report
 
+## v1.4.8 verification (2026-08-30)
+
+| Gate | Result |
+|---|---|
+| Tests | **624 pass / 0 fail**, 1,990 assertions, 35 files |
+| TypeScript (`tsc --noEmit`) | **Clean** |
+| Build (`bun run build`) | **Clean** — `main.js` 259.7 kb |
+| New audit spec | `tests/feature-logic-v148.test.ts` — 61 tests / 257 assertions |
+| New guard | `tests/no-self-recursion.test.ts` — main.ts + all of `src/` |
+
+**Defect found and fixed:** `main.ts` `resetDwell()` was `{ this.resetDwell(); }` — infinite
+recursion (stack overflow) on every autoscroll start, pause, reverse and route-leg change.
+Now clears the dwell key and the per-leg visited set as intended. See `issue.md` #A1.
+
+**Areas re-verified against spec:** toggle colours and callout mapping, colour filters and
+cycling, all scroll modes (all/odd/even/picks with `3-5`, `3–5`, `3 to 5` ranges) and route
+ordering with duplicates, corrupt-mode fallback to `all`, portrait/landscape anchor math and
+rotation re-measure, multi-stop skip recovery, quiz question/reveal phases, healing and
+visibility, focus + recall timers with pause guards, SM-2 due dates and FSRS grading/shuffle
+determinism, maintenance rename/remove/prune, deep links, command naming, FAB visibility,
+and the performance report (timer accuracy, freeze detection, filter/render timings).
+
 **Plugin:** Notion-style Toggle (obsidian-notion-toggle)
 **Version verified:** 1.4.6 (logic audit pass on top of the 1.4.5 release)
 **Date (UTC):** 2026-08-30
