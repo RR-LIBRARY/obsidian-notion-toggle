@@ -54,6 +54,8 @@ Autoscroll ka **speed / direction / hold** har note ke liye alag bhi yaad rehta 
 5. **Auto-scroll revision**
 6. **Quiz mode**
 
+Plan persistence, plan toast aur one-tap resume (v1.4.3) → section **6.3**.
+
 ---
 
 ## 2. Toggle basics (page ka top hissa)
@@ -390,6 +392,72 @@ Sabse zaroori command sirf ek hai — **Autoscroll (start / pause revision)**; b
 
 ---
 
+## 6.3 Plan persistence aur one-tap resume (v1.4.3)
+
+Autoscroll ka poora **plan** ab `data.json` me save hota hai — Obsidian band karke
+dobara kholo, plugin reload karo, ya phone restart karo: plan waisa ka waisa milta hai.
+
+### Kya-kya save hota hai
+- **Pause-at mode** — every / odd / even / custom / 🧭 route / 🔀 shuffle
+- **Custom list** — `2, 5, 9` jaise numbers
+- **Route (my own order)** — aapka hand-written order, e.g. `7, 2, 9, 2`
+- **Loop the route** — ON/OFF
+- **Shuffle range** — `from` / `to` (`0` = poora note)
+- **Colour filter** — 🔴 / 🟡 / 🟢 selection
+- **Direction (Reverse ↑), speed aur hold** — ye per-note bhi yaad rehte hain
+- **Shuffle memory** — FSRS cards aur visit history, per note
+
+### Route shuffle ke baad kho nahi jata
+Shuffle mode `Route` list ko apne weighted order se overwrite karta hai. v1.4.3 se
+aapka **typed route alag** (`scrollUserRoute`) save hota hai, isliye jab aap wapas
+🧭 **Route** par tap karte ho to aapka original order hi return hota hai — reload ke
+baad bhi.
+
+- **Kya hai:** typed route ka backup jo shuffle overwrite nahi karta.
+- **Kaise use karo:** shuffle chala kar dekho, phir Route par tap karo — aapka
+  `7, 2, 9, 2` wapas aa jayega.
+
+### Plan toast (confirmation line)
+Jab bhi mode, **Loop the route**, ya **Shuffle range** badalta hai, ek chhoti line
+dikhti hai:
+
+```
+Plan: route (7, 2, 9) · loop ON
+Plan: shuffle (weakest first) · loop OFF · range 2–6
+Plan: shuffle (weakest first) · loop OFF · range: whole note
+Plan: every toggle
+```
+
+- **Kya hai:** confirm karta hai ki loop aur range ab kya hain — pehle ye chup-chaap
+  badal jate the.
+- **Kaise use karo:** Auto-scroll revision → **Quiet mode** default ON hai, isliye
+  ye toast tabhi dikhega jab aap Quiet mode **OFF** karoge.
+
+### One-tap resume
+- **Kya hai:** agar plan khali hai (custom/route list empty) to sheet me warning ki
+  jagah ab ek button milta hai: **▶ Resume with every toggle**.
+- **Kaise use karo:** ek tap — mode `every toggle` ho jata hai, plan save hota hai,
+  autoscroll turant start ho jata hai aur sheet band. Numbers dobara type karne ki
+  zaroorat nahi.
+- **Kahan:** Autoscroll sheet → "Pause at" ke just niche (sirf tab dikhta hai jab
+  list khali ho).
+
+### Reload ke baad kya resume hota hai, kya nahi
+| Reload ke baad | Behaviour |
+|---|---|
+| Mode, route, loop, shuffle range, filter | ✅ waise ke waise restore |
+| Speed / direction / hold (per note) | ✅ restore |
+| Shuffle FSRS memory | ✅ restore (reset sirf manually) |
+| Running/paused state | ▶ tap se ek hi tap me resume — scroll khud se start nahi hota |
+| Note me current pixel position | Obsidian ke apne scroll restore par depend karta hai |
+
+### Kharaab data se safety
+Purani ya hand-edited `data.json` me agar route/picks me junk ho (text, `0`,
+negative numbers) to load par wo saaf ho jate hain — plugin crash nahi karta,
+sirf valid toggle numbers rehte hain.
+
+---
+
 ## 7. Debug overlay kaise padhein
 
 ON karke autoscroll chalao — top-right me kuch aisa aayega:
@@ -529,6 +597,9 @@ Lambe questions ke titles me `⏱60` laga do.
 | Stats galat lag rahe | Auto-scroll revision → **Revision memory → Reset for this note**. |
 | Timer screen se gayab | Quiz mode section ke niche **Reset timer position**. |
 | Reduced-motion system | Animation skip ho jati hai, stepping phir bhi chalta hai. |
+| Reload ke baad route gayab | 🧭 Route par tap karo — typed route ka backup restore ho jata hai (section 6.3). |
+| "Add toggle numbers below" warning | Sheet me **▶ Resume with every toggle** dabao — one-tap resume (section 6.3). |
+| Loop / range chup-chaap badla lagta hai | Quiet mode OFF karo — har change par plan toast dikhega (section 6.3). |
 
 ---
 
