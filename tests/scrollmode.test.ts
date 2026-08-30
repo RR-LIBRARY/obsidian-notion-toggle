@@ -64,10 +64,12 @@ describe("dwell + speed", () => {
 
 describe("modes", () => {
   it("normalizes unknown modes", () => {
-    // upstream normalizeParity falls back to "odd"
-    expect(normalizeMode("nope")).toBe("odd");
+    // v1.4.6 — a corrupt saved mode falls back to "every toggle", not "odd"
+    expect(normalizeMode("nope")).toBe("all");
+    expect(normalizeMode(undefined)).toBe("all");
     expect(normalizeMode("shuffle")).toBe("shuffle");
   });
+
   it("parses custom and route lists", () => {
     expect(parsePicks("5, 2 2 9")).toEqual([2, 5, 9]);
     expect(parseRoute("5, 2, 2, 9, 2")).toEqual([5, 2, 9, 2]);

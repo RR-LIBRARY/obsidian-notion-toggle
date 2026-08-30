@@ -163,11 +163,41 @@ export function toDwellSettings(cfg: ModeConfig, seconds = DEFAULT_DWELL.seconds
 }
 
 
-export const parsePicks = parsePageList;
+/**
+ * v1.4.6 — pick list with range support.
+ *
+ * The vendored reader engine splits on every non-digit, so "3-5" meant
+ * "toggles 3 and 5" and quietly lost 4. Readers type ranges, so expand
+ * `a-b` (either way round) before handing the numbers to the engine.
+ */
+export function parsePicks(raw: string): number[] {
+  const expanded = String(raw ?? "").replace(
+    /(\d{1,4})\s*(?:-|–|—|to|through)\s*(\d{1,4})/gi,
+    (_m, a: string, b: string) => {
+      const lo = Math.min(Number(a), Number(b));
+      const hi = Math.max(Number(a), Number(b));
+      if (hi - lo > MAX_LIST_LENGTH) return `${lo},${hi}`;
+      const out: number[] = [];
+      for (let n = lo; n <= hi; n += 1) out.push(n);
+      return out.join(",");
+    }
+  );
+  return parsePageList(expanded);
+}
+
 export const parseRoute = parseRouteList;
 
+const KNOWN_MODES: ScrollMode[] = ["all", "odd", "even", "custom", "route", "shuffle"];
+
+/**
+ * v1.4.6 — an unknown / corrupt saved mode falls back to "every toggle".
+ * The upstream reader engine defaults to "odd", which turned a damaged plan
+ * into a run that silently skipped half the note.
+ */
 export function normalizeMode(mode: unknown): ScrollMode {
-  return normalizeDwell({ parity: mode as DwellParity }).parity;
+  return KNOWN_MODES.includes(mode as ScrollMode)
+    ? normalizeDwell({ parity: mode as DwellParity }).parity
+    : "all";
 }
 
 /** Should we stop at this (1-based) toggle number? */

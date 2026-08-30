@@ -142,7 +142,15 @@ export function planStops(
   return reverse ? sorted.reverse() : sorted;
 }
 
-/** First stop at or after (reverse: at or before) the current scroll offset. */
+/**
+ * First stop at or after (reverse: at or before) the current scroll offset.
+ *
+ * v1.4.6 — when nothing lies ahead, wrap to the stop the run is actually
+ * heading for: index 0 forward (top of the note), and the *last* entry in
+ * reverse (the highest stop). Reverse used to wrap to index 0 too, which in a
+ * descending plan is the bottom-most stop — a target behind an upward run, so
+ * every stop reported "reached" on the first frame and the dwell was skipped.
+ */
 export function firstStopFrom(
   plan: ToggleStop[],
   scrollTop: number,
@@ -150,7 +158,8 @@ export function firstStopFrom(
 ): number {
   if (plan.length === 0) return -1;
   const hit = plan.findIndex((s) => (reverse ? s.top <= scrollTop : s.top >= scrollTop));
-  return hit >= 0 ? hit : 0;
+  if (hit >= 0) return hit;
+  return reverse ? plan.length - 1 : 0;
 }
 
 /** Signed pixels to move this frame. */

@@ -883,7 +883,22 @@ function toDwellSettings(cfg, seconds = DEFAULT_DWELL.seconds, a4 = true) {
     shuffleTo: (_b = cfg.shuffleTo) != null ? _b : 0
   });
 }
-var parsePicks = parsePageList;
+function parsePicks(raw) {
+  const expanded = String(raw != null ? raw : "").replace(
+    /(\d{1,4})\s*(?:-|–|—|to|through)\s*(\d{1,4})/gi,
+    (_m, a, b) => {
+      const lo = Math.min(Number(a), Number(b));
+      const hi = Math.max(Number(a), Number(b));
+      if (hi - lo > MAX_LIST_LENGTH)
+        return `${lo},${hi}`;
+      const out = [];
+      for (let n = lo; n <= hi; n += 1)
+        out.push(n);
+      return out.join(",");
+    }
+  );
+  return parsePageList(expanded);
+}
 var parseRoute = parseRouteList;
 function inShuffleRange(cfg, ordinal) {
   var _a, _b;
@@ -1054,7 +1069,9 @@ function firstStopFrom(plan, scrollTop, reverse) {
   if (plan.length === 0)
     return -1;
   const hit = plan.findIndex((s) => reverse ? s.top <= scrollTop : s.top >= scrollTop);
-  return hit >= 0 ? hit : 0;
+  if (hit >= 0)
+    return hit;
+  return reverse ? plan.length - 1 : 0;
 }
 function targetOffset(stopTop, viewportHeight) {
   return Math.max(0, Math.round(stopTop - viewportHeight * 0.3));

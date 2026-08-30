@@ -1,7 +1,7 @@
 # Test-Verify.md — Deep verification report
 
 **Plugin:** Notion-style Toggle (obsidian-notion-toggle)
-**Version verified:** 1.4.5 (built on the 1.4.4 release code + v1.4.3 docs)
+**Version verified:** 1.4.6 (logic audit pass on top of the 1.4.5 release)
 **Date (UTC):** 2026-08-30
 **Repo:** RR-LIBRARY/obsidian-notion-toggle
 
@@ -11,13 +11,15 @@
 
 | Gate | Result |
 |---|---|
-| Unit + integration tests | **453 pass / 0 fail**, 1405 assertions, 31 files |
+| Unit + integration tests | **503 pass / 0 fail**, 1633 assertions, 32 files |
 | TypeScript (`tsc --noEmit`) | **Clean** — 0 errors |
 | Production build (`bun run build`) | **OK** — `main.js` 245.8 kb, `dist/` written |
 | Browser harness (Chromium, hostile mobile theme) | **Pass** — FAB fully transparent, layer animation intact |
 | Release metadata guard | **Pass** — manifest / versions.json consistent |
 
-**Verdict: SHIP.** No open defects found in this pass.
+**Verdict: SHIP.** The v1.4.6 logic audit found **three real defects**; all three are
+fixed and guarded by named tests. Remaining findings are Low / by-design and are listed
+in `issue.md`.
 
 ---
 
@@ -160,7 +162,52 @@ the stepping animation is **bit-for-bit unchanged** while the grey pill stays go
 
 ```bash
 bun install
-bun test                    # 453 pass
+bun test                    # 503 pass
 npx tsc --noEmit -p tsconfig.json
 bun run build               # main.js
 ```
+
+
+---
+
+## 8. v1.4.6 logic audit
+
+New suite: `tests/logic-audit.test.ts` — **50 tests, 226 assertions**. Written against
+each module's *stated contract* rather than its implementation, so silent behaviour
+changes fail here.
+
+| Area | Checks | Result |
+|---|---|---|
+| Colour filters (🔴 🟡 🟢 / other) | 7 | Pass |
+| Autoscroll engine (speed, direction, targets, resume, speed ladder) | 9 | Pass — 1 defect found and fixed |
+| Plans (parity, custom, route, shuffle range, tall chunking, summary) | 11 | Pass — 2 defects found and fixed |
+| Quiz (per-question time, phases, skip, pause, loop, healing) | 9 | Pass |
+| Timer + SM-2 + card maintenance | 7 | Pass |
+| Gestures, smart add, deep links | 3 | Pass |
+
+### Defects found and fixed in this pass
+
+1. **Corrupt saved mode became "odd toggles"** — `normalizeMode()` inherited the reader
+   engine's `odd` fallback, so a damaged plan silently skipped half the note. Now falls
+   back to `all`. (`issue.md` #1)
+2. **`3-5` in a custom pick list dropped toggle 4** — the engine splits on non-digits, so
+   ranges were read as two separate numbers. `parsePicks()` now expands ranges first.
+   (`issue.md` #2)
+3. **Reverse run wrapped to the bottom-most stop** — with nothing above the reader,
+   `firstStopFrom()` returned index 0 of a descending plan, a target *behind* an upward
+   run, so `reachedTarget()` fired on the first frame and every dwell was skipped. The
+   wrap now goes to the edge the run is heading for. (`issue.md` #3)
+
+The vendored reader engine (`src/reader/dwellEngine.ts`) was left verbatim; all three
+fixes live in the plugin-side adapter.
+
+### Gates after the audit
+
+| Gate | Result |
+|---|---|
+| `bun test` | 503 pass / 0 fail, 1633 assertions, 32 files |
+| `tsc --noEmit` | Clean |
+| `bun run build` | OK — `main.js` 246.2 kb |
+
+Companion documents: `issue.md` (issue register) and `Strongwincode.md`
+(strengths / weaknesses review).

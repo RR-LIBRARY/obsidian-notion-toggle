@@ -399,7 +399,7 @@ dobara kholo, plugin reload karo, ya phone restart karo: plan waisa ka waisa mil
 
 ### Kya-kya save hota hai
 - **Pause-at mode** — every / odd / even / custom / 🧭 route / 🔀 shuffle
-- **Custom list** — `2, 5, 9` jaise numbers
+- **Custom list** — `2, 5, 9` jaise numbers (range bhi chalta hai: `3-5` = 3, 4, 5 — v1.4.6)
 - **Route (my own order)** — aapka hand-written order, e.g. `7, 2, 9, 2`
 - **Loop the route** — ON/OFF
 - **Shuffle range** — `from` / `to` (`0` = poora note)
@@ -457,6 +457,21 @@ negative numbers) to load par wo saaf ho jate hain — plugin crash nahi karta,
 sirf valid toggle numbers rehte hain.
 
 ---
+
+
+## 6.4 v1.4.6 me kya theek hua (plan behaviour)
+
+- **Range wali custom list** — ab `3-5`, `3–5` ya `3 to 5` likho to beech ka toggle
+  (4) bhi plan me aata hai. Pehle sirf 3 aur 5 lagte the.
+- **Damaged plan ab "every toggle" par girta hai** — agar saved mode kisi wajah se
+  kharab ho jaye (purani key, aadha likha data), plan pehle chup-chaap *odd toggles*
+  ban jata tha aur aadha note skip hota tha. Ab wo **every toggle** par jaata hai,
+  yaani kuch bhi chhutta nahi.
+- **Reverse ↑ run ka pehla stop** — agar aap note ke bilkul top par ho aur reverse
+  chalu karo, run ab sabse ooncha stop pakadta hai (pehle neeche wala stop target ban
+  jata tha aur hold/pause skip ho jata tha).
+
+Details: `issue.md` (issue register) aur `Test-Verify.md` (verification report).
 
 ## 7. Debug overlay kaise padhein
 
@@ -606,7 +621,7 @@ Lambe questions ke titles me `⏱60` laga do.
 ## 13. Dev / release notes
 
 - Build: `bun install && bun run build` → `main.js`
-- Tests: `bun test` (197 tests) · Typecheck: `bun run typecheck`
+- Tests: `bun test` (503 tests) · Typecheck: `bun run typecheck`
 - Real-vault checklist: `SMOKE-TEST.md` (18 steps)
 - Release me `manifest.json`, `main.js`, `styles.css` attach hone chahiye —
   `Package Obsidian plugin release` GitHub Action tag push / manual dispatch par ye karta hai
