@@ -375,3 +375,40 @@ export function frameFactor(deltaMs: number): number {
 export function shouldPark(previousKey: string | null, crossed: { key: string } | undefined): boolean {
   return !!crossed && previousKey !== crossed.key;
 }
+
+/**
+ * v1.4.7 — **every** target crossed by one frame, in travel order.
+ *
+ * `crossedTarget()` returns a single stop, so a fast frame that flew past three
+ * toggles parked on one and silently dropped the other two. Callers park on the
+ * first and keep the rest pending, so no stop is skipped.
+ */
+export function crossedTargets(
+  targets: DwellTarget[],
+  prevPos: number,
+  pos: number,
+  dir: number
+): DwellTarget[] {
+  const lo = Math.min(prevPos, pos);
+  const hi = Math.max(prevPos, pos);
+  const hits = targets.filter((t) => t.top > lo + 0.001 && t.top <= hi + 0.001);
+  hits.sort((a, b) => a.top - b.top);
+  return dir < 0 ? hits.reverse() : hits;
+}
+
+/** v1.4.7 — crossed stops that still owe a visit. */
+export function pendingAfterPark(
+  crossed: DwellTarget[],
+  visited: ReadonlySet<string>
+): DwellTarget[] {
+  return crossed.filter((t) => !visited.has(t.key));
+}
+
+/**
+ * v1.4.7 — signature of the measured layout. Opening a toggle moves every box
+ * below it while the *count* stays the same, so a cache keyed on the count
+ * alone kept serving stale tops and walked straight past the moved stops.
+ */
+export function layoutSignature(boxes: { top: number; height: number }[]): string {
+  return boxes.map((b) => `${Math.round(b.top)}:${Math.round(b.height)}`).join(",");
+}

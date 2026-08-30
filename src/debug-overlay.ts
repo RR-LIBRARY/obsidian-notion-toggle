@@ -125,3 +125,25 @@ export class ScrollDebugOverlay {
     this.body = null;
   }
 }
+
+/**
+ * v1.4.7 — the colour-filter read-out (moved out of main.ts): what was found,
+ * what survived the filter, and which raw type the target graded from.
+ */
+export function filterFrame(input: {
+  filterLabel: string;
+  found: number;
+  kept: number;
+  colors: Record<string, number>;
+  targetColor: string | null;
+  targetType: string | null;
+}): Partial<DebugFrame> {
+  return {
+    filter: input.filterLabel,
+    stopsFound: input.found,
+    stopsKept: input.kept,
+    colors: input.colors,
+    targetColor: input.targetColor,
+    targetType: input.targetType,
+  } as Partial<DebugFrame>;
+}

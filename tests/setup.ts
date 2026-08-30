@@ -13,7 +13,9 @@ class Stub {
 
 mock.module("obsidian", () => ({
   App: Stub,
+  Component: Stub,
   Editor: Stub,
+  MarkdownRenderer: { render: async () => undefined, renderMarkdown: async () => undefined },
   MarkdownView: Stub,
   Modal: Stub,
   Notice: Stub,

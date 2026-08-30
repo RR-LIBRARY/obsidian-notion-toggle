@@ -626,3 +626,55 @@ Lambe questions ke titles me `⏱60` laga do.
 - Release me `manifest.json`, `main.js`, `styles.css` attach hone chahiye —
   `Package Obsidian plugin release` GitHub Action tag push / manual dispatch par ye karta hai
   aur `1.1.4` + `v1.1.4` dono tag styles handle karta hai.
+
+
+## 6.5 v1.4.7 — screen anchoring, no skipped toggles, performance report
+
+**Toggle ab screen ke beech me khulta hai (portrait *aur* landscape).**
+Pehle stop hamesha viewport ke upper-third par park hota tha, isliye landscape
+me toggle upar chipak jaata tha aur answer neeche kat jaata tha. Ab har stop ek
+*anchor fraction* par park hota hai:
+
+| Setting (Settings → Stop position on screen) | Toggle kahan rukega |
+|---|---|
+| Top edge | screen ke bilkul upar |
+| Upper third | purana v1.4.6 behaviour |
+| **Middle (default)** | toggle apne centre se screen ke beech me |
+| Lower third | thoda neeche, taaki upar ka context dikhe |
+
+Logic dono orientation me *same* hai — sirf `clientHeight` badalta hai, isliye
+phone ghumane par bhi toggle usi screen fraction par rehta hai. Jo toggle screen
+se lamba hai uska **top** anchor hota hai (warna sawaal hi upar nikal jaata).
+Rotate karte hi layout dobara measure hota hai aur current stop re-anchor ho
+jaata hai.
+
+**Toggle skip hona band.**  Teen alag skip sources ab ek hi queue se handle hote
+hain:
+
+1. **Ek frame me kai stops** — phone ka lamba frame ya high speed, ya background
+   se wapas aana. `crossedTargets()` us frame ke *saare* crossed stops deta hai,
+   sirf pehla nahi.
+2. **Layout shift** — upar wala toggle khulte/band hote hi neeche ke sab boxes
+   hil jaate hain. Cache ab `layoutSignature()` (positions) par keyed hai, count
+   par nahi, isliye stale tops kabhi serve nahi hote; playhead ke *peeche* chala
+   gaya unvisited stop "missed" maan kar wapas visit hota hai.
+3. **Same dwell key** — pehle ek hi key thi; ab per-stop `visited` set hai
+   (`page:slice`), isliye ek page ke do slices alag-alag count hote hain.
+
+Har recovered stop report me **Skipped stops** ke roop me ginaa jaata hai — 0
+ka matlab kuch bhi miss nahi hua.
+
+**Deep-quiz performance report.**  Command palette → *"Notion Toggle: Quiz
+performance report"* ek modal kholta hai jisme:
+
+- **Timer accuracy** — har question/reveal phase ka promised vs wall-clock time,
+  mean / p95 drift, total drift aur worst question. Deliberate pause drift me
+  count nahi hota.
+- **Freezes** — 250ms cadence se 3x se zyada late aaya tick freeze hai; count,
+  longest, total aur last 5 events.
+- **Render + filter timings** — colour filter, badge render, scroll re-measure
+  aur quiz self-heal ke count / avg / p95 / max.
+- **Timer paint cadence** — paints, jitter, dropped frames, stability score.
+- **Autoscroll** — skipped (recovered) stops.
+
+Modal me **Copy report** aur **Save to note** buttons hain.

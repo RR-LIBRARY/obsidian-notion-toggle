@@ -8,6 +8,7 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type NotionTogglePlugin from "../main";
 import type { ToggleFormat } from "./editor-blocks";
+import type { StopAnchor } from "./autoscroll";
 import { CALLOUT_TYPES, TOGGLE_COLORS } from "./toggle-colors";
 import {
   SPEED_MAX,
@@ -530,6 +531,22 @@ export class NotionToggleSettingTab extends PluginSettingTab {
           this.plugin.settings.scrollChunkTall = v;
           await this.plugin.saveSettings();
         })
+      );
+
+    new Setting(containerEl)
+      .setName("Stop position on screen")
+      .setDesc(
+        "Where an auto-scroll stop parks. Middle keeps the toggle (and its answer) in the centre in portrait and landscape alike."
+      )
+      .addDropdown((dd) =>
+        dd
+          .addOptions({ top: "Top edge", third: "Upper third", middle: "Middle (recommended)", lower: "Lower third" })
+          .setValue(this.plugin.settings.scrollStopAnchor ?? "middle")
+          .onChange(async (v) => {
+            this.plugin.settings.scrollStopAnchor = v as StopAnchor;
+            this.plugin.reanchorAfterResize();
+            await this.plugin.saveSettings();
+          })
       );
 
     new Setting(containerEl)

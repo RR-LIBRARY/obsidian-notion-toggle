@@ -100,3 +100,28 @@ Logic layer ki quality iss plugin ki asli taakat hai — pure modules, honest te
 teen real bugs ek hi audit pass me mile aur fix hue. Sabse bada structural risk
 `main.ts` ka size hai, aur sabse bada process risk ye hai ki real-Obsidian verification
 abhi bhi manual hai. Dono ka rasta upar likha hua hai; koi bhi blocker nahi hai.
+
+
+## v1.4.7 update
+
+**Naya strength — timing ab measurable hai.** Pehle "quiz smooth chal raha hai"
+sirf feel thi. Ab `TimerAccuracy` promised vs wall-clock time compare karta hai
+aur `FreezeDetector` 250ms cadence se 3x late tick ko freeze maanta hai, isliye
+throttling honestly report hoti hai — chhupti nahi.
+
+**Naya strength — anchoring pure hai.** "Toggle screen ke beech me khule" wala
+rule `anchorOffset()` me ek pure function hai, isliye portrait/landscape ka
+proof ek unit test hai (same screen fraction at 900px and 400px viewport), device
+farm nahi.
+
+**Weakness jo abhi bhi hai.** `main.ts` 3150 lines par hai — guard 3200 hai, yaani
+headroom sirf ~50 lines. Agla feature aane se pehle ek aur extraction karni
+hogi (candidate: scroll frame loop apne module me).
+
+**Weakness — vendored reader engine.** `src/reader/dwellEngine.ts` verbatim hai;
+`crossedTarget()` (singular) abhi bhi wahan hai, plugin side par
+`crossedTargets()` use hota hai. Do parallel implementations rehna risk hai —
+upstream sync ke waqt dhyaan chahiye.
+
+**Weakness — freeze threshold fixed hai.** 3x cadence ek heuristic hai; bahut
+purane phone par false positives aa sakte hain. Setting nahi hai (abhi).

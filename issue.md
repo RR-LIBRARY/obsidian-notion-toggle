@@ -86,3 +86,46 @@ Severity: **High** = galat content reader ko dikha / feature chup-chaap fail,
 
 Har fixed issue ke saath ek named test hai. Suite: `bun test` → **503 pass / 0 fail**,
 1633 assertions, 32 files. Details `Test-Verify.md` me.
+
+
+## Fixed in 1.4.7
+
+### #4 — Toggles were skipped instead of opened (portrait recording)
+**Severity:** High · **Status:** Fixed
+The autoscroll crossed several stops inside one frame but `crossedTarget()`
+returned only the first, and the dwell guard was one shared key. Fixed with
+`crossedTargets()` (all hits, direction ordered), `pendingAfterPark()` and a
+per-stop `visited` set (`page:slice`). Recovered stops are counted and shown in
+the performance report.
+
+### #5 — Stale stop cache after a toggle opened
+**Severity:** High · **Status:** Fixed
+The anchored-target cache was keyed on the *number* of measured boxes. Opening a
+toggle moves every box below it without changing the count, so the loop kept
+using old offsets. Key now includes `layoutSignature()` (rounded top:height of
+every box), the viewport height and the chosen anchor.
+
+### #6 — Landscape parked the toggle at the very top
+**Severity:** Medium · **Status:** Fixed
+`targetOffset()` used a fixed upper-third of the viewport and ignored the stop's
+height, so on a short landscape viewport the question clung to the top edge and
+its answer was off-screen. `anchorOffset()` centres a fitting toggle on the
+chosen anchor line, keeps an oversized toggle's top visible, and clamps to the
+scroll range. Configurable in Settings → *Stop position on screen*.
+
+### #7 — Rotation kept the pre-rotation offsets
+**Severity:** Medium · **Status:** Fixed
+Nothing re-measured on `resize` / `orientationchange`. The plugin now
+invalidates the layout cache and re-anchors the current stop.
+
+### #8 — No user-visible performance evidence for a quiz run
+**Severity:** Low · **Status:** Fixed
+Telemetry existed but was developer-only. `TimerAccuracy`, `FreezeDetector` and
+`formatQuizReport()` now produce a reader-facing report (timer accuracy, freeze
+detection, filter/render timings, skipped stops), shown by
+*"Quiz performance report"* with Copy / Save-to-note.
+
+### #9 — Test stub missing `MarkdownRenderer`
+**Severity:** Low (tests only) · **Status:** Fixed
+`tests/setup.ts` mocked `obsidian` without `MarkdownRenderer` / `Component`, so
+importing the new modal broke module loading in an unrelated test file.

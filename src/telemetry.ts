@@ -10,6 +10,10 @@
  * Both are now measured with fixed-size ring buffers: bounded memory, no
  * allocation per sample, and O(n log n) only when a report is asked for.
  */
+import { FreezeDetector, TimerAccuracy, type QuizPerfReport } from "./quiz-perf";
+
+export { FreezeDetector, TimerAccuracy, formatQuizReport, perfVerdict } from "./quiz-perf";
+export type { FreezeReport, QuestionTiming, QuizPerfReport, TimerAccuracyReport } from "./quiz-perf";
 
 /** Rolling numeric samples with percentile stats. Fixed capacity. */
 export class Samples {
@@ -169,22 +173,35 @@ export class Latency {
   }
 }
 
-export interface TelemetryReport {
-  quizRender: StabilityReport;
-  remeasure: LatencyReport;
-  quizHeal: LatencyReport;
-}
+export type TelemetryReport = QuizPerfReport;
 
 /** The plugin-wide collector. Cheap enough to leave on permanently. */
 export class Telemetry {
   readonly quizRender = new RenderStability(250);
   readonly remeasure = new Latency();
   readonly quizHeal = new Latency();
+  /** v1.4.7 — colour-filter evaluation while collecting stops. */
+  readonly filter = new Latency();
+  /** v1.4.7 — per-question badge painting. */
+  readonly badgeRender = new Latency();
+  readonly timer = new TimerAccuracy();
+  readonly freezes = new FreezeDetector(250);
+  /** v1.4.7 — stops crossed without parking (recovered on a later frame). */
+  skippedStops = 0;
+
+  noteSkipped(n = 1): void {
+    if (n > 0) this.skippedStops += n;
+  }
 
   reset(): void {
     this.quizRender.reset();
     this.remeasure.reset();
     this.quizHeal.reset();
+    this.filter.reset();
+    this.badgeRender.reset();
+    this.timer.reset();
+    this.freezes.reset();
+    this.skippedStops = 0;
   }
 
   report(): TelemetryReport {
@@ -192,6 +209,11 @@ export class Telemetry {
       quizRender: this.quizRender.report(),
       remeasure: this.remeasure.report(),
       quizHeal: this.quizHeal.report(),
+      filter: this.filter.report(),
+      badgeRender: this.badgeRender.report(),
+      timer: this.timer.report(),
+      freezes: this.freezes.report(),
+      skippedStops: this.skippedStops,
     };
   }
 }

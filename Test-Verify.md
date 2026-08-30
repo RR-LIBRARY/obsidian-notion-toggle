@@ -211,3 +211,65 @@ fixes live in the plugin-side adapter.
 
 Companion documents: `issue.md` (issue register) and `Strongwincode.md`
 (strengths / weaknesses review).
+
+
+## 9. v1.4.7 verification — anchoring, skip recovery, performance report
+
+**Version verified:** 1.4.7 · Date: 2026-08-30 · Baseline before this pass: 503 tests.
+
+### What was broken (from the user's screen recording)
+
+The 15s portrait recording showed the autoscroll gliding past toggles without
+opening them. Three independent causes were confirmed in code:
+
+1. Stops were parked with `targetOffset()` (fixed upper-third, height-blind), so
+   in landscape the toggle sat at the very top and its answer was off-screen.
+2. The target cache key used the *count* of measured boxes. Opening a toggle
+   moves every box below it without changing the count, so stale tops kept being
+   served and the loop walked straight past the moved stops.
+3. `crossedTarget()` returned only one target per frame and the dwell guard was a
+   single key, so a fast frame (or a phone that dropped frames) silently ate
+   every stop but one.
+
+### Fixes
+
+| Area | Fix | Where |
+|---|---|---|
+| Anchoring | `anchorOffset()` / `anchorScrollTop()` — height-aware anchor fraction, clamped to the scroll range | `src/autoscroll.ts`, `src/scroll-anchor.ts` |
+| Orientation | resize + orientationchange re-measure and re-anchor | `main.ts` |
+| Cache | `layoutSignature()` + `targetsKey()` keyed on positions | `src/scrollmode.ts`, `src/scroll-anchor.ts` |
+| Skips | `crossedTargets()` (all hits), `pendingAfterPark()`, `pickStops()` with a per-stop visited set | `src/scrollmode.ts`, `src/scroll-anchor.ts` |
+| Report | `TimerAccuracy`, `FreezeDetector`, `formatQuizReport()`, modal | `src/quiz-perf.ts`, `src/perf-report-modal.ts` |
+
+### New tests — `tests/anchor-skip-perf.test.ts` (24 tests)
+
+| Group | Tests | Result |
+|---|---|---|
+| Stop anchoring (defaults, centring, oversized toggle, clamping, portrait == landscape, legacy helper untouched) | 6 | Pass |
+| Layout invalidation (signature, cache key, ordered anchored targets) | 3 | Pass |
+| Skip prevention (multi-crossing, reverse order, visited filter, queueing, re-measure recovery, no false positives, per-slice guard) | 7 | Pass |
+| Timer accuracy (drift, pauses excluded, empty run + reset) | 3 | Pass |
+| Freeze detection (freeze, steady ticks, ignore + reset) | 3 | Pass |
+| Report contents (all sections, bad run names its problems) | 2 | Pass |
+
+The portrait/landscape test is the direct proof of the fix: the toggle's centre
+lands at the same screen fraction (0.5) with a 900px viewport and a 400px one.
+
+### Architecture guard
+
+`main.ts` was kept an orchestrator: HUD painting moved to `src/quiz-ui.ts`
+(`paintQuizHud`), the filter read-out to `src/debug-overlay.ts` (`filterFrame`),
+anchoring/skip maths to `src/scroll-anchor.ts`, and the metrics to
+`src/quiz-perf.ts`. `src/perf-report-modal.ts` is registered as a declared UI
+shell. All ten architecture tests pass.
+
+### Gates
+
+| Gate | Result |
+|---|---|
+| `bun test` | **527 pass / 0 fail**, 1696 assertions, 33 files |
+| `tsgo --noEmit` | Clean |
+| `bun run build` | OK — `main.js` 259.6 kb |
+
+A missing `MarkdownRenderer` / `Component` stub in `tests/setup.ts` surfaced as a
+module-load failure in an unrelated file; the stub was completed.

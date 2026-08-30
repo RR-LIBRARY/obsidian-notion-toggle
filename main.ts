@@ -65,7 +65,7 @@ import {
   type RecallColor,
   type ToggleStop,
 } from "./src/autoscroll";
-import { ScrollDebugOverlay, type DebugFrame } from "./src/debug-overlay";
+import { ScrollDebugOverlay, filterFrame, type DebugFrame } from "./src/debug-overlay";
 import { TRAFFIC_CYCLE, calloutTypeOfLine, nextTrafficColor, recolorHeaderLine } from "./src/recolor";
 import { orderExplainer, rowLabel, weakRows } from "./src/stats-panel";
 import { ScrollBar } from "./src/autoscroll-ui";
@@ -156,7 +156,7 @@ import {
   toggleTitleOf,
   toggleTypeOf,
 } from "./src/toggle-dom";
-import { QuizBar } from "./src/quiz-ui";
+import { QuizBar, paintQuizHud } from "./src/quiz-ui";
 import { QuizBoard } from "./src/quiz-badge";
 import {
   QUIZ_ACTIVE_CLASS,
@@ -168,7 +168,9 @@ import {
 } from "./src/quiz-visibility";
 import { healQuizEls, needsHeal, revealLanded } from "./src/quiz-heal";
 import { parseDeepLink } from "./src/deeplink";
-import { Telemetry, formatTelemetry } from "./src/telemetry";
+import { Telemetry, perfVerdict } from "./src/telemetry";
+import { anchorScrollTop, anchoredTargets, pickStops, targetsKey } from "./src/scroll-anchor";
+import { exportPerfReport, openPerfReport } from "./src/perf-report-modal";
 
 /** High-resolution clock when available, wall clock otherwise (mobile webviews). */
 function nowMs(): number {
@@ -199,7 +201,6 @@ import {
 } from "./src/modals";
 import { ScrollSheetModal } from "./src/sheet-modal";
 
-
 import {
   ANSWER_LINE,
   EMPTY_ANSWER_LINE,
@@ -228,10 +229,6 @@ import {
 } from "./src/editor-blocks";
 export * from "./src/editor-blocks";
 export { CALLOUT_TYPES, TOGGLE_COLORS, calloutForColor, QUIZ_FILTER_OPTIONS };
-
-
-
-
 
 interface NotionToggleSettings extends PomodoroSettings, AutoScrollSettings, QuizSettings {
   calloutType: string;
@@ -297,10 +294,7 @@ const DEFAULT_SETTINGS: NotionToggleSettings = {
   perfLog: false,
 };
 
-
 export { TRAFFIC_CYCLE };
-
-
 
 export default class NotionTogglePlugin extends Plugin {
   settings: NotionToggleSettings = DEFAULT_SETTINGS;
@@ -374,37 +368,9 @@ export default class NotionTogglePlugin extends Plugin {
   /** v1.3.3 — lightweight perf telemetry (quiz paint cadence, re-measure latency). */
   readonly perf = new Telemetry();
 
-  /**
-   * v1.4.0 — real-device profiling: copies the telemetry report to the
-   * clipboard (falls back to a Notice) and, when Settings → "Log performance
-   * to perf-log.md" is on, appends it to the note for later analysis.
-   */
-  async exportPerfReport(): Promise<void> {
-    const note = this.app.workspace.getActiveFile()?.basename ?? "no note";
-    const stamp = new Date().toISOString().replace("T", " ").slice(0, 19);
-    const body = formatTelemetry(this.perf.report());
-    const report = `# Performance report — ${note} · ${stamp} UTC\n\n${body}\n`;
-    try {
-      await navigator.clipboard.writeText(report);
-      new Notice("Performance report copied to clipboard.", 5000);
-    } catch {
-      new Notice(body, 12000);
-    }
-    if (!this.settings.perfLog) return;
-    try {
-      const path = "perf-log.md";
-      const entry = `\n## ${note} — ${stamp} UTC\n\n${body}\n`;
-      if (await this.app.vault.adapter.exists(path)) {
-        await this.app.vault.adapter.append(path, entry);
-      } else {
-        await this.app.vault.adapter.write(path, `# Autoscroll performance log\n${entry}`);
-      }
-      new Notice(`Performance report appended to ${path}.`, 4000);
-    } catch (err) {
-      console.error("[notion-toggle] perf log", err);
-      new Notice("Could not write perf-log.md (see console).", 6000);
-    }
-  }
+  /** v1.4.7 — stops already visited on this leg (skip guard, per stop). */
+  scrollVisited = new Set<string>();
+
   quizBar: QuizBar | null = null;
   /** v1.4.2 — one inline countdown badge per question of the run. */
   quizBoard: QuizBoard | null = null;
@@ -418,7 +384,6 @@ export default class NotionTogglePlugin extends Plugin {
   quizRetryPending = false;
   /** v1.3.0 — pre-quiz state of every toggle, restored on stop. */
   quizSnapshot: ToggleSnapshot[] = [];
-
 
   /**
    * v1.0.7: every command goes through here, so the toolbar list stays short.
@@ -494,7 +459,6 @@ export default class NotionTogglePlugin extends Plugin {
       editorCallback: (editor) => this.wrapSelectionAsToggle(editor),
     });
 
-
     // Command 3: Convert <details> blocks in the current file to foldable callouts
     this.addCommand({
       id: "convert-details-to-callouts",
@@ -552,7 +516,6 @@ export default class NotionTogglePlugin extends Plugin {
         }).open();
       },
     });
-
 
     // Command 6: New toggle below (one tap — great for the mobile toolbar)
     this.addCommand({
@@ -680,7 +643,6 @@ export default class NotionTogglePlugin extends Plugin {
       },
     });
 
-
     // Command 15: Match the following toggle
     this.addCommand({
       id: "insert-match-toggle",
@@ -769,7 +731,6 @@ export default class NotionTogglePlugin extends Plugin {
         this.updateStatus();
       },
     });
-
 
     this.addCommand({
       id: "recall-session-this-note",
@@ -941,8 +902,6 @@ export default class NotionTogglePlugin extends Plugin {
       callback: () => this.setAllAnswersOpen(false),
     });
 
-
-
     this.addCommand({
       id: "quiz-reveal-now",
       icon: "eye",
@@ -971,8 +930,6 @@ export default class NotionTogglePlugin extends Plugin {
       callback: () => new QuizFilterModal(this.app, this).open(),
     });
 
-
-
     this.addCommand({
       id: "quiz-seconds",
       icon: "timer-reset",
@@ -980,13 +937,19 @@ export default class NotionTogglePlugin extends Plugin {
       callback: () => new QuizSecondsModal(this.app, this).open(),
     });
 
-
     this.addCommand({
       id: "perf-report",
       icon: "activity",
       name: "Performance report (quiz timer + re-measure)",
       // v1.4.0 — copies to clipboard and optionally appends to perf-log.md.
-      callback: () => void this.exportPerfReport(),
+      callback: () => void exportPerfReport(this),
+    });
+
+    this.addCommand({
+      id: "quiz-perf-report",
+      icon: "gauge",
+      name: "Quiz: performance report (timers, freezes, render)",
+      callback: () => openPerfReport(this),
     });
 
     this.addCommand({
@@ -995,7 +958,6 @@ export default class NotionTogglePlugin extends Plugin {
       name: "Show notes due for recall",
       callback: () => this.showDueNotes(),
     });
-
 
     // 250 ms tick, registered so Obsidian clears it on unload.
     this.lastTick = Date.now();
@@ -1009,6 +971,10 @@ export default class NotionTogglePlugin extends Plugin {
     };
     for (const evt of ["keydown", "pointerdown", "touchstart", "wheel"] as const) {
       this.registerDomEvent(document, evt, bumpActivity, { passive: true });
+    }
+    // v1.4.7 — rotation changes the viewport height, so every anchored stop moves.
+    for (const evt of ["resize", "orientationchange"] as const) {
+      this.registerDomEvent(window, evt, () => this.reanchorAfterResize());
     }
     this.registerDomEvent(document, "visibilitychange", () => this.evaluateAttention());
     this.registerDomEvent(window, "blur", () => this.evaluateAttention());
@@ -1090,13 +1056,6 @@ export default class NotionTogglePlugin extends Plugin {
       else this.startAutoScroll();
     });
 
-
-
-
-
-
-
-
     // Enter / Backspace handling: continue, create or unwrap toggles
     this.registerEditorExtension(
       Prec.highest(
@@ -1119,10 +1078,8 @@ export default class NotionTogglePlugin extends Plugin {
       )
     );
 
-
     this.addSettingTab(new NotionToggleSettingTab(this.app, this));
   }
-
 
   /** Callout type actually used, honouring the colour setting. */
   activeCallout(): string {
@@ -1226,8 +1183,6 @@ export default class NotionTogglePlugin extends Plugin {
     });
   }
 
-
-
   /**
    * Enter inside a toggle:
    *  - callout body line with content  -> new "> " body line
@@ -1261,7 +1216,6 @@ export default class NotionTogglePlugin extends Plugin {
       return false;
     }
 
-
     // Auto-numbering: continue the sequence when the setting is on OR when the
     // toggles above are already numbered (so numbering never has to be typed).
     const linesAbove: string[] = [];
@@ -1279,7 +1233,6 @@ export default class NotionTogglePlugin extends Plugin {
       addAnswerLine: this.settings.addAnswerLine,
     });
     if (!plan) return false;
-
 
     view.dispatch({
       changes: { from: plan.from === "lineStart" ? line.from : sel.head, to: line.to, insert: plan.insert },
@@ -1319,7 +1272,6 @@ export default class NotionTogglePlugin extends Plugin {
     });
     return true;
   }
-
 
   private maybeBold(text: string): string {
     if (!this.settings.boldSummary) return text;
@@ -1374,7 +1326,6 @@ export default class NotionTogglePlugin extends Plugin {
         : "";
     editor.replaceSelection(`> [!${type}]${fold} ${title}${body}\n`);
   }
-
 
   /** Cycle the toggle at the cursor through red → yellow → green. */
   cycleColorAtCursor(editor: Editor) {
@@ -1510,7 +1461,6 @@ export default class NotionTogglePlugin extends Plugin {
   }
 
   /* ---------- v1.0.5: timer plumbing ---------- */
-
 
   toggleTimer() {
     if (this.timerWidget) {
@@ -1674,7 +1624,6 @@ export default class NotionTogglePlugin extends Plugin {
     }
   }
 
-
   private buzz() {
     try {
       (navigator as unknown as { vibrate?: (p: number[]) => void }).vibrate?.([80, 60, 80]);
@@ -1735,7 +1684,6 @@ export default class NotionTogglePlugin extends Plugin {
       scheduleLabel: this.scheduleLabel(),
     });
   }
-
 
   updateStatus() {
     const due = dueSummary(this.settings.srs ?? {}, Date.now());
@@ -1837,7 +1785,6 @@ export default class NotionTogglePlugin extends Plugin {
     return this.scrollRunning;
   }
 
-
   /* ==================== v1.0.9: auto-scroll + auto-toggle ==================== */
 
   /**
@@ -1892,7 +1839,6 @@ export default class NotionTogglePlugin extends Plugin {
     for (const el of candidates) if (visible(el ?? null)) return el as HTMLElement;
     return (candidates.find(Boolean) as HTMLElement | undefined) ?? null;
   }
-
 
   /**
    * v1.1.7 — does the active note's *source* contain toggles? Used when the
@@ -1970,9 +1916,6 @@ export default class NotionTogglePlugin extends Plugin {
     if (!this.quizState) return;
     this.applyQuizVisibility(this.quizState.at, this.quizState.phase === "reveal");
   }
-
-
-
 
   /**
    * v1.1.8 — freeze the loop while a finger is held anywhere on the note.
@@ -2052,7 +1995,6 @@ export default class NotionTogglePlugin extends Plugin {
       shuffleTo: this.settings.scrollShuffleTo ?? 0,
     };
   }
-
 
   /** FSRS cards for the active note. */
   scrollCards(path = this.scrollNotePath ?? this.app.workspace.getActiveFile()?.path ?? ""): FsrsCard[] {
@@ -2241,7 +2183,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollDir = this.settings.scrollReverse ? -1 : 1;
     this.scrollDwellDir = this.scrollDir;
     this.scrollDwellUntil = 0;
-    this.scrollDwellKey = null;
+    this.resetDwell();
     this.scrollRouteIdx = 0;
     this.scrollRouteStop = 0;
     this.scrollBoxes = [];
@@ -2306,7 +2248,7 @@ export default class NotionTogglePlugin extends Plugin {
     if (!container) return;
     container.scrollTop = this.settings.scrollReverse ? container.scrollHeight : 0;
     this.scrollPos = container.scrollTop;
-    this.scrollDwellKey = null;
+    this.resetDwell();
     this.scrollDwellUntil = 0;
     this.scrollRouteIdx = 0;
     this.scrollRouteStop = 0;
@@ -2324,7 +2266,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollOpenEl = null;
     this.restoreScrollSmoothing();
     this.scrollDwellUntil = 0;
-    this.scrollDwellKey = null;
+    this.resetDwell();
     this.scrollBoxes = [];
     this.scrollTargets = [];
     this.scrollTargetsKey = "";
@@ -2359,7 +2301,7 @@ export default class NotionTogglePlugin extends Plugin {
       }
       this.scrollDir = reverse ? -1 : 1;
       this.scrollDwellDir = this.scrollDir;
-      this.scrollDwellKey = null;
+      this.resetDwell();
       this.scrollDwellUntil = 0;
       this.scrollMovedPx = 0;
       this.scrollAt = firstStopFrom(this.scrollPlan, this.scrollPos, reverse);
@@ -2398,7 +2340,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollTargetsKey = "";
     this.scrollRouteIdx = 0;
     this.scrollRouteStop = 0;
-    this.scrollDwellKey = null;
+    this.resetDwell();
     this.scrollDwellUntil = 0;
     this.scrollDir = this.settings.scrollReverse ? -1 : 1;
     this.scrollDwellDir = this.scrollDir;
@@ -2467,19 +2409,15 @@ export default class NotionTogglePlugin extends Plugin {
   private filterTelemetry(container: HTMLElement): Partial<DebugFrame> {
     const filter = this.settings.scrollFilter;
     const all = this.collectStops(container, filter) as (ToggleStop & { el?: HTMLElement })[];
-    const found = collectToggleEls(container);
     const target = this.scrollPlan[this.scrollAt] as (ToggleStop & { el?: HTMLElement }) | undefined;
-    const rawType = target?.el ? toggleTypeOf(target.el) : null;
-    return {
-      filter: filterLabel(filter),
-      stopsFound: Math.max(found.length, all.length),
-      stopsKept: all.filter((s) => matchesFilter(s.color, filter)).length,
-      colors: colorCounts(
-        (this.collectStops(container) as ToggleStop[]).map((s) => s.color)
-      ),
+    return filterFrame({
+      filterLabel: filterLabel(filter),
+      found: Math.max(collectToggleEls(container).length, all.length),
+      kept: all.filter((s) => matchesFilter(s.color, filter)).length,
+      colors: colorCounts((this.collectStops(container) as ToggleStop[]).map((s) => s.color)),
       targetColor: target ? target.color : null,
-      targetType: rawType,
-    };
+      targetType: target?.el ? toggleTypeOf(target.el) : null,
+    });
   }
 
   private renderScrollBar() {
@@ -2512,6 +2450,7 @@ export default class NotionTogglePlugin extends Plugin {
 
   /** Measure the colour-filtered toggles as page boxes in content space. */
   private measureScrollBoxes(container: HTMLElement) {
+    const t0 = nowMs();
     const all = this.collectStops(container, this.settings.scrollFilter) as (ToggleStop & {
       el: HTMLElement;
       height: number;
@@ -2526,14 +2465,23 @@ export default class NotionTogglePlugin extends Plugin {
       })
       .sort((a, b) => a.top - b.top);
     this.scrollTargetsKey = "";
+    this.perf.filter.add(nowMs() - t0);
+  }
+
+  /** v1.4.7 — drop the cache so the next frame re-anchors for the new viewport. */
+  reanchorAfterResize(): void {
+    this.scrollTargetsKey = "";
+    this.scrollBoxesAt = 0;
   }
 
   /** Cached dwell targets — rebuilt only when the inputs change. */
   private currentTargets(container: HTMLElement, cfg: DwellSettings): DwellTarget[] {
-    const key = `${container.clientHeight}|${cfg.a4}|${cfg.parity}|${cfg.pages.join(",")}|${this.scrollBoxes.length}`;
+    // v1.4.7 — keyed on stop *positions* and the anchor, not just the count.
+    const anchor = this.settings.scrollStopAnchor;
+    const key = targetsKey(container, cfg, anchor, this.scrollBoxes);
     if (key !== this.scrollTargetsKey) {
       this.scrollTargetsKey = key;
-      this.scrollTargets = dwellTargets(this.scrollBoxes, cfg, container.clientHeight);
+      this.scrollTargets = anchoredTargets(this.scrollBoxes, cfg, container, anchor);
       this.scrollPlan = this.scrollTargets.map((t) => ({
         index: t.page - 1,
         top: t.top,
@@ -2541,6 +2489,17 @@ export default class NotionTogglePlugin extends Plugin {
       })) as ToggleStop[];
     }
     return this.scrollTargets;
+  }
+
+  /** v1.4.7 — a fresh leg: no stop is "already used" any more. */
+  private resetDwell() {
+    this.resetDwell();
+  }
+
+  /** Repaint the debug overlay (when on) and queue the next frame. */
+  private endScrollFrame(ts: number) {
+    if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
+    this.scheduleScrollFrame();
   }
 
   /** Open the toggle we just parked on and start its visit clock. */
@@ -2551,6 +2510,7 @@ export default class NotionTogglePlugin extends Plugin {
     }
     if (el && this.settings.scrollAutoOpen) this.setToggleOpen(el, true);
     this.scrollOpenEl = el ?? null;
+    this.scrollBoxesAt = 0; // v1.4.7 — the layout just changed: re-measure next frame.
     this.noteScrollVisit(ordinal, now);
   }
 
@@ -2669,9 +2629,11 @@ export default class NotionTogglePlugin extends Plugin {
         const wanted = cfg.route[this.scrollRouteIdx % cfg.route.length];
         const hit = this.scrollBoxes.find((b) => b.page === wanted);
         if (hit) {
-          routeStops = cfg.a4
-            ? pageStops(hit.top, hit.height, container.clientHeight)
-            : [hit.top];
+          const anchor = this.settings.scrollStopAnchor;
+          routeStops = (cfg.a4 ? pageStops(hit.top, hit.height, container.clientHeight) : [hit.top]).map(
+            (top, i) =>
+              anchorScrollTop(container, top, cfg.a4 && i > 0 ? container.clientHeight : hit.height, anchor)
+          );
           routeTarget = routeStops[Math.min(this.scrollRouteStop, routeStops.length - 1)];
           this.scrollDir = legDirection(routeTarget, this.scrollPos, this.scrollDir as 1 | -1);
         }
@@ -2696,8 +2658,7 @@ export default class NotionTogglePlugin extends Plugin {
           // More screenfuls left on this toggle → stay on this waypoint.
           if (this.scrollRouteStop < routeStops.length - 1) {
             this.scrollRouteStop += 1;
-            if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
-      this.scheduleScrollFrame();
+            this.endScrollFrame(ts);
             return;
           }
           this.scrollRouteStop = 0;
@@ -2710,14 +2671,12 @@ export default class NotionTogglePlugin extends Plugin {
             );
             this.scrollRunning = false;
             this.renderScrollBar();
-            if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
-      this.scheduleScrollFrame();
+            this.endScrollFrame(ts);
             return;
           }
           this.scrollRouteIdx = last ? 0 : this.scrollRouteIdx + 1;
           this.renderScrollBar();
-          if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
-      this.scheduleScrollFrame();
+          this.endScrollFrame(ts);
           return;
         }
       } else {
@@ -2725,13 +2684,18 @@ export default class NotionTogglePlugin extends Plugin {
         // so the "already used" guard is scoped to the current direction.
         if (this.scrollDwellDir !== this.scrollDir) {
           this.scrollDwellDir = this.scrollDir;
-          this.scrollDwellKey = null;
+          this.resetDwell();
         }
         const targets = this.currentTargets(container, cfg);
-        const crossed = crossedTarget(targets, prevPos, this.scrollPos, this.scrollDir);
+        // v1.4.7 — every stop crossed by this frame, plus any stop a re-measure
+        // pushed behind the playhead: nothing is skipped, only deferred.
+        const pick = pickStops(targets, prevPos, this.scrollPos, this.scrollDir, this.scrollVisited);
+        if (pick.missed.length) this.perf.noteSkipped(pick.missed.length);
+        const crossed = pick.stop;
         if (shouldPark(this.scrollDwellKey, crossed)) {
           const stop = crossed as DwellTarget;
           this.scrollDwellKey = stop.key;
+          this.scrollVisited.add(stop.key);
           this.scrollDwellUntil = ts + cfg.seconds * 1000;
           this.scrollPos = stop.top;
           container.scrollTop = Math.floor(stop.top);
@@ -2739,8 +2703,7 @@ export default class NotionTogglePlugin extends Plugin {
           this.scrollLastEvent = `crossedTarget ${stop.key} @ ${Math.round(stop.top)}`;
           this.parkOnToggle(stop.page, ts);
           this.renderScrollBar();
-          if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
-      this.scheduleScrollFrame();
+          this.endScrollFrame(ts);
           return;
         }
       }
@@ -2764,7 +2727,7 @@ export default class NotionTogglePlugin extends Plugin {
         if (this.settings.scrollLoop) {
           this.scrollPos = this.scrollDir < 0 ? max : 0;
           container.scrollTop = Math.floor(this.scrollPos);
-          this.scrollDwellKey = null;
+          this.resetDwell();
           this.scrollMovedPx = 0;
         } else {
           this.say("Autoscroll finished — every selected toggle revised.");
@@ -2789,7 +2752,6 @@ export default class NotionTogglePlugin extends Plugin {
       }
     }
 
-
     if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
     this.scheduleScrollFrame();
   }
@@ -2800,7 +2762,6 @@ export default class NotionTogglePlugin extends Plugin {
   private quizTitleOf(el: HTMLElement): string {
     return toggleTitleOf(el);
   }
-
 
   /** v1.3.0 — colours the quiz asks about. */
   quizFilterColors(): RecallColor[] {
@@ -2884,6 +2845,9 @@ export default class NotionTogglePlugin extends Plugin {
       });
     }
     this.scrollQuizTo(0);
+    this.perf.reset(); // v1.4.7 — one report per run.
+    const first = this.quizTitles[0] ?? "";
+    this.perf.timer.start(1, first, "question", questionMs(first, this.settings), Date.now());
     if (!this.settings.scrollQuiet) new Notice(quizStartLabel(stops.length, this.settings));
     this.renderQuizHud();
     this.startQuizLoop();
@@ -2923,6 +2887,9 @@ export default class NotionTogglePlugin extends Plugin {
     this.quizState = this.quizState.running
       ? pauseQuiz(this.quizState)
       : resumeQuiz(this.quizState);
+    // v1.4.7 — a deliberate pause is never drift and never a freeze.
+    if (this.quizState.running) this.perf.timer.addPause(Date.now() - this.quizLastFrame);
+    this.perf.freezes.ignoreNext();
     this.quizLastFrame = Date.now();
     this.renderQuizHud();
     if (!this.settings.scrollQuiet) {
@@ -2975,6 +2942,7 @@ export default class NotionTogglePlugin extends Plugin {
   /** React to an engine event: open the answer, move on, or finish. */
   private applyQuizEvent(event: "reveal" | "next" | "done" | null) {
     if (!this.quizState) return;
+    if (event) this.markQuizPhase(event);
     if (event === "reveal") {
       this.ensureQuizEls();
       this.applyQuizVisibility(this.quizState.at, true);
@@ -2992,7 +2960,7 @@ export default class NotionTogglePlugin extends Plugin {
     } else if (event === "done") {
       const summary = quizSummary(this.quizState);
       this.stopQuiz(false);
-      new Notice(summary);
+      new Notice(`${summary}\n${perfVerdict(this.perf.report())}`, 9000);
       return;
     }
     this.renderQuizHud();
@@ -3012,7 +2980,6 @@ export default class NotionTogglePlugin extends Plugin {
       this.settings.quizCloseAfterReveal
     );
   }
-
 
   /** Close every other toggle and bring question `index` into view. */
   private scrollQuizTo(index: number) {
@@ -3034,13 +3001,16 @@ export default class NotionTogglePlugin extends Plugin {
             container.getBoundingClientRect().top +
             container.scrollTop
           : stop.top;
-      container.scrollTo({ top: targetOffset(top, container.clientHeight), behavior: "smooth" });
+      const h = live && live.isConnected ? live.getBoundingClientRect().height : 0;
+      container.scrollTo({
+        top: anchorScrollTop(container, top, h, this.settings.scrollStopAnchor),
+        behavior: "smooth",
+      });
       this.renderQuizHud();
     };
     if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(scroll);
     else scroll();
   }
-
 
   private startQuizLoop() {
     if (this.quizInterval !== null) window.clearInterval(this.quizInterval);
@@ -3058,6 +3028,7 @@ export default class NotionTogglePlugin extends Plugin {
     }
     const now = Date.now();
     const dt = Math.min(2000, now - this.quizLastFrame);
+    if (this.quizState.running) this.perf.freezes.tick(now - this.quizLastFrame, this.quizState.phase, now);
     this.quizLastFrame = now;
     const { state, event } = quizTick(this.quizState, dt, this.quizTitles, this.settings);
     this.quizState = state;
@@ -3065,38 +3036,40 @@ export default class NotionTogglePlugin extends Plugin {
     else this.renderQuizHud();
   }
 
+  /** v1.4.7 — close the phase that just ended, open the next one for the report. */
+  private markQuizPhase(event: "reveal" | "next" | "done") {
+    const st = this.quizState;
+    if (!st) return;
+    this.perf.timer.finish(Date.now());
+    if (event === "done") return;
+    const title = this.quizTitles[st.at] ?? "";
+    const reveal = event === "reveal";
+    const ms = reveal ? clampRevealSeconds(this.settings.quizRevealSeconds) * 1000 : questionMs(title, this.settings);
+    this.perf.timer.start(st.at + 1, title, reveal ? "reveal" : "question", ms, Date.now());
+  }
+
   /** Paint the inline ring (and the optional dock) from the engine state. */
   private renderQuizHud() {
     const st = this.quizState;
     if (!st) return;
-    this.perf.quizRender.mark(nowMs());
+    const paintAt = nowMs();
+    this.perf.quizRender.mark(paintAt);
     this.ensureQuizEls();
-    // v1.4.2 — every question carries its own badge: pending questions show
-    // the time they will get, the active one counts down (question phase =
-    // its own ⏱ / setting, reveal phase = the answer time).
-    this.quizBoard?.render(
-      this.quizStops.map((s, i) => ({
-        el: s.el,
-        totalMs: questionMs(this.quizTitles[i] ?? "", this.settings),
-      })),
-      st.at,
-      {
-        remaining: st.remaining,
-        ratio: quizPhaseRatio(st, this.quizTitles, this.settings),
-        phase: st.phase,
-        running: st.running,
-        index: st.at + 1,
-        total: st.total,
-      }
-    );
-    this.quizBar?.render({
-      progress: quizProgressLabel(st),
+    paintQuizHud({
+      board: this.quizBoard,
+      bar: this.quizBar,
+      els: this.quizStops.map((s) => s.el),
+      totals: this.quizTitles.map((t) => questionMs(t, this.settings)),
+      at: st.at,
+      remaining: st.remaining,
+      ratio: quizPhaseRatio(st, this.quizTitles, this.settings),
+      phase: st.phase,
       running: st.running,
-      revealing: st.phase === "reveal",
+      total: st.total,
+      progress: quizProgressLabel(st),
     });
+    this.perf.badgeRender.add(nowMs() - paintAt);
   }
-
-
 
   /**
    * Remove schedule entries whose note no longer exists.
@@ -3137,20 +3110,12 @@ export default class NotionTogglePlugin extends Plugin {
     this.settings.scrollShuffleTo = Math.max(0, Math.floor(Number(this.settings.scrollShuffleTo) || 0));
   }
 
-
-
   async saveSettings() {
     await this.saveData(this.settings);
   }
 }
 
-
-
-
 /* ---------- Settings Tab ---------- */
-
-
-
 
 /** Simple picker listing notes whose recall is due (v1.0.7). */
 class DueNotesModal extends Modal {

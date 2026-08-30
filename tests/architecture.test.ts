@@ -59,6 +59,7 @@ const OBSIDIAN_SHELLS = new Set([
   "src/sheet-modal.ts",
 
   "src/settings-tab.ts",
+  "src/perf-report-modal.ts",
   "src/guide.ts",
   "src/stats-panel.ts",
 ]);

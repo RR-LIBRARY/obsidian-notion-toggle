@@ -61,6 +61,8 @@ export interface AutoScrollSettings {
   scrollMemory: Record<string, FsrsCard[]>;
   /** v1.1.2 — per-note memory of speed / direction / hold, like the reader's per-doc keys. */
   scrollPerNote: Record<string, { speed: number; reverse: boolean; hold: number }>;
+  /** v1.4.7 — where a stop lands on screen (portrait and landscape alike). */
+  scrollStopAnchor: StopAnchor;
 }
 
 export const DEFAULT_AUTOSCROLL: AutoScrollSettings = {
@@ -87,6 +89,7 @@ export const DEFAULT_AUTOSCROLL: AutoScrollSettings = {
   scrollAutoGrade: true,
   scrollMemory: {},
   scrollPerNote: {},
+  scrollStopAnchor: "middle",
 };
 
 export const SPEED_MIN = 1;
@@ -168,12 +171,54 @@ export function frameDelta(speed: number, dtMs: number, reverse: boolean): numbe
   return reverse ? -px : px;
 }
 
+/** v1.4.7 — where a stop sits on screen. 0 = top edge, 0.5 = middle. */
+export type StopAnchor = "top" | "third" | "middle" | "lower";
+
+export const STOP_ANCHORS: Record<StopAnchor, number> = {
+  top: 0.02,
+  third: 0.3,
+  middle: 0.5,
+  lower: 0.66,
+};
+
+export const DEFAULT_STOP_ANCHOR: StopAnchor = "middle";
+
+export function anchorFraction(anchor: unknown): number {
+  const key = String(anchor ?? "") as StopAnchor;
+  return STOP_ANCHORS[key] ?? STOP_ANCHORS[DEFAULT_STOP_ANCHOR];
+}
+
 /**
- * Where the container should scroll so a stop sits comfortably in view
- * (slightly above the middle, like a teleprompter line).
+ * v1.4.7 — scroll offset that puts a stop at the reader's chosen place on the
+ * screen, identically in portrait and landscape (the only input that differs
+ * is `viewportHeight`).
+ *
+ * A toggle that fits on screen is centred by its own middle, so a question
+ * lands in the middle of the phone with room for its answer instead of
+ * clinging to the top edge. A toggle taller than the viewport keeps its top
+ * line anchored — centring it would push the question itself off-screen. The
+ * result is clamped to the scrollable range, so the first and last stops rest
+ * against their edge.
  */
+export function anchorOffset(
+  stopTop: number,
+  stopHeight: number,
+  viewportHeight: number,
+  anchor: StopAnchor | number = DEFAULT_STOP_ANCHOR,
+  max = Number.POSITIVE_INFINITY
+): number {
+  const vh = Math.max(0, viewportHeight);
+  const frac = typeof anchor === "number" ? Math.min(1, Math.max(0, anchor)) : anchorFraction(anchor);
+  const h = Math.max(0, Number.isFinite(stopHeight) ? stopHeight : 0);
+  const fits = h > 0 && h <= vh;
+  const desiredScreenTop = fits ? Math.max(0, vh * frac - h / 2) : 0;
+  const ceiling = Number.isFinite(max) ? Math.max(0, max) : Number.POSITIVE_INFINITY;
+  return Math.round(Math.min(ceiling, Math.max(0, stopTop - desiredScreenTop)));
+}
+
+/** Legacy helper (upper-third anchor, no height information). */
 export function targetOffset(stopTop: number, viewportHeight: number): number {
-  return Math.max(0, Math.round(stopTop - viewportHeight * 0.3));
+  return Math.max(0, Math.round(stopTop - viewportHeight * STOP_ANCHORS.third));
 }
 
 /** Have we reached the target this frame (direction aware)? */

@@ -132,3 +132,47 @@ export class QuizBar {
   }
 }
 
+
+/* ---------- v1.4.7 — HUD painting (kept out of main.ts) ---------- */
+
+export interface QuizHudBoard {
+  render(
+    items: { el?: HTMLElement; totalMs: number }[],
+    at: number,
+    live: { remaining: number; ratio: number; phase: string; running: boolean; index: number; total: number }
+  ): void;
+}
+
+export interface QuizHudInput {
+  board: QuizHudBoard | null;
+  bar: { render(data: QuizBarData): void } | null;
+  els: (HTMLElement | undefined)[];
+  totals: number[];
+  at: number;
+  remaining: number;
+  ratio: number;
+  phase: string;
+  running: boolean;
+  total: number;
+  progress: string;
+}
+
+/**
+ * Paint the inline countdown badges and the optional dock. Pending questions
+ * show the time they will get, the active one counts down.
+ */
+export function paintQuizHud(input: QuizHudInput): void {
+  input.board?.render(
+    input.els.map((el, i) => ({ el, totalMs: input.totals[i] ?? 0 })),
+    input.at,
+    {
+      remaining: input.remaining,
+      ratio: input.ratio,
+      phase: input.phase,
+      running: input.running,
+      index: input.at + 1,
+      total: input.total,
+    }
+  );
+  input.bar?.render({ progress: input.progress, running: input.running, revealing: input.phase === "reveal" });
+}
