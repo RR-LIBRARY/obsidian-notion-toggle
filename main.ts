@@ -49,6 +49,7 @@ import {
   atEnd,
   clampHold,
   clampSpeed,
+  DEFAULT_STOP_ANCHOR,
   colorCounts,
   colorOf,
   filterLabel,
@@ -65,7 +66,12 @@ import {
   type RecallColor,
   type ToggleStop,
 } from "./src/autoscroll";
-import { ScrollDebugOverlay, filterFrame, type DebugFrame } from "./src/debug-overlay";
+import {
+  ScrollDebugOverlay,
+  filterFrame,
+  stopFrame,
+  type DebugFrame,
+} from "./src/debug-overlay";
 import { TRAFFIC_CYCLE, calloutTypeOfLine, nextTrafficColor, recolorHeaderLine } from "./src/recolor";
 import { orderExplainer, rowLabel, weakRows } from "./src/stats-panel";
 import { ScrollBar } from "./src/autoscroll-ui";
@@ -101,6 +107,7 @@ import {
   dwellTargets,
   frameFactor,
   isRouteMode,
+  layoutSignature,
   legDirection,
   seedStartOffset,
   finishedAtEdge,
@@ -370,6 +377,9 @@ export default class NotionTogglePlugin extends Plugin {
 
   /** v1.4.7 — stops already visited on this leg (skip guard, per stop). */
   scrollVisited = new Set<string>();
+  /** v1.4.9 — stops recovered after a layout shift, for the debug overlay. */
+  scrollSkipCount = 0;
+  scrollLastSkips: string[] = [];
 
   quizBar: QuizBar | null = null;
   /** v1.4.2 — one inline countdown badge per question of the run. */
@@ -2396,7 +2406,32 @@ export default class NotionTogglePlugin extends Plugin {
       lastGrade: this.scrollLastGrade,
       progress: `progress ${this.scrollProgressLabel()}`,
       ...this.filterTelemetry(container),
+      ...this.stopTelemetry(container),
       ...frame,
+    });
+  }
+
+  /**
+   * v1.4.9 — stop / anchor / skip read-out: which stop the loop is on, the
+   * anchored offset it parks at, the orientation the anchor maths ran against,
+   * and how many stops a layout shift left behind (recovered). Reverse legs use
+   * the same numbers; only the direction line differs.
+   */
+  private stopTelemetry(container: HTMLElement): Partial<DebugFrame> {
+    const stop = this.scrollAt >= 0 ? this.scrollTargets[this.scrollAt] : undefined;
+    return stopFrame({
+      anchor: String(this.settings.scrollStopAnchor ?? DEFAULT_STOP_ANCHOR),
+      anchorTop: stop ? stop.top : null,
+      stopTop: this.scrollBoxes.find((b) => b.page === stop?.page)?.top ?? null,
+      width: container.clientWidth,
+      height: container.clientHeight,
+      layoutSig: layoutSignature(this.scrollBoxes),
+      stopKey: stop?.key ?? this.scrollDwellKey,
+      visited: this.scrollVisited.size,
+      pending: Math.max(0, this.scrollTargets.length - this.scrollVisited.size),
+      skipped: this.scrollSkipCount,
+      lastSkips: this.scrollLastSkips,
+      reverseWrap: this.scrollDir < 0 ? Math.max(0, this.scrollTargets.length - 1) : null,
     });
   }
 
@@ -2495,6 +2530,8 @@ export default class NotionTogglePlugin extends Plugin {
   private resetDwell() {
     this.scrollDwellKey = null;
     this.scrollVisited.clear();
+    this.scrollSkipCount = 0;
+    this.scrollLastSkips = [];
   }
 
   /** Repaint the debug overlay (when on) and queue the next frame. */
@@ -2691,7 +2728,11 @@ export default class NotionTogglePlugin extends Plugin {
         // v1.4.7 — every stop crossed by this frame, plus any stop a re-measure
         // pushed behind the playhead: nothing is skipped, only deferred.
         const pick = pickStops(targets, prevPos, this.scrollPos, this.scrollDir, this.scrollVisited);
-        if (pick.missed.length) this.perf.noteSkipped(pick.missed.length);
+        if (pick.missed.length) {
+          this.perf.noteSkipped(pick.missed.length);
+          this.scrollSkipCount += pick.missed.length;
+          this.scrollLastSkips = [...this.scrollLastSkips, ...pick.missed.map((m) => m.key)].slice(-3);
+        }
         const crossed = pick.stop;
         if (shouldPark(this.scrollDwellKey, crossed)) {
           const stop = crossed as DwellTarget;

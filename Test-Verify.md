@@ -1,5 +1,33 @@
 # Test-Verify.md — Deep verification report
 
+## v1.4.9 verification (2026-08-30)
+
+| Gate | Result |
+|---|---|
+| Tests | **639 pass / 0 fail**, 2,025 assertions, 36 files |
+| TypeScript (`tsc --noEmit`) | **Clean** |
+| Build | **Clean** — `main.js` 263.5 kb |
+| New spec | `tests/debug-overlay-stops.test.ts` — 15 tests / 34 assertions |
+
+**Feature:** optional on-screen debug overlay ab stop index, anchor position, portrait vs
+landscape orientation, skip recovery aur reverse-leg state bhi dikhata hai.
+
+Covered by the new spec:
+- stop line: `nth/total`, dwell key, visited + pending counts;
+- anchor line for all four anchors (`top`, `third`, `middle`, `lower`) — asserted equal to
+  `anchorScrollTop()`, the same function the loop uses, so the read-out cannot drift;
+- orientation line: portrait vs landscape from the container box, viewport size, layout
+  signature; plus a check that both orientations run the same anchor math;
+- skip line: recovered count, last three keys only, and the unvisited warning — with no
+  warning when nothing was skipped;
+- reverse: direction arrow, up-leg dwell scoping note, wrap fallback stop; absent forward;
+- graceful fallback: with no optional data the overlay renders exactly as before, no
+  `undefined` anywhere.
+
+No change to scroll math, dwell timing, filters, quiz or FAB logic — the overlay only reads
+state. Architecture budget respected: `main.ts` 3,191 lines (< 3,200).
+
+
 ## v1.4.8 verification (2026-08-30)
 
 | Gate | Result |

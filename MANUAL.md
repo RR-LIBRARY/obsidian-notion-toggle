@@ -384,7 +384,8 @@ Sabse zaroori command sirf ek hai — **Autoscroll (start / pause revision)**; b
 
 #### Debug overlay
 - **Kya hai:** autoscroll chalne ke waqt live loop state screen par: position, direction,
-  `waypointReached` / `crossedTarget`, dwell key aur grade.
+  `waypointReached` / `crossedTarget`, dwell key, grade — aur v1.4.9 se **stop index,
+  anchor position, portrait/landscape orientation, skip count aur reverse-leg info**.
 - **Kaise use karo:** normally OFF. Tuning/bug dhundhne ke waqt ON. Detail section 7 me.
 - **Default:** OFF
 
@@ -494,6 +495,33 @@ progress 7/18
 - `dwellKey` — kis stop par ruke hain aur kitna time bacha.
 - `event` — `waypointReached` / `crossedTarget` fire hua ya nahi.
 - `grade` — dwell se banaya gaya FSRS grade.
+
+### v1.4.9 — stop / anchor / skip lines
+
+Ab overlay me ye extra lines bhi aati hain:
+
+```
+stop 7/23 · key 7:0 · visited 6 · pending 17
+anchor middle → top 1842 (offset 312 from toggle top)
+orientation portrait · 1080x2160 · same-math ✔ · layout a1f3
+skips 2 recovered · last 6:0, 7:0
+reverse ↑ · dwell guard scoped to up-leg · wraps to stop 22
+```
+
+- `stop` — abhi kis stop par ho (`nth/total`), uska dwell key, is leg me kitne
+  visit ho chuke aur kitne baaki hain.
+- `anchor` — settings ka anchor (Top edge / Upper third / Middle / Lower third),
+  woh anchored scroll offset jispar loop park karta hai, aur toggle ke apne top se
+  uska distance. Ye wahi number hai jo loop khud use karta hai — koi doosra
+  calculation nahi, isliye overlay kabhi drift nahi karega.
+- `orientation` — portrait ya landscape, scroll container ke apne box se. Saath me
+  viewport size aur layout signature — rotation ke baad agar remeasure nahi hua to
+  yahi line pakad legi (`layout` same reh jayega).
+- `skips` — layout shift se peeche chhoot gaye stops jo recover kiye gaye, aur last
+  teen keys. Agar leg khatam hone tak koi stop bacha ho to `⚠ N stop(s) still
+  unvisited on this leg` warning aati hai.
+- `reverse` — sirf up-legs par: direction arrow, reverse-specific dwell scoping,
+  aur wrap fallback stop. Portrait/landscape aur reverse — teeno same read-out.
 
 ---
 

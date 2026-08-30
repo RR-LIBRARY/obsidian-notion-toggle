@@ -1,5 +1,18 @@
 # Strongwincode.md — plugin ki strength aur weakness
 
+## v1.4.9 update (2026-08-30)
+
+**Strength:** the overlay now reports the *same* anchored offset the loop parks at (it calls
+`anchorScrollTop`, not a copy), so a "toggle skipped" report can be diagnosed from the phone
+screen: stop index, anchor, orientation, recovered-skip count, reverse wrap — all visible.
+Frame builders (`anchorFrame`, `orientationFrame`, `skipFrame`, `stopFrame`) are pure and
+unit-tested; 639 tests / 2,025 assertions.
+
+**Weakness:** the overlay is text-only and fixed top-right — on a small landscape phone the
+taller read-out can cover content, and it repaints every frame. **Kya karna chahiye:** throttle
+the paint to ~5 fps and let the reader drag/collapse the panel.
+
+
 ## v1.4.8 update (2026-08-30)
 
 **Strength (nayi):** ab 624 tests / 1,990 assertions, 35 files. `tests/no-self-recursion.test.ts`

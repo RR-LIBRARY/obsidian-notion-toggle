@@ -666,6 +666,9 @@ body.is-mobile .ntt-quiz-dock-btn {
   opacity: 0.92;
   pointer-events: none;
 }
+.notion-toggle-scroll-debug-body > div {
+  overflow-wrap: anywhere;
+}
 .notion-toggle-scroll-debug-title {
   color: var(--text-accent);
   text-transform: uppercase;

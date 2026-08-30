@@ -1,5 +1,16 @@
 # issue.md — issue register
 
+## v1.4.9 (2026-08-30) — no new defects
+
+Debug-overlay expansion (stop index / anchor / orientation / skip / reverse). Full suite,
+typecheck and build clean; no behaviour change to the scroll loop.
+
+**Open observation (not a bug):** `stopTelemetry()` calls `filterTelemetry()`-style collection
+each painted frame while the overlay is ON. The overlay is opt-in and off by default, so this
+does not affect normal runs — but if it is ever left on for long sessions, per-frame telemetry
+is the first thing to profile.
+
+
 ## v1.4.8 audit (2026-08-30) — 1 real defect, fixed
 
 ### #A1 — Autoscroll crashed on every start/pause/leg change · **Critical** · FIXED

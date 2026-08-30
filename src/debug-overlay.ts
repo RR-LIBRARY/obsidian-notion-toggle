@@ -56,6 +56,32 @@ export interface DebugFrame {
   targetColor?: string | null;
   /** Raw `data-callout` / class string the colour was read from. */
   targetType?: string | null;
+
+  /* --- v1.4.9 stop / anchor / skip telemetry (all optional) --- */
+  /** Human anchor name, e.g. "middle". */
+  anchor?: string;
+  /** Anchored scroll offset the loop parks the current stop at. */
+  anchorTop?: number | null;
+  /** How far that offset sits from the toggle's own top (px). */
+  anchorDelta?: number | null;
+  /** "portrait" | "landscape", from the scroll container's own box. */
+  orientation?: string;
+  /** Container box as `WxH`. */
+  viewport?: string;
+  /** Layout signature the anchored-target cache is keyed on. */
+  layoutSig?: string;
+  /** Dwell key of the current stop (mirrors `dwellKey` when parked). */
+  stopKey?: string | null;
+  /** Stops already visited on this leg. */
+  visitedCount?: number;
+  /** Stops still owed a visit on this leg. */
+  pendingStops?: number;
+  /** Stops recovered after a layout shift left them behind. */
+  skipCount?: number;
+  /** Keys of the most recently recovered stops. */
+  lastSkips?: string[];
+  /** Reverse wrap fallback index (where an up-leg restarts). */
+  reverseWrap?: number | null;
 }
 
 
@@ -78,6 +104,44 @@ export function debugLines(f: DebugFrame): string[] {
     );
   } else {
     lines.push(`stop index ${f.at < 0 ? "—" : f.at}`);
+  }
+  // v1.4.9 — which stop, where it is anchored, and whether any were skipped.
+  if (f.visitedCount !== undefined || f.stopKey !== undefined) {
+    const total = f.stops || 0;
+    const nth = f.at >= 0 ? f.at + 1 : 0;
+    lines.push(
+      `stop ${nth}/${total} · key ${f.stopKey ?? f.dwellKey ?? "—"} · visited ${
+        f.visitedCount ?? 0
+      }${f.pendingStops !== undefined ? ` · pending ${f.pendingStops}` : ""}`
+    );
+  }
+  if (f.anchor !== undefined) {
+    lines.push(
+      `anchor ${f.anchor} → top ${f.anchorTop == null ? "—" : px(f.anchorTop)}${
+        f.anchorDelta == null ? "" : ` (offset ${px(f.anchorDelta)} from toggle top)`
+      }`
+    );
+  }
+  if (f.orientation !== undefined) {
+    lines.push(
+      `orientation ${f.orientation}${f.viewport ? ` · ${f.viewport}` : ""} · same-math ✔${
+        f.layoutSig ? ` · layout ${f.layoutSig}` : ""
+      }`
+    );
+  }
+  if (f.skipCount !== undefined) {
+    const last = (f.lastSkips ?? []).join(", ");
+    lines.push(`skips ${f.skipCount} recovered${last ? ` · last ${last}` : ""}`);
+    if (f.dwellLeft === 0 && (f.pendingStops ?? 0) > 0 && f.skipCount > 0) {
+      lines.push(`⚠ ${f.pendingStops} stop(s) still unvisited on this leg`);
+    }
+  }
+  if (f.dir < 0) {
+    lines.push(
+      `reverse ↑ · dwell guard scoped to up-leg${
+        f.reverseWrap == null ? "" : ` · wraps to stop ${f.reverseWrap}`
+      }`
+    );
   }
   lines.push(`dwellKey ${f.dwellKey ?? "—"} · ${f.dwellLeft > 0 ? `paused ${(f.dwellLeft / 1000).toFixed(1)}s` : "running"}`);
   if (f.filter !== undefined) {
@@ -146,4 +210,81 @@ export function filterFrame(input: {
     targetColor: input.targetColor,
     targetType: input.targetType,
   } as Partial<DebugFrame>;
+}
+
+
+/**
+ * v1.4.9 — anchor read-out: the offset the loop parks the current stop at, and
+ * how far that is from the toggle's own top. Callers pass the number the loop
+ * itself computed (via `anchorScrollTop`), so the overlay can never drift from
+ * the real maths.
+ */
+export function anchorFrame(input: {
+  anchor: string;
+  anchorTop: number | null;
+  stopTop: number | null;
+}): Partial<DebugFrame> {
+  return {
+    anchor: input.anchor,
+    anchorTop: input.anchorTop,
+    anchorDelta:
+      input.anchorTop == null || input.stopTop == null ? null : input.stopTop - input.anchorTop,
+  };
+}
+
+/** v1.4.9 — portrait vs landscape, read from the scroll container's own box. */
+export function orientationFrame(input: {
+  width: number;
+  height: number;
+  layoutSig?: string;
+}): Partial<DebugFrame> {
+  return {
+    orientation: input.height >= input.width ? "portrait" : "landscape",
+    viewport: `${Math.round(input.width)}x${Math.round(input.height)}`,
+    layoutSig: input.layoutSig,
+  };
+}
+
+/** v1.4.9 — stop bookkeeping: visited, pending, and recovered skips. */
+export function skipFrame(input: {
+  stopKey: string | null;
+  visited: number;
+  pending: number;
+  skipped: number;
+  lastSkips: string[];
+  reverseWrap?: number | null;
+}): Partial<DebugFrame> {
+  return {
+    stopKey: input.stopKey,
+    visitedCount: input.visited,
+    pendingStops: input.pending,
+    skipCount: input.skipped,
+    lastSkips: input.lastSkips.slice(-3),
+    reverseWrap: input.reverseWrap ?? null,
+  };
+}
+
+/**
+ * v1.4.9 — the whole stop / anchor / orientation / skip block in one pure
+ * call, so main.ts stays an orchestrator.
+ */
+export function stopFrame(input: {
+  anchor: string;
+  anchorTop: number | null;
+  stopTop: number | null;
+  width: number;
+  height: number;
+  layoutSig?: string;
+  stopKey: string | null;
+  visited: number;
+  pending: number;
+  skipped: number;
+  lastSkips: string[];
+  reverseWrap?: number | null;
+}): Partial<DebugFrame> {
+  return {
+    ...anchorFrame(input),
+    ...orientationFrame(input),
+    ...skipFrame(input),
+  };
 }
