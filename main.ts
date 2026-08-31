@@ -68,6 +68,8 @@ import {
   type RecallColor,
   type ToggleStop,
 } from "./src/autoscroll";
+import { applyQuizFilter, applyScrollFilter, effectiveQuizFilter } from "./src/filter-sync";
+
 import {
   ScrollDebugOverlay,
   filterFrame,
@@ -2305,14 +2307,16 @@ export default class NotionTogglePlugin extends Plugin {
   }
 
   async setScrollFilter(filter: RecallColor[]) {
-    this.settings.scrollFilter = normalizeFilter(filter);
+    // v1.4.14 — one choice, both pickers (quiz used to keep a stale filter).
+    applyScrollFilter(this.settings, filter);
     await this.saveSettings();
     if (this.scrollContainer && this.scrollPlan.length) {
       this.refreshScrollPlan();
     }
     this.renderScrollBar();
-    this.say(`Autoscroll filter: ${filterLabel(filter)}`);
+    this.say(`Autoscroll filter: ${filterLabel(this.settings.scrollFilter)}`);
   }
+
 
   async nudgeScrollSpeed(delta: number) {
     this.settings.scrollSpeed = clampSpeed(this.settings.scrollSpeed + delta);
@@ -2802,21 +2806,18 @@ export default class NotionTogglePlugin extends Plugin {
 
   /** v1.3.0 — colours the quiz asks about. */
   quizFilterColors(): RecallColor[] {
-    return normalizeFilter(
-      this.settings.quizUseColorFilter
-        ? this.settings.quizFilter.length
-          ? this.settings.quizFilter
-          : this.settings.scrollFilter
-        : []
-    );
+    return effectiveQuizFilter(this.settings);
   }
 
   async setQuizFilter(filter: RecallColor[]) {
-    this.settings.quizFilter = normalizeFilter(filter);
-    this.settings.quizUseColorFilter = true;
+    // v1.4.14 — mirror into scrollFilter so both pickers show the same choice.
+    applyQuizFilter(this.settings, filter);
     await this.saveSettings();
+    if (this.scrollContainer && this.scrollPlan.length) this.refreshScrollPlan();
+    this.renderScrollBar();
     if (!this.settings.scrollQuiet) new Notice(`Quiz filter: ${filterLabel(this.settings.quizFilter)}`);
   }
+
 
   /** Primary command: start, pause or resume the quiz. */
   toggleQuiz() {

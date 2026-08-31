@@ -725,6 +725,10 @@ Lambe questions ke titles me `⏱60` laga do.
 | Timer promise se dheema lagta hai | Debug overlay ON karo → **timer accuracy** line promised vs wall-clock dikhati hai (section 7). 3x se zyada late tick ko freeze detector report karta hai — matlab phone throttle kar raha hai, plugin ka bug nahi. |
 | **Filter se galat questions aa rahe lagte hain** | v1.4.11 me poora filter ek real 73-toggle note par verify hua (14 🔴 / 37 🟡 / 20 🟢 + 2 plain) — saari 7 colour combinations, deep links aur quiz deck sahi nikle. Agar count galat lage to check karo ki header exactly `> [!recall-red]-` jaisa ho (typo/extra space se toggle "plain" ban jata hai) — plain toggles jaan-bujh ke "All graded" me nahi aate. Details: `Test-Verify.md`. |
 | Kuch stops chhoot rahe hain | Overlay ki **stop / skip** line dekho: `recovered` count batata hai ki layout shift ne kitne stops peeche chhode aur loop ne kitne wapas liye (section 7). Speed kam karo ya *Tall toggles screen-by-screen* ON karo. |
+| **Picker me naye callout filters (`!important`, `!todo`, `!bug`, `!quote` …) dikh hi nahi rahe** | Aapke device par purana build hai. `Settings → Community plugins` se update karo, ya release ke `main.js` + `manifest.json` + `styles.css` ko `.obsidian/plugins/obsidian-notion-toggle/` me replace karke Obsidian restart karo. v1.4.13+ me picker me 23 options hote hain. |
+| **Filter list phone par kat jaati hai / neeche ke options tap nahi hote** | v1.4.14 me theek — list ab modal ke andar scroll hoti hai (max 60% screen height) aur lambe labels wrap hote hain. |
+| **Filter chunne ke baad bhi galat toggles par rukta hai / choice save nahi hoti** | v1.4.14 me theek — pehle autoscroll picker sirf `scrollFilter` likhta tha jabki quiz `quizFilter` padhta tha, is liye purani quiz choice hawi ho jati thi. Ab dono picker ek hi choice share karte hain (quiz filter switch OFF ho to quiz har toggle poochta hai). |
+
 
 ---
 
