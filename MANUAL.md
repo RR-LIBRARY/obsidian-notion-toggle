@@ -549,6 +549,18 @@ HUD: `00:14 · Q 3/12` + pause / 👁 reveal now / ⏭ next / ✕ stop.
 Flow: question par countdown → time up → answer auto-reveal → reveal time ke baad toggle
 auto-close → agla question auto-scroll ke saath.
 
+> **v1.4.10 — reveal ka rule (koi question chhupa nahi rehta):** reveal hamesha pehle sirf
+> plugin classes lagata hai (screen blink nahi hoti, aapka fold state intact rehta hai). Agar
+> Obsidian ne callout ko natively collapsed render kiya hai (ya quiz ke beech re-render se
+> wapas band aa gaya), to plugin **khud toggle ko sach me kholta hai** — answer screen par
+> aana guaranteed. Re-render ke baad question ki jagah title se dobara dhoondha jata hai
+> (heal), isliye mid-run section replace hone par bhi question skip nahi hota.
+>
+> **Verified (v1.4.10):** quiz ke saare 9 specs — engine (`quiz`), DOM (`quiz-dom`),
+> visibility (`quiz-visibility`), re-render heal (`quiz-heal`), timing accuracy
+> (`quiz-timing`), force-open (`quiz-force-open`), dock UI, ring badge, poora end-to-end flow
+> — **110 pass / 0 fail**.
+
 ### Time per question
 - **Kya hai:** answer reveal hone se pehle kitne second (3 … 600 s; slider 3–120).
 - **Kaise use karo:** MCQ = 15–20 s; long answer = 45–90 s.
@@ -576,6 +588,12 @@ auto-close → agla question auto-scroll ke saath.
 
 ### Loop the quiz
 - **Kya hai:** khatam hone par pehle question se dobara.
+- **Default:** OFF
+
+### Open with autoquiz (keep answers open)
+- **Kya hai:** poori quiz me har answer toggle khula rehta hai, kabhi band nahi hota —
+  reading mode jaisa, bas upar timer chalta hai.
+- **Kaise use karo:** revision day par ON, exam drill par OFF.
 - **Default:** OFF
 
 ### Notify when the time is up
