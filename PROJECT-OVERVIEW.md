@@ -14,7 +14,7 @@ no network calls, no telemetry.
 obsidian-toggle-plugin/
   main.ts               Obsidian glue: commands, settings tab, modals, DOM wiring
   main.js               esbuild output (committed, what Obsidian loads)
-  manifest.json         plugin manifest (version 1.1.0)
+  manifest.json         plugin manifest (version 1.5.2)
   versions.json         version → minAppVersion map
   styles.css            toggle colours, timer widget, scroll bar, quiz HUD
   src/
@@ -55,6 +55,16 @@ entries survive upgrades.
   speed control, hold time, colour filter, loop.
 - **1.1.0** — quiz mode: per-question countdown, automatic answer reveal, auto-close,
   auto-next, floating HUD, `⏱30` per-question override, quiz colour filter, loop.
+- **1.4.10 – 1.4.14** — scroll-container fix for "runs but nothing moves", quiz force-open
+  for collapsed callouts, granular filters for every built-in callout type, scrollable
+  filter picker on mobile, and synced autoscroll/quiz filters.
+- **1.5.0** — note-wide toggle ordinals (odd/even means the note's own numbers), grouped
+  expandable filter picker with counts and percentages, callout playground note.
+- **1.5.1** — autoscroll switches the note into Reading View and restores the original
+  view mode on stop.
+- **1.5.2** — screen-by-screen advance (Toggles / Screens / Toggles + screens) with
+  configurable overlap, tall answers paged and top-anchored on mobile, and a
+  height-aware frictionless answer reveal.
 
 ## Development
 

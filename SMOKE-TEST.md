@@ -1,4 +1,4 @@
-# Autoscroll smoke test — real Obsidian (v1.1.3)
+# Autoscroll smoke test — real Obsidian (v1.5.2)
 
 Install: copy `main.js`, `manifest.json`, `styles.css` into
 `<vault>/.obsidian/plugins/obsidian-notion-toggle/`, then Settings → Community
