@@ -9,7 +9,7 @@
 import { App, Modal, Notice, Setting } from "obsidian";
 import type NotionTogglePlugin from "../main";
 import { TOGGLE_COLORS } from "./toggle-colors";
-import { clampHold, filterLabel, sameFilter, type RecallColor } from "./autoscroll";
+import { CALLOUT_KINDS, clampHold, filterLabel, sameFilter, type RecallColor } from "./autoscroll";
 import {
   DWELL_PRESETS,
   SPEED_MULTIPLIERS,
@@ -150,11 +150,16 @@ export class ScrollFilterModal extends Modal {
       { label: "🟢 Green only", filter: ["green"] },
       { label: "🔴🟡 Red + Yellow (weak spots)", filter: ["red", "yellow"] },
       { label: "🔴🟡🟢 All graded toggles", filter: ["red", "yellow", "green"] },
-      { label: "⚪ Notes only (!note / !tip — ungraded)", filter: ["other"] },
-      {
-        label: "🔴🟡🟢⚪ Everything, graded + notes",
-        filter: ["red", "yellow", "green", "other"],
-      },
+      { label: "⚪ All ungraded notes / callouts", filter: ["other"] },
+      { label: "❓ Question callouts (!question)", filter: ["question"] },
+      { label: "💡 Tip callouts (!tip)", filter: ["tip"] },
+      { label: "📝 Note callouts (!note)", filter: ["note"] },
+      { label: "ℹ️ Info callouts (!info)", filter: ["info"] },
+      { label: "📋 Abstract callouts (!abstract)", filter: ["abstract"] },
+      { label: "⚠️ Warning callouts (!warning)", filter: ["warning"] },
+      { label: "✅ Success callouts (!success)", filter: ["success"] },
+      { label: "❓💡📝 All built-in callouts", filter: CALLOUT_KINDS },
+      { label: "🔴🟡🟢⚪ Everything, graded + notes", filter: ["red", "yellow", "green", "other"] },
     ];
 
     const active = this.plugin.settings.scrollFilter;
@@ -184,11 +189,16 @@ export const QUIZ_FILTER_OPTIONS: { label: string; filter: RecallColor[] }[] = [
   { label: "🟢 Green only", filter: ["green"] },
   { label: "🔴🟡 Red + Yellow (weak spots)", filter: ["red", "yellow"] },
   { label: "🔴🟡🟢 All graded toggles", filter: ["red", "yellow", "green"] },
-  { label: "⚪ Notes only (!note / !tip — ungraded)", filter: ["other"] },
-  {
-    label: "🔴🟡🟢⚪ Everything, graded + notes",
-    filter: ["red", "yellow", "green", "other"],
-  },
+  { label: "⚪ All ungraded notes / callouts", filter: ["other"] },
+  { label: "❓ Question callouts (!question)", filter: ["question"] },
+  { label: "💡 Tip callouts (!tip)", filter: ["tip"] },
+  { label: "📝 Note callouts (!note)", filter: ["note"] },
+  { label: "ℹ️ Info callouts (!info)", filter: ["info"] },
+  { label: "📋 Abstract callouts (!abstract)", filter: ["abstract"] },
+  { label: "⚠️ Warning callouts (!warning)", filter: ["warning"] },
+  { label: "✅ Success callouts (!success)", filter: ["success"] },
+  { label: "❓💡📝 All built-in callouts", filter: CALLOUT_KINDS },
+  { label: "🔴🟡🟢⚪ Everything, graded + notes", filter: ["red", "yellow", "green", "other"] },
 ];
 
 

@@ -12,7 +12,22 @@
 import type { FsrsCard } from "./fsrs";
 import { DWELL_MAX, type ScrollMode } from "./scrollmode";
 
-export type RecallColor = "red" | "yellow" | "green" | "other";
+/**
+ * v1.4.12 — a toggle kind: traffic-light grades, Obsidian's built-in
+ * callouts (!question / !tip / !info …), and `other` as the ungraded wildcard.
+ */
+export type RecallColor =
+  | "red"
+  | "yellow"
+  | "green"
+  | "question"
+  | "info"
+  | "note"
+  | "abstract"
+  | "tip"
+  | "warning"
+  | "success"
+  | "other";
 
 export interface AutoScrollSettings {
   /** Pixels per second while gliding between toggles. */
@@ -111,19 +126,52 @@ export function clampHold(seconds: number): number {
   return Math.min(DWELL_MAX, Math.max(0, Math.round(seconds)));
 }
 
-/** Map a callout type (or <details> class) to a traffic-light colour. */
-export function colorOf(calloutType: string | null | undefined): RecallColor {
+/** Palette kinds written as `recall-<id>` callout types. */
+/** Obsidian's built-in callout types this plugin can create. */
+export const CALLOUT_KINDS: RecallColor[] = [
+  "question",
+  "info",
+  "note",
+  "abstract",
+  "tip",
+  "warning",
+  "success",
+];
+
+/** The three graded (traffic-light) kinds. */
+export const GRADED_COLORS: RecallColor[] = ["red", "yellow", "green"];
+
+/** Resolve a rendered callout to its exact filter kind. */
+export function kindOf(calloutType: string | null | undefined): RecallColor {
   const t = (calloutType ?? "").toLowerCase();
   if (t.includes("recall-red")) return "red";
   if (t.includes("recall-yellow")) return "yellow";
   if (t.includes("recall-green")) return "green";
+  const words = t.split(/[^a-z]+/).filter(Boolean);
+  for (const kind of CALLOUT_KINDS) if (words.includes(kind)) return kind;
   return "other";
 }
 
-/** Does this toggle belong to the current filter? Empty filter = everything. */
+/** Map a callout type (or <details> class) to a traffic-light colour. */
+export function colorOf(calloutType: string | null | undefined): RecallColor {
+  const kind = kindOf(calloutType);
+  return GRADED_COLORS.includes(kind) ? kind : "other";
+}
+
+/** Is this kind ungraded (anything that is not 🔴 / 🟡 / 🟢)? */
+export function isUngraded(color: RecallColor): boolean {
+  return !GRADED_COLORS.includes(color);
+}
+
+/**
+ * Does this toggle belong to the current filter? Empty filter = everything.
+ * `other` acts as the "ungraded" wildcard, so it keeps matching !note / !tip /
+ * !question and every non-traffic-light palette colour.
+ */
 export function matchesFilter(color: RecallColor, filter: RecallColor[]): boolean {
   if (!filter || filter.length === 0) return true;
-  return filter.includes(color);
+  if (filter.includes(color)) return true;
+  return filter.includes("other") && isUngraded(color);
 }
 
 export interface ToggleStop {
@@ -236,13 +284,21 @@ export function atEnd(
   return reverse ? scrollTop <= 0 : scrollTop >= scrollHeight - viewportHeight - 1;
 }
 
-/** Canonical colour order — so ["yellow","red"] and ["red","yellow"] are one filter. */
+/** Legacy traffic-light order, kept stable for existing integrations. */
 export const COLOR_ORDER: RecallColor[] = ["red", "yellow", "green", "other"];
 
-/** De-duplicate a filter and put it in canonical order. */
+/** Full canonical order for the expanded per-callout-kind filter. */
+export const KIND_ORDER: RecallColor[] = [
+  "red", "yellow", "green", "question", "info", "note", "abstract", "tip", "warning", "success", "other",
+];
+
+/** Every kind that is not a traffic-light grade, in canonical order. */
+export const UNGRADED_COLORS: RecallColor[] = KIND_ORDER.filter(isUngraded);
+
+/** De-duplicate a filter and put it in expanded canonical order. */
 export function normalizeFilter(filter: RecallColor[] | null | undefined): RecallColor[] {
   if (!filter || filter.length === 0) return [];
-  return COLOR_ORDER.filter((c) => filter.includes(c));
+  return KIND_ORDER.filter((c) => filter.includes(c));
 }
 
 /** Same selection, regardless of the order it was stored in. */
@@ -256,22 +312,34 @@ export function sameFilter(a: RecallColor[], b: RecallColor[]): boolean {
 export function colorCounts(
   colors: RecallColor[]
 ): Record<RecallColor, number> {
-  const out: Record<RecallColor, number> = { red: 0, yellow: 0, green: 0, other: 0 };
-  for (const c of colors) out[c] += 1;
-  return out;
+  const out = { red: 0, yellow: 0, green: 0, other: 0 };
+  for (const c of colors) {
+    if (c === "red" || c === "yellow" || c === "green") out[c] += 1;
+    else out.other += 1;
+  }
+  return out as Record<RecallColor, number>;
 }
+
+/** One glyph per kind, used by every label and picker. */
+export const COLOR_ICON: Record<RecallColor, string> = {
+  red: "🔴",
+  yellow: "🟡",
+  green: "🟢",
+  question: "❓",
+  info: "ℹ️",
+  note: "📝",
+  abstract: "📋",
+  tip: "💡",
+  warning: "⚠️",
+  success: "✅",
+  other: "⚪",
+};
 
 export function filterLabel(filter: RecallColor[]): string {
   if (!filter || filter.length === 0) return "all toggles";
-  const icon: Record<RecallColor, string> = {
-    red: "🔴",
-    yellow: "🟡",
-    green: "🟢",
-    other: "⚪",
-  };
   const norm = normalizeFilter(filter);
   if (norm.length === 1 && norm[0] === "other") return "⚪ notes (!note / !tip)";
-  return norm.map((c) => icon[c]).join(" ");
+  return norm.map((c) => COLOR_ICON[c]).join(" ");
 }
 
 

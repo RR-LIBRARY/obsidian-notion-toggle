@@ -313,9 +313,25 @@ Sabse zaroori command sirf ek hai — **Autoscroll (start / pause revision)**; b
   notes-only + all graded = poora note.
 - **Kaise use karo:** exam se pehle **Red + Yellow** — sirf weak spots revise honge.
 - **Default:** All toggles
-- **Deep link:** `filter=notes` (aliases: `note`, `ungraded`, `plain`, `other`),
+- **Deep link:** `filter=notes` (aliases: `ungraded`, `plain`, `other`),
   `filter=everything` = graded + notes, `filter=graded`, `filter=all` —
   e.g. `obsidian://notion-toggle?action=quiz&filter=notes`.
+
+#### Per-callout-type filters (v1.4.12)
+- **Kya hai:** ab har built-in callout type ka apna filter hai — ek hi "notes"
+  bucket me sab mix nahi hota.
+- **Options (dono pickers me):** ❓ Question callouts (`!question`) ·
+  💡 Tip callouts (`!tip`) · 📝 Note callouts (`!note`) · ℹ️ Info callouts (`!info`) ·
+  📋 Abstract callouts (`!abstract`) · ⚠️ Warning callouts (`!warning`) ·
+  ✅ Success callouts (`!success`) · ❓💡📝 All built-in callouts ·
+  ⚪ Notes only (koi bhi ungraded) · 🔴🟡🟢⚪ Everything.
+- **Deep links:** `filter=question` (aliases `q`, `quest`), `filter=tip` (`hint`),
+  `filter=note`, `filter=info`, `filter=abstract` (`summary`),
+  `filter=warning` (`warn`, `caution`), `filter=success` (`done`, `check`),
+  `filter=callouts` (= sab built-in types), aur combos like
+  `filter=question,tip` — e.g. `obsidian://notion-toggle?action=quiz&filter=q,tip`.
+- **Note:** `filter=notes` / `ungraded` ab bhi wildcard hai — kisi bhi non-graded
+  toggle ko pakadta hai, chahe uska type kuch bhi ho.
 
 #### Open the toggle automatically
 - **Kya hai:** toggle par pahunchte hi wo khud khul jata hai (answer dikh jata hai).

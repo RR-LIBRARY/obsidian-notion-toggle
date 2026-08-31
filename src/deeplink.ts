@@ -7,7 +7,7 @@
  *   obsidian://notion-toggle?action=stop
  */
 
-import { normalizeFilter, type RecallColor } from "./autoscroll";
+import { KIND_ORDER, COLOR_ORDER, UNGRADED_COLORS, normalizeFilter, type RecallColor } from "./autoscroll";
 import { clampQuizSeconds } from "./quiz";
 
 export type DeepLinkAction = "quiz" | "autoscroll" | "stop";
@@ -20,7 +20,19 @@ export interface DeepLink {
   speed?: number;
 }
 
-const COLORS: RecallColor[] = ["red", "yellow", "green", "other"];
+const COLORS: RecallColor[] = KIND_ORDER;
+
+/** Aliases for kinds whose deep-link word differs from the canonical id. */
+const KIND_ALIASES: Record<string, RecallColor> = {
+  quest: "question",
+  q: "question",
+  hint: "tip",
+  summary: "abstract",
+  warn: "warning",
+  caution: "warning",
+  done: "success",
+  check: "success",
+};
 
 /** `red,yellow` / `all` / `graded` / `notes` → a canonical filter, or undefined. */
 export function parseFilterParam(raw: string | undefined): RecallColor[] | undefined {
@@ -28,14 +40,16 @@ export function parseFilterParam(raw: string | undefined): RecallColor[] | undef
   const text = raw.trim().toLowerCase();
   if (!text || text === "all" || text === "default" || text === "any") return [];
   if (text === "graded") return normalizeFilter(["red", "yellow", "green"]);
-  if (text === "notes" || text === "note" || text === "ungraded" || text === "plain")
+  if (text === "notes" || text === "ungraded" || text === "plain" || text === "other")
     return normalizeFilter(["other"]);
+  if (text === "callouts" || text === "types") return normalizeFilter(UNGRADED_COLORS);
   if (text === "everything" || text === "graded+notes")
     return normalizeFilter(["red", "yellow", "green", "other"]);
 
   const picked = text
     .split(/[,+ ]+/)
     .map((p) => p.trim())
+    .map((p) => KIND_ALIASES[p] ?? p)
     .filter((p): p is RecallColor => (COLORS as string[]).includes(p));
   return picked.length ? normalizeFilter(picked) : undefined;
 }

@@ -52,6 +52,7 @@ import {
   clampSpeed,
   DEFAULT_STOP_ANCHOR,
   colorCounts,
+  kindOf,
   colorOf,
   filterLabel,
   firstStopFrom,
@@ -1845,13 +1846,13 @@ export default class NotionTogglePlugin extends Plugin {
   }
 
   private collectStopsNow(container: HTMLElement, filter: RecallColor[] = []): ToggleStop[] {
-    // v1.2.5 — apply the colour filter *while* resolving nesting, so a 🔴
-    // toggle nested inside a plain !note is not swallowed by its parent.
+    // v1.4.12 — classify by the complete callout kind before resolving nesting.
+    // `other` remains a wildcard for all ungraded kinds (!note, !tip, etc.).
     const nodes =
       filter.length === 0
         ? collectToggleEls(container)
         : collectToggleElsFiltered(container, (el) =>
-            matchesFilter(colorOf(toggleTypeOf(el)), filter)
+            matchesFilter(kindOf(toggleTypeOf(el)), filter)
           );
     const base = container.getBoundingClientRect().top - container.scrollTop;
     return nodes.map((el, index) => {
@@ -1860,7 +1861,7 @@ export default class NotionTogglePlugin extends Plugin {
         index,
         top: Math.max(0, Math.round(rect.top - base)),
         height: Math.round(rect.height),
-        color: colorOf(toggleTypeOf(el)),
+        color: kindOf(toggleTypeOf(el)),
         el,
       } as ToggleStop & { el: HTMLElement; height: number };
     });

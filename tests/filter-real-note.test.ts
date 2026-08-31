@@ -278,8 +278,10 @@ describe("real note — v1.4.11 notes-only filter (!note / !tip / ungraded)", ()
   });
 
   it("round-trips through every deep-link alias", () => {
-    for (const alias of ["notes", "note", "ungraded", "plain", "other", "NOTES", " Notes "])
+    for (const alias of ["notes", "ungraded", "plain", "other", "NOTES", " Notes "])
       expect(parseFilterParam(alias)).toEqual(["other"]);
+    expect(parseFilterParam("note")).toEqual(["note"]);
+    expect(parseFilterParam("tip")).toEqual(["tip"]);
     expect(parseFilterParam("everything")).toEqual(COLOR_ORDER);
     expect(parseFilterParam("graded")).toEqual(GRADED);
     const link = parseDeepLink({ action: "quiz", filter: "notes" });
