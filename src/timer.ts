@@ -315,3 +315,18 @@ export function autoPauseNotice(reason: AutoPauseReason): string {
   if (reason === "other-note") return "⌛ Timer paused — go back to your session note.";
   return "⌛ Timer paused — no activity.";
 }
+
+/**
+ * v1.4.10 — may an auto-paused session resume by itself? Pure counterpart of
+ * `shouldAutoPause`, so both halves of the rule are unit-tested in one place.
+ */
+export function shouldAutoResume(input: {
+  autoResume: boolean;
+  autoPaused: boolean;
+  visible: boolean;
+  pinned: boolean;
+  onSessionNote: boolean;
+}): boolean {
+  if (!input.autoResume || !input.autoPaused || !input.visible) return false;
+  return !input.pinned || input.onSessionNote;
+}

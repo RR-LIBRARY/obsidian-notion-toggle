@@ -24,6 +24,7 @@ import {
   tick,
   type PomodoroSettings,
   type PomodoroState,
+  shouldAutoResume,
 } from "./src/timer";
 
 import { TimerWidget } from "./src/timer-ui";
@@ -69,6 +70,7 @@ import {
 import {
   ScrollDebugOverlay,
   filterFrame,
+  loopFrame,
   stopFrame,
   type DebugFrame,
 } from "./src/debug-overlay";
@@ -78,7 +80,16 @@ import { ScrollBar } from "./src/autoscroll-ui";
 import { HoldPause } from "./src/hold-pause";
 import { ScrollFab, markProgrammaticScroll } from "./src/scroll-fab";
 import {
+  MSG_NO_SCROLLER,
+  documentScrollCandidates,
+  isScrollStuck,
+  pickAnyContainer,
+  pickScrollContainer,
+  viewScrollCandidates,
+} from "./src/scroll-container";
+import {
   HOTKEYS,
+
   MSG_NOT_RUNNING,
   MSG_PLAIN_SCROLL,
   TOOLBAR_COMMANDS,
@@ -176,7 +187,7 @@ import {
 import { healQuizEls, needsHeal, revealLanded } from "./src/quiz-heal";
 import { parseDeepLink } from "./src/deeplink";
 import { Telemetry, perfVerdict } from "./src/telemetry";
-import { anchorScrollTop, anchoredTargets, pickStops, targetsKey } from "./src/scroll-anchor";
+import { anchorScrollTop, anchoredTargets, pickStops, routeStopTops, targetsKey } from "./src/scroll-anchor";
 import { exportPerfReport, openPerfReport } from "./src/perf-report-modal";
 
 /** High-resolution clock when available, wall clock otherwise (mobile webviews). */
@@ -232,6 +243,9 @@ import {
   type EnterPlan,
   type BackspacePlan,
   type QuestionBlockOptions,
+  midLineEnterInsert,
+  newTogglePlan,
+  questionBlockPlan,
   type ToggleFormat,
 } from "./src/editor-blocks";
 export * from "./src/editor-blocks";
@@ -349,6 +363,9 @@ export default class NotionTogglePlugin extends Plugin {
   scrollBoxesAt = 0;
   /** v1.2.1 — last time we tried to re-find a scrollable container. */
   scrollRelocateAt = 0;
+  /** v1.4.10 — since when has the run made no visible progress? (0 = fine) */
+  scrollStuckSince = 0;
+
   /** v1.2.1 — the quick-controls sheet is open (FAB stays pinned). */
   scrollSheetOpen = false;
 
@@ -1131,32 +1148,18 @@ export default class NotionTogglePlugin extends Plugin {
   insertNewToggleBelow(editor: Editor, forceNumbered = false) {
     const cursor = editor.getCursor();
     const currentLine = editor.getLine(cursor.line);
-    const prefix = currentLine.trim().length === 0 ? "" : "\n";
-    const numbered = forceNumbered || this.settings.numberedByDefault;
-
-    if (this.settings.format === "details") {
-      const openAttr = this.settings.defaultCollapsed ? "" : " open";
-      const openTag = `<details${openAttr}>`;
-      const summaryOpen = this.settings.boldSummary ? "<summary><b>" : "<summary>";
-      const summaryClose = this.settings.boldSummary ? "</b></summary>" : "</summary>";
-      const num = numbered ? `${this.nextNumberAt(editor, cursor.line)}. ` : "";
-      const block = `${prefix}${openTag}\n${summaryOpen}${num}${summaryClose}\n\n\n</details>\n`;
-      editor.replaceRange(block, { line: cursor.line, ch: currentLine.length });
-      const summaryLine = cursor.line + (prefix ? 2 : 1);
-      editor.setCursor({ line: summaryLine, ch: summaryOpen.length + num.length });
-      return;
-    }
-
-    const header = this.toggleHeader("");
-    const num = numbered ? `${this.nextNumberAt(editor, cursor.line)}. ` : "";
-    const bold = this.settings.boldSummary ? "**" : "";
-    const block = `${prefix}${header}${bold}${num}${bold}\n> \n`;
-    editor.replaceRange(block, { line: cursor.line, ch: currentLine.length });
-    const headerLine = cursor.line + (prefix ? 1 : 0);
-    editor.setCursor({
-      line: headerLine,
-      ch: header.length + bold.length + num.length,
+    // v1.4.10 — the block itself is built by a pure planner in editor-blocks.
+    const plan = newTogglePlan({
+      header: this.toggleHeader(""),
+      format: this.settings.format,
+      lineHasText: currentLine.trim().length > 0,
+      collapsed: this.settings.defaultCollapsed,
+      boldSummary: this.settings.boldSummary,
+      numbered: forceNumbered || this.settings.numberedByDefault,
+      nextNumber: this.nextNumberAt(editor, cursor.line),
     });
+    editor.replaceRange(plan.block, { line: cursor.line, ch: currentLine.length });
+    editor.setCursor({ line: cursor.line + plan.lineOffset, ch: plan.ch });
   }
 
   /** Next auto-number, based on the last numbered toggle above `line`. */
@@ -1170,27 +1173,23 @@ export default class NotionTogglePlugin extends Plugin {
   insertQuestionBlock(editor: Editor, kind: "mcq" | "match") {
     const cursor = editor.getCursor();
     const currentLine = editor.getLine(cursor.line);
-    const prefix = currentLine.trim().length === 0 ? "" : "\n";
     const numbered = this.settings.numberedByDefault;
-    const opts: QuestionBlockOptions = {
-      calloutType: this.activeCallout(),
-      collapsed: this.settings.defaultCollapsed,
-      boldSummary: this.settings.boldSummary,
-      format: this.settings.format,
-      numbered,
-      number: numbered ? this.nextNumberAt(editor, cursor.line) : undefined,
-      addAnswerLine: this.settings.addAnswerLine,
-      count: kind === "mcq" ? this.settings.mcqOptionCount : this.settings.matchRowCount,
-    };
-    const built = kind === "mcq" ? buildMcqBlock(opts) : buildMatchBlock(opts);
-    editor.replaceRange(`${prefix}${built.text}`, { line: cursor.line, ch: currentLine.length });
-
-    const startLine = cursor.line + (prefix ? 1 : 0);
-    const headLines = built.text.slice(0, built.cursorOffset).split("\n");
-    editor.setCursor({
-      line: startLine + headLines.length - 1,
-      ch: headLines[headLines.length - 1].length,
-    });
+    const plan = questionBlockPlan(
+      kind,
+      {
+        calloutType: this.activeCallout(),
+        collapsed: this.settings.defaultCollapsed,
+        boldSummary: this.settings.boldSummary,
+        format: this.settings.format,
+        numbered,
+        number: numbered ? this.nextNumberAt(editor, cursor.line) : undefined,
+        addAnswerLine: this.settings.addAnswerLine,
+        count: kind === "mcq" ? this.settings.mcqOptionCount : this.settings.matchRowCount,
+      },
+      currentLine.trim().length > 0
+    );
+    editor.replaceRange(plan.block, { line: cursor.line, ch: currentLine.length });
+    editor.setCursor({ line: cursor.line + plan.lineOffset, ch: plan.ch });
   }
 
   /**
@@ -1209,21 +1208,17 @@ export default class NotionTogglePlugin extends Plugin {
     const text: string = line.text;
     const atLineEnd = sel.head === line.to;
 
-    // Mid-line Enter inside a callout: don't split the block — push the rest
-    // of the text onto a fresh "> " answer line (Notion-like behaviour).
+    // Mid-line Enter inside a callout: the rule lives in `src/editor-blocks.ts`.
     if (!atLineEnd) {
-      if (this.settings.format === "callout" && /^>/.test(text)) {
-        // Mid-line Enter on a checkbox option keeps the checkbox scaffolding.
-        const prefix = MCQ_OPTION.test(text) || MCQ_EMPTY_OPTION.test(text) ? "\n> - [ ] " : "\n> ";
-        view.dispatch({
-          changes: { from: sel.head, to: sel.head, insert: prefix },
-          selection: { anchor: sel.head + prefix.length },
-          scrollIntoView: true,
-          userEvent: "input",
-        });
-        return true;
-      }
-      return false;
+      const prefix = midLineEnterInsert(text, this.settings.format);
+      if (!prefix) return false;
+      view.dispatch({
+        changes: { from: sel.head, to: sel.head, insert: prefix },
+        selection: { anchor: sel.head + prefix.length },
+        scrollIntoView: true,
+        userEvent: "input",
+      });
+      return true;
     }
 
     // Auto-numbering: continue the sequence when the setting is on OR when the
@@ -1557,22 +1552,20 @@ export default class NotionTogglePlugin extends Plugin {
       return;
     }
 
-    if (
-      this.settings.autoResumeOnReturn &&
-      this.timerState.autoPaused &&
-      document.visibilityState !== "hidden"
-    ) {
-      const onNote =
-        !this.sessionNotePath ||
-        !this.settings.pinToSessionNote ||
-        this.activeNotePath() === this.sessionNotePath;
-      if (onNote) {
-        this.timerState = resumeAfterAutoPause(this.timerState);
-        this.lastTick = Date.now();
-        this.lastActivityAt = Date.now();
-        this.renderTimer();
-      }
+    const resume = shouldAutoResume({
+      autoResume: this.settings.autoResumeOnReturn,
+      autoPaused: this.timerState.autoPaused === true,
+      visible: document.visibilityState !== "hidden",
+      pinned: this.settings.pinToSessionNote,
+      onSessionNote: !this.sessionNotePath || this.activeNotePath() === this.sessionNotePath,
+    });
+    if (resume) {
+      this.timerState = resumeAfterAutoPause(this.timerState);
+      this.lastTick = Date.now();
+      this.lastActivityAt = Date.now();
+      this.renderTimer();
     }
+
   }
 
   /** Collapse every toggle in the active note (used on breaks / "recall again"). */
@@ -1813,41 +1806,26 @@ export default class NotionTogglePlugin extends Plugin {
     new Notice(message, ms);
   }
 
-  private findScrollContainer(): HTMLElement | null {
-    // v1.2.1 — only an element that can actually scroll is useful: in reading
-    // mode `previewMode.containerEl` is a wrapper, and writing `scrollTop` on
-    // it silently does nothing (autoscroll "runs" but the page never moves).
-    const scrollable = (el: Element | null | undefined): el is HTMLElement => {
-      const h = el as HTMLElement | null | undefined;
-      return !!h && h.scrollHeight - h.clientHeight > 2;
-    };
-    const visible = (el: Element | null): el is HTMLElement =>
-      !!el && (el as HTMLElement).offsetParent !== null;
-
-    const candidates: (Element | null | undefined)[] = [];
+  /** v1.4.10 — candidates + pick rule live in `src/scroll-container.ts`. */
+  private scrollCandidates(): HTMLElement[] {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (view) {
-      const root = (view.previewMode?.containerEl as HTMLElement | undefined) ?? view.contentEl;
-      candidates.push(
-        root?.querySelector(".markdown-preview-view"),
-        view.contentEl.querySelector(".markdown-preview-view"),
-        root,
-        view.contentEl.querySelector(".cm-scroller"),
-        view.contentEl
-      );
-    }
-    const leaf = document.querySelector(".workspace-leaf.mod-active") ?? document;
-    candidates.push(
-      leaf.querySelector(".markdown-preview-view"),
-      leaf.querySelector(".cm-scroller"),
-      ...Array.from(document.querySelectorAll(".markdown-preview-view")),
-      ...Array.from(document.querySelectorAll(".cm-scroller"))
-    );
+    const root = view
+      ? ((view.previewMode?.containerEl as HTMLElement | undefined) ?? view.contentEl)
+      : null;
+    return [
+      ...viewScrollCandidates(root, view?.contentEl ?? null),
+      ...documentScrollCandidates(document),
+    ];
+  }
 
-    for (const el of candidates) if (scrollable(el) && visible(el)) return el;
-    for (const el of candidates) if (scrollable(el)) return el;
-    for (const el of candidates) if (visible(el ?? null)) return el as HTMLElement;
-    return (candidates.find(Boolean) as HTMLElement | undefined) ?? null;
+  /** The element autoscroll writes `scrollTop` to, or `null` if none scrolls. */
+  private findScrollContainer(): HTMLElement | null {
+    return pickScrollContainer(this.scrollCandidates());
+  }
+
+  /** Good enough to *scan* for toggles (may not scroll). */
+  private findViewContainer(): HTMLElement | null {
+    return pickAnyContainer(this.scrollCandidates());
   }
 
   /**
@@ -1903,7 +1881,7 @@ export default class NotionTogglePlugin extends Plugin {
    * does not fight the reader.
    */
   setAllAnswersOpen(open: boolean) {
-    const container = this.findScrollContainer();
+    const container = this.findViewContainer();
     if (!container) {
       new Notice("Open a note first.");
       return;
@@ -2047,7 +2025,7 @@ export default class NotionTogglePlugin extends Plugin {
 
   /** Rebuild the shuffle route from this note's FSRS memory. */
   async rebuildShuffleRoute(notify = true) {
-    const container = this.findScrollContainer();
+    const container = this.findViewContainer();
     const path = this.app.workspace.getActiveFile()?.path ?? "";
     if (!container || !path) {
       new Notice("Open a note first — shuffle needs a note view.");
@@ -2134,9 +2112,12 @@ export default class NotionTogglePlugin extends Plugin {
   startAutoScroll() {
     const container = this.findScrollContainer();
     if (!container) {
-      new Notice("Open a note first — autoscroll needs a note view.");
+      // v1.4.10 — "nothing here can scroll" is not "no note open".
+      new Notice(this.findViewContainer() ? MSG_NO_SCROLLER : "Open a note first.", 8000);
       return;
     }
+    this.scrollStuckSince = 0;
+
     this.scrollContainer = container;
     this.scrollNotePath = this.app.workspace.getActiveFile()?.path ?? null;
     this.scrollSeen = new Set();
@@ -2386,29 +2367,28 @@ export default class NotionTogglePlugin extends Plugin {
     const container = this.scrollContainer;
     if (!overlay || !container) return;
     overlay.update({
-      pos: this.scrollPos,
-      scrollTop: container.scrollTop,
-      max: Math.max(0, container.scrollHeight - container.clientHeight),
-      speed: clampSpeed(this.settings.scrollSpeed),
-      dir: this.scrollDir as 1 | -1,
-      mode: this.settings.scrollMode,
-      routeMode: false,
-      target: null,
-      routeIdx: this.scrollRouteIdx,
-      routeLen: (this.settings.scrollRoute ?? []).length,
-      routeStop: this.scrollRouteStop,
-      routeStops: 1,
-      stops: this.scrollTargets.length,
-      at: this.scrollAt,
-      dwellKey: this.scrollDwellKey,
-      dwellLeft: this.scrollDwellUntil ? Math.max(0, this.scrollDwellUntil - ts) : 0,
-      lastEvent: this.scrollLastEvent,
-      lastGrade: this.scrollLastGrade,
-      progress: `progress ${this.scrollProgressLabel()}`,
+      ...loopFrame({
+        pos: this.scrollPos,
+        container,
+        speed: clampSpeed(this.settings.scrollSpeed),
+        dir: this.scrollDir as 1 | -1,
+        mode: this.settings.scrollMode,
+        routeIdx: this.scrollRouteIdx,
+        routeLen: (this.settings.scrollRoute ?? []).length,
+        routeStop: this.scrollRouteStop,
+        stops: this.scrollTargets.length,
+        at: this.scrollAt,
+        dwellKey: this.scrollDwellKey,
+        dwellUntil: this.scrollDwellUntil,
+        ts,
+        lastEvent: this.scrollLastEvent,
+        lastGrade: this.scrollLastGrade,
+        progress: this.scrollProgressLabel(),
+      }),
       ...this.filterTelemetry(container),
       ...this.stopTelemetry(container),
       ...frame,
-    });
+    } as DebugFrame);
   }
 
   /**
@@ -2613,6 +2593,20 @@ export default class NotionTogglePlugin extends Plugin {
    * float position, per-leg route direction, `crossedTarget` dwell guard and
    * the sub-pixel `translate3d` remainder.
    */
+  /** v1.4.10 — no progress for SCROLL_STUCK_MS stops the run. True = stopped. */
+  private noteScrollProgress(moved: boolean, ts: number, why: string): boolean {
+    if (moved) {
+      this.scrollStuckSince = 0;
+      return false;
+    }
+    if (!this.scrollStuckSince) this.scrollStuckSince = ts;
+    if (!isScrollStuck(this.scrollStuckSince, ts)) return false;
+    this.scrollLastEvent = `stopped: ${why}`;
+    new Notice(MSG_NO_SCROLLER, 8000);
+    this.stopAutoScroll(false);
+    return true;
+  }
+
   private autoScrollFrame(ts: number) {
     this.scrollRaf = null;
     if (!this.scrollRunning || this.scrollHoldPaused) return;
@@ -2667,11 +2661,8 @@ export default class NotionTogglePlugin extends Plugin {
         const wanted = cfg.route[this.scrollRouteIdx % cfg.route.length];
         const hit = this.scrollBoxes.find((b) => b.page === wanted);
         if (hit) {
-          const anchor = this.settings.scrollStopAnchor;
-          routeStops = (cfg.a4 ? pageStops(hit.top, hit.height, container.clientHeight) : [hit.top]).map(
-            (top, i) =>
-              anchorScrollTop(container, top, cfg.a4 && i > 0 ? container.clientHeight : hit.height, anchor)
-          );
+          routeStops = routeStopTops(container, hit, cfg.a4, this.settings.scrollStopAnchor);
+
           routeTarget = routeStops[Math.min(this.scrollRouteStop, routeStops.length - 1)];
           this.scrollDir = legDirection(routeTarget, this.scrollPos, this.scrollDir as 1 | -1);
         }
@@ -2684,6 +2675,8 @@ export default class NotionTogglePlugin extends Plugin {
       this.scrollMovedPx += Math.abs(this.scrollPos - prevPos);
       const whole = Math.floor(this.scrollPos);
       container.scrollTop = whole;
+      // v1.4.10 — the write must land; a wrapper silently ignores it.
+      if (this.noteScrollProgress(Math.abs(container.scrollTop - whole) <= 2, ts, "scrollTop writes ignored")) return;
 
       if (routeMode) {
         if (routeTarget != null && waypointReached(prevPos, this.scrollPos, routeTarget)) {
@@ -2791,7 +2784,8 @@ export default class NotionTogglePlugin extends Plugin {
         this.scrollBoxes = [];
         this.scrollBoxesAt = 0;
         this.scrollSmoothEl = null;
-      }
+        this.scrollStuckSince = 0;
+      } else if (this.noteScrollProgress(false, ts, "no scrollable container")) return;
     }
 
     if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
@@ -2833,7 +2827,7 @@ export default class NotionTogglePlugin extends Plugin {
   }
 
   startQuizRun() {
-    const container = this.findScrollContainer();
+    const container = this.findViewContainer();
     if (!container) {
       new Notice("Open a note first — quiz mode needs a note view.");
       return;
@@ -2872,7 +2866,9 @@ export default class NotionTogglePlugin extends Plugin {
     this.quizSnapshot = snapshotToggles(stops.map((s) => s.el));
     document.body.classList.add(QUIZ_ACTIVE_CLASS);
     for (const s of stops) {
-      if (s.el) setQuizVisible(s.el, this.settings.quizKeepAnswersOpen);
+      if (!s.el) continue;
+      if (this.settings.quizKeepAnswersOpen) this.forceQuizOpen(s.el);
+      else setQuizVisible(s.el, false);
     }
 
     this.quizState = startQuiz(this.quizTitles, this.settings);
@@ -2988,11 +2984,9 @@ export default class NotionTogglePlugin extends Plugin {
     if (event === "reveal") {
       this.ensureQuizEls();
       this.applyQuizVisibility(this.quizState.at, true);
-      // Safety net: if the class-only reveal did not land (re-rendered callout
-      // that came back with the theme's collapsed markup), open it for real so
-      // a question can never be silently skipped.
-      const el = this.quizStops[this.quizState.at]?.el;
-      if (el && el.isConnected && !revealLanded(el)) this.setToggleOpen(el, true);
+      // v1.4.10 — one place decides "is this answer really visible?".
+      this.forceQuizOpen(this.quizStops[this.quizState.at]?.el);
+
       if (this.settings.quizBeepOnTimeUp && !this.settings.scrollQuiet) {
         new Notice("⏰ Time up — answer revealed.");
       }
@@ -3008,13 +3002,24 @@ export default class NotionTogglePlugin extends Plugin {
     this.renderQuizHud();
   }
 
+  /**
+   * v1.4.10 — reveal an answer for real: plugin classes first, a genuine open
+   * only when that did not land (natively collapsed / re-rendered callout).
+   */
+  private forceQuizOpen(el: HTMLElement | undefined | null) {
+    if (!el || !el.isConnected) return;
+    setQuizVisible(el, true);
+    if (!revealLanded(el)) this.setToggleOpen(el, true);
+  }
+
   /** Only the current question may show its answer, and only after the reveal. */
   private applyQuizVisibility(index: number, revealed: boolean) {
     // v1.4.3 — "open with auto-quiz": every answer stays open the whole run.
     if (this.settings.quizKeepAnswersOpen) {
-      for (const s of this.quizStops) if (s.el) setQuizVisible(s.el, true);
+      for (const s of this.quizStops) this.forceQuizOpen(s.el);
       return;
     }
+
     applyQuizVisibilityClasses(
       this.quizStops.map((s) => s.el),
       index,

@@ -1,5 +1,31 @@
 # Test-Verify.md — Deep verification report
 
+## v1.4.10 verification (2026-08-31)
+
+| Gate | Result |
+|---|---|
+| Tests | **664 pass / 0 fail**, 2,066 assertions, 38 files |
+| TypeScript (`tsc --noEmit`) | **Clean** |
+| Build | **Clean** — `main.js` 267.3 kb |
+| New specs | `tests/scroll-container.test.ts`, `tests/quiz-force-open.test.ts` |
+| Architecture guard | `main.ts` 3,197 lines (< 3,200) |
+
+**Fix 1 — autoscroll container detection.** The picker now refuses non-scrolling wrappers.
+Proved by `pickScrollContainer([wrapper, scroller])` returning the scroller, and by
+`pickScrollContainer([wrapper])` returning `null` where the old code returned the wrapper —
+that `null` is exactly the case that used to look like "running but frozen". Mobile wrappers
+and the document scroller are asserted to be candidates, and `isScrollStuck()` is pinned to
+the 3s grace period (`SCROLL_STUCK_MS - 1` → false, `SCROLL_STUCK_MS` → true).
+
+**Fix 2 — quiz reveal.** `forceQuizOpen`'s rule is verified against the same primitives
+main.ts uses (`setQuizVisible`, `revealLanded`, `setToggleOpen`): a `<details>` toggle really
+opens, a collapsed callout loses `is-collapsed`, a detached node is a no-op (heal owns that),
+a re-rendered node reveals, and three questions open in order with none skipped.
+
+**Not automated (manual smoke, see SMOKE-TEST.md):** real Obsidian reading-view re-render,
+Android momentum scrolling, and the notice text on a note that genuinely has nothing to scroll.
+
+
 ## v1.4.9 verification (2026-08-30)
 
 | Gate | Result |

@@ -1,6 +1,6 @@
 # Notion Toggle — Poora Manual (v1.1.6)
 
-> **v1.4.8** — bug fix: autoscroll ka internal dwell reset khud ko call kar raha tha, jisse run start/pause/reverse par crash ho sakta tha. Ab theek hai; baaki saare features waise hi kaam karte hain.
+> **v1.4.10** — bug fix: autoscroll ab galat wrapper par scroll nahi likhta (mobile me "chalta hai par hilta nahi" gaya), aur quiz reveal zaroorat padne par toggle ko sach me kholta hai — koi question chhupa nahi rehta. Kuch bhi scroll na hone par run 3s me saaf message ke saath rukta hai.
 
 Ye manual me **har ek setting** ka matlab, use karne ka tarika aur recommended value hai —
 exactly usi order me jaisa Obsidian ke settings tab me dikhta hai.
@@ -628,6 +628,18 @@ Lambe questions ke titles me `⏱60` laga do.
 
 ---
 
+### Worked autoscroll settings (copy karke try karo)
+
+| Kaam | Speed | Pause at | Dwell | Anchor | Baaki |
+|---|---|---|---|---|---|
+| Raat me revision (dhyaan se padhna) | `0.1x` | Every toggle | 6s | `third` | Open toggle automatically ON |
+| Fast skim (kya aata hai check karna) | `0.5x` | Red + Yellow only | 2s | `top` | Auto-close after dwell ON |
+| Lambe notes, screen-by-screen | `0.15x` | Every toggle | 4s | `middle` | Tall toggles screen-by-screen ON |
+| Sirf weak toggles (SRS due) | `0.2x` | Shuffle route | 8s | `middle` | Revision memory ON |
+| Mobile, ek haath se | `0.05x` | Every toggle | 5s | `middle` | Hold-to-pause ON, FAB ON |
+
+---
+
 ## 12. Troubleshooting
 
 | Problem | Fix |
@@ -645,13 +657,17 @@ Lambe questions ke titles me `⏱60` laga do.
 | Reload ke baad route gayab | 🧭 Route par tap karo — typed route ka backup restore ho jata hai (section 6.3). |
 | "Add toggle numbers below" warning | Sheet me **▶ Resume with every toggle** dabao — one-tap resume (section 6.3). |
 | Loop / range chup-chaap badla lagta hai | Quiet mode OFF karo — har change par plan toast dikhega (section 6.3). |
+| **Autoscroll "running" dikhta hai par note hilta nahi** | v1.4.10 me ye theek hua. Agar phir bhi ho: note ko **reading view** me kholo, aur note ek screen se lamba ho. Jab view me scroll karne layak kuch nahi hota, run 3 second baad khud ruk kar saaf message deta hai. |
+| Quiz me answer khula hi nahi, timer aage badh gaya | v1.4.10 me theek — reveal ab class ke bharose nahi hai, zaroorat padhe to toggle ko sach me kholta hai. Purani version par ho to update karo. |
+| Timer promise se dheema lagta hai | Debug overlay ON karo → **timer accuracy** line promised vs wall-clock dikhati hai (section 7). 3x se zyada late tick ko freeze detector report karta hai — matlab phone throttle kar raha hai, plugin ka bug nahi. |
+| Kuch stops chhoot rahe hain | Overlay ki **stop / skip** line dekho: `recovered` count batata hai ki layout shift ne kitne stops peeche chhode aur loop ne kitne wapas liye (section 7). Speed kam karo ya *Tall toggles screen-by-screen* ON karo. |
 
 ---
 
 ## 13. Dev / release notes
 
 - Build: `bun install && bun run build` → `main.js`
-- Tests: `bun test` (503 tests) · Typecheck: `bun run typecheck`
+- Tests: `bun test` (664 tests) · Typecheck: `bun run typecheck`
 - Real-vault checklist: `SMOKE-TEST.md` (18 steps)
 - Release me `manifest.json`, `main.js`, `styles.css` attach hone chahiye —
   `Package Obsidian plugin release` GitHub Action tag push / manual dispatch par ye karta hai

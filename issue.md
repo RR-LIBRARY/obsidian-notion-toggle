@@ -1,5 +1,38 @@
 # issue.md — issue register
 
+## v1.4.10 (2026-08-31) — 2 reader-reported defects, both fixed
+
+### #B1 — Autoscroll "chalu dikhta hai par kuch move nahi hota" · **Critical** · FIXED
+- **Kahan:** `main.ts` → `findScrollContainer()` (ab `src/scroll-container.ts`).
+- **Kya hota tha:** container detection last resort me *koi bhi* candidate return kar deta tha.
+  Us wrapper par `scrollTop` likhna silently ignore hota hai, isliye bar/FAB "running" dikhate
+  the aur note ek pixel bhi nahi hilta tha. Mobile par zyada hota tha kyunki wahan asli scroller
+  `.markdown-reading-view` / `.markdown-source-view` / `.view-content` hota hai.
+- **Fix:** naya pure module `src/scroll-container.ts` — `viewScrollCandidates()` (mobile wrappers
+  included), `documentScrollCandidates()` (active leaf + `documentElement` / `body` fallback), aur
+  `pickScrollContainer()` jo **sirf** sach me scroll ho sakne wale element ko chunta hai
+  (visible ko preference). Scan ke liye alag `pickAnyContainer()`.
+- **Aur:** frame loop ab jhooth nahi bolta — `scrollTop` write land nahi kar rahi ya koi scroller
+  nahi mila, to `SCROLL_STUCK_MS` (3s) ke baad run rukta hai aur `MSG_NO_SCROLLER` dikhata hai.
+- **Regression guard:** `tests/scroll-container.test.ts` (18 tests) — wrapper skip, "nothing
+  scrolls → null", document fallback, mobile selectors, stuck timing.
+
+### #B2 — Quiz ke questions sequence me open nahi hote the · **High** · FIXED
+- **Kahan:** `main.ts` → quiz reveal path.
+- **Kya hota tha:** reveal sirf plugin classes lagata tha. Jo callout Obsidian ne natively
+  collapsed render kiya (ya re-render ke baad wapas collapsed aaya) wo band hi rehta tha —
+  timer aage badh jata, answer kabhi dikhta nahi. Reader ko lagta "question skip ho gaya".
+- **Fix:** ek hi jagah rule — `forceQuizOpen()`: pehle classes (no blink, reader ka fold state
+  intact), aur `revealLanded()` false ho to hi asli open. Reveal, "keep answers open" aur quiz
+  start — teeno isi se guzarte hain.
+- **Regression guard:** `tests/quiz-force-open.test.ts` (7 tests) — `<details>`, collapsed
+  callout, detached node, re-rendered node, sequential open.
+
+**Housekeeping:** `main.ts` architecture budget (<3200 lines) ke andar hai — `newTogglePlan()`,
+`questionBlockPlan()`, `midLineEnterInsert()`, `shouldAutoResume()`, `routeStopTops()` aur
+`loopFrame()` pure modules me chale gaye.
+
+
 ## v1.4.9 (2026-08-30) — no new defects
 
 Debug-overlay expansion (stop index / anchor / orientation / skip / reverse). Full suite,

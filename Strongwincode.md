@@ -1,5 +1,18 @@
 # Strongwincode.md — plugin ki strength aur weakness
 
+## v1.4.10 update (2026-08-31)
+
+**Strength:** do sabse purane reader complaints ("autoscroll chalta hai par move nahi hota",
+"quiz question skip ho gaya") ab guesswork nahi hain — dono ke peeche ek pure module hai
+(`src/scroll-container.ts`, aur `forceQuizOpen` ka classes-first rule) aur dono ka apna
+regression spec hai. Loop ab fail hone par chup nahi rehta: 3s no-progress = clear stop message.
+664 tests / 2,066 assertions.
+
+**Weakness:** stuck threshold (3s) fixed hai aur `main.ts` budget ke bilkul kinare par hai
+(3,197 / 3,200). **Kya karna chahiye:** quiz driver ko `src/` module me nikaalo — usse hi
+headroom milega, aur DOM-side coverage bhi behtar hogi.
+
+
 ## v1.4.9 update (2026-08-30)
 
 **Strength:** the overlay now reports the *same* anchored offset the loop parks at (it calls

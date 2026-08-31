@@ -437,3 +437,81 @@ export function planBackspace(text: string, col: number, opts: EnterOptions): Ba
   return null;
 }
 
+
+/**
+ * v1.4.10 — Enter pressed mid-line inside a callout: don't split the block,
+ * push the rest of the text onto a fresh body line. Checkbox options keep
+ * their scaffolding. Returns the text to insert, or `null` to let Obsidian
+ * handle the keypress.
+ */
+export function midLineEnterInsert(text: string, format: string): string | null {
+  if (format !== "callout" || !/^>/.test(text)) return null;
+  return MCQ_OPTION.test(text) || MCQ_EMPTY_OPTION.test(text) ? "\n> - [ ] " : "\n> ";
+}
+
+/** Where a freshly inserted toggle's caret goes, relative to the cursor line. */
+export interface NewTogglePlan {
+  /** Text to append at the end of the current line. */
+  block: string;
+  /** Line offset (from the cursor line) the caret lands on. */
+  lineOffset: number;
+  /** Column the caret lands on. */
+  ch: number;
+}
+
+/**
+ * v1.4.10 — the whole "insert an empty toggle below" block, as data. Pure, so
+ * both formats (callout / <details>), bold summaries and auto-numbering are
+ * unit-tested instead of only being exercised through a live editor.
+ */
+export function newTogglePlan(input: {
+  /** Header string for callout format, e.g. `> [!question]-`. */
+  header: string;
+  format: string;
+  /** Does the current line already have text? Then start on a new line. */
+  lineHasText: boolean;
+  collapsed: boolean;
+  boldSummary: boolean;
+  numbered: boolean;
+  nextNumber: number;
+}): NewTogglePlan {
+  const prefix = input.lineHasText ? "\n" : "";
+  const num = input.numbered ? `${input.nextNumber}. ` : "";
+
+  if (input.format === "details") {
+    const openTag = `<details${input.collapsed ? "" : " open"}>`;
+    const summaryOpen = input.boldSummary ? "<summary><b>" : "<summary>";
+    const summaryClose = input.boldSummary ? "</b></summary>" : "</summary>";
+    return {
+      block: `${prefix}${openTag}\n${summaryOpen}${num}${summaryClose}\n\n\n</details>\n`,
+      lineOffset: prefix ? 2 : 1,
+      ch: summaryOpen.length + num.length,
+    };
+  }
+
+  const bold = input.boldSummary ? "**" : "";
+  return {
+    block: `${prefix}${input.header}${bold}${num}${bold}\n> \n`,
+    lineOffset: prefix ? 1 : 0,
+    ch: input.header.length + bold.length + num.length,
+  };
+}
+
+/**
+ * v1.4.10 — an MCQ / match block plus where the caret goes, in one pure value
+ * so main.ts only has to write it into the editor.
+ */
+export function questionBlockPlan(
+  kind: "mcq" | "match",
+  opts: QuestionBlockOptions,
+  lineHasText: boolean
+): NewTogglePlan {
+  const prefix = lineHasText ? "\n" : "";
+  const built = kind === "mcq" ? buildMcqBlock(opts) : buildMatchBlock(opts);
+  const head = built.text.slice(0, built.cursorOffset).split("\n");
+  return {
+    block: `${prefix}${built.text}`,
+    lineOffset: (lineHasText ? 1 : 0) + head.length - 1,
+    ch: head[head.length - 1].length,
+  };
+}

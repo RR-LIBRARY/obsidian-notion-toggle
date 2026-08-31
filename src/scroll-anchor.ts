@@ -6,7 +6,7 @@
  * testable without a vault.
  */
 import { anchorOffset, type StopAnchor } from "./autoscroll";
-import { crossedTargets, dwellTargets, layoutSignature, type DwellSettings, type PageBox } from "./scrollmode";
+import { crossedTargets, dwellTargets, layoutSignature, pageStops, type DwellSettings, type PageBox } from "./scrollmode";
 import type { DwellTarget } from "./scrollmode";
 
 /** Minimal scroll-container shape (a real HTMLElement satisfies it). */
@@ -106,4 +106,21 @@ export function anchoredTargets(
       ),
     }))
     .sort((a, b) => a.top - b.top);
+}
+
+/**
+ * v1.4.10 — every anchored `scrollTop` a route waypoint parks at. A4 mode
+ * turns a tall toggle into one stop per screenful; otherwise the toggle has a
+ * single stop. Pure, so route legs are testable without a view.
+ */
+export function routeStopTops(
+  container: ScrollBox,
+  box: { top: number; height: number },
+  a4: boolean,
+  anchor: StopAnchor
+): number[] {
+  const tops = a4 ? pageStops(box.top, box.height, container.clientHeight) : [box.top];
+  return tops.map((top, i) =>
+    anchorScrollTop(container, top, a4 && i > 0 ? container.clientHeight : box.height, anchor)
+  );
 }

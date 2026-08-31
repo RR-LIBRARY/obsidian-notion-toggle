@@ -39,10 +39,13 @@ __export(main_exports, {
   convertCalloutsToDetails: () => convertCalloutsToDetails,
   convertDetailsToCallouts: () => convertDetailsToCallouts,
   default: () => NotionTogglePlugin,
+  midLineEnterInsert: () => midLineEnterInsert,
+  newTogglePlan: () => newTogglePlan,
   nextMatchRow: () => nextMatchRow,
   nextToggleNumber: () => nextToggleNumber,
   planBackspace: () => planBackspace,
   planEnter: () => planEnter,
+  questionBlockPlan: () => questionBlockPlan,
   renumberToggles: () => renumberToggles,
   toggleOptionCheckbox: () => toggleOptionCheckbox
 });
@@ -231,6 +234,11 @@ function autoPauseNotice(reason2) {
   if (reason2 === "other-note")
     return "\u231B Timer paused \u2014 go back to your session note.";
   return "\u231B Timer paused \u2014 no activity.";
+}
+function shouldAutoResume(input) {
+  if (!input.autoResume || !input.autoPaused || !input.visible)
+    return false;
+  return !input.pinned || input.onSessionNote;
 }
 
 // src/timer-ui.ts
@@ -1137,7 +1145,7 @@ function sessionLabel(s, stops) {
 // src/debug-overlay.ts
 var px = (n) => `${Math.round(n)}`;
 function debugLines(f) {
-  var _a, _b, _c, _d, _e, _f;
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
   const lines = [
     `pos ${f.pos.toFixed(2)} \u2192 top ${px(f.scrollTop)} / ${px(f.max)}`,
     `dir ${f.dir > 0 ? "down \u2193" : "up \u2191"} \xB7 ${f.speed.toFixed(2)} px/s \xB7 frac ${(f.pos - Math.floor(f.pos)).toFixed(2)}`,
@@ -1150,18 +1158,47 @@ function debugLines(f) {
   } else {
     lines.push(`stop index ${f.at < 0 ? "\u2014" : f.at}`);
   }
-  lines.push(`dwellKey ${(_a = f.dwellKey) != null ? _a : "\u2014"} \xB7 ${f.dwellLeft > 0 ? `paused ${(f.dwellLeft / 1e3).toFixed(1)}s` : "running"}`);
+  if (f.visitedCount !== void 0 || f.stopKey !== void 0) {
+    const total = f.stops || 0;
+    const nth = f.at >= 0 ? f.at + 1 : 0;
+    lines.push(
+      `stop ${nth}/${total} \xB7 key ${(_b = (_a = f.stopKey) != null ? _a : f.dwellKey) != null ? _b : "\u2014"} \xB7 visited ${(_c = f.visitedCount) != null ? _c : 0}${f.pendingStops !== void 0 ? ` \xB7 pending ${f.pendingStops}` : ""}`
+    );
+  }
+  if (f.anchor !== void 0) {
+    lines.push(
+      `anchor ${f.anchor} \u2192 top ${f.anchorTop == null ? "\u2014" : px(f.anchorTop)}${f.anchorDelta == null ? "" : ` (offset ${px(f.anchorDelta)} from toggle top)`}`
+    );
+  }
+  if (f.orientation !== void 0) {
+    lines.push(
+      `orientation ${f.orientation}${f.viewport ? ` \xB7 ${f.viewport}` : ""} \xB7 same-math \u2714${f.layoutSig ? ` \xB7 layout ${f.layoutSig}` : ""}`
+    );
+  }
+  if (f.skipCount !== void 0) {
+    const last = ((_d = f.lastSkips) != null ? _d : []).join(", ");
+    lines.push(`skips ${f.skipCount} recovered${last ? ` \xB7 last ${last}` : ""}`);
+    if (f.dwellLeft === 0 && ((_e = f.pendingStops) != null ? _e : 0) > 0 && f.skipCount > 0) {
+      lines.push(`\u26A0 ${f.pendingStops} stop(s) still unvisited on this leg`);
+    }
+  }
+  if (f.dir < 0) {
+    lines.push(
+      `reverse \u2191 \xB7 dwell guard scoped to up-leg${f.reverseWrap == null ? "" : ` \xB7 wraps to stop ${f.reverseWrap}`}`
+    );
+  }
+  lines.push(`dwellKey ${(_f = f.dwellKey) != null ? _f : "\u2014"} \xB7 ${f.dwellLeft > 0 ? `paused ${(f.dwellLeft / 1e3).toFixed(1)}s` : "running"}`);
   if (f.filter !== void 0) {
-    const c = (_b = f.colors) != null ? _b : { red: 0, yellow: 0, green: 0, other: 0 };
-    const found = (_c = f.stopsFound) != null ? _c : 0;
-    const kept = (_d = f.stopsKept) != null ? _d : 0;
+    const c = (_g = f.colors) != null ? _g : { red: 0, yellow: 0, green: 0, other: 0 };
+    const found = (_h = f.stopsFound) != null ? _h : 0;
+    const kept = (_i = f.stopsKept) != null ? _i : 0;
     lines.push(
       `filter ${f.filter} \xB7 kept ${kept}/${found} (\u{1F534}${c.red} \u{1F7E1}${c.yellow} \u{1F7E2}${c.green} \u26AA${c.other})`
     );
     if (f.filter !== "all toggles" && kept === 0) {
       lines.push(`\u26A0 filter matches 0 of ${found} toggles`);
     }
-    lines.push(`target ${(_e = f.targetColor) != null ? _e : "\u2014"} \u2190 "${(_f = f.targetType) != null ? _f : "\u2014"}"`);
+    lines.push(`target ${(_j = f.targetColor) != null ? _j : "\u2014"} \u2190 "${(_k = f.targetType) != null ? _k : "\u2014"}"`);
   }
   lines.push(`event ${f.lastEvent || "\u2014"}`);
   lines.push(`grade ${f.lastGrade || "\u2014"}`);
@@ -1205,6 +1242,62 @@ function filterFrame(input) {
     colors: input.colors,
     targetColor: input.targetColor,
     targetType: input.targetType
+  };
+}
+function anchorFrame(input) {
+  return {
+    anchor: input.anchor,
+    anchorTop: input.anchorTop,
+    anchorDelta: input.anchorTop == null || input.stopTop == null ? null : input.stopTop - input.anchorTop
+  };
+}
+function orientationFrame(input) {
+  return {
+    orientation: input.height >= input.width ? "portrait" : "landscape",
+    viewport: `${Math.round(input.width)}x${Math.round(input.height)}`,
+    layoutSig: input.layoutSig
+  };
+}
+function skipFrame(input) {
+  var _a;
+  return {
+    stopKey: input.stopKey,
+    visitedCount: input.visited,
+    pendingStops: input.pending,
+    skipCount: input.skipped,
+    lastSkips: input.lastSkips.slice(-3),
+    reverseWrap: (_a = input.reverseWrap) != null ? _a : null
+  };
+}
+function stopFrame(input) {
+  return {
+    ...anchorFrame(input),
+    ...orientationFrame(input),
+    ...skipFrame(input)
+  };
+}
+function loopFrame(input) {
+  const { container } = input;
+  return {
+    pos: input.pos,
+    scrollTop: container.scrollTop,
+    max: Math.max(0, container.scrollHeight - container.clientHeight),
+    speed: input.speed,
+    dir: input.dir,
+    mode: input.mode,
+    routeMode: false,
+    target: null,
+    routeIdx: input.routeIdx,
+    routeLen: input.routeLen,
+    routeStop: input.routeStop,
+    routeStops: 1,
+    stops: input.stops,
+    at: input.at,
+    dwellKey: input.dwellKey,
+    dwellLeft: input.dwellUntil ? Math.max(0, input.dwellUntil - input.ts) : 0,
+    lastEvent: input.lastEvent,
+    lastGrade: input.lastGrade,
+    progress: `progress ${input.progress}`
   };
 }
 
@@ -1597,6 +1690,84 @@ var ScrollFab = class {
     this.wrap.remove();
   }
 };
+
+// src/scroll-container.ts
+var VIEW_SCROLLER_SELECTORS = [
+  ".markdown-preview-view",
+  ".cm-scroller",
+  ".markdown-reading-view",
+  ".markdown-source-view",
+  ".view-content"
+];
+function canScroll(el) {
+  const h = el;
+  return !!h && typeof h.scrollHeight === "number" && h.scrollHeight - h.clientHeight > 2;
+}
+function isVisible(el) {
+  const h = el;
+  if (!h)
+    return false;
+  return h.offsetParent !== null;
+}
+function viewScrollCandidates(root, contentEl) {
+  const out = [];
+  for (const scope of [root, contentEl]) {
+    if (!scope)
+      continue;
+    for (const sel of VIEW_SCROLLER_SELECTORS)
+      out.push(scope.querySelector(sel));
+  }
+  out.push(root, contentEl);
+  return dedupe(out);
+}
+function documentScrollCandidates(doc) {
+  const out = [];
+  const leaf = doc.querySelector(".workspace-leaf.mod-active");
+  for (const scope of [leaf, doc]) {
+    if (!scope)
+      continue;
+    for (const sel of VIEW_SCROLLER_SELECTORS) {
+      out.push(...Array.from(scope.querySelectorAll(sel)));
+    }
+  }
+  out.push(doc.scrollingElement, doc.documentElement, doc.body);
+  return dedupe(out);
+}
+function pickScrollContainer(candidates) {
+  for (const el of candidates)
+    if (canScroll(el) && isVisible(el))
+      return el;
+  for (const el of candidates)
+    if (canScroll(el))
+      return el;
+  return null;
+}
+function pickAnyContainer(candidates) {
+  var _a;
+  const scroller = pickScrollContainer(candidates);
+  if (scroller)
+    return scroller;
+  for (const el of candidates)
+    if (isVisible(el))
+      return el;
+  return (_a = candidates.find(Boolean)) != null ? _a : null;
+}
+function dedupe(list) {
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  for (const el of list) {
+    if (!el || seen.has(el))
+      continue;
+    seen.add(el);
+    out.push(el);
+  }
+  return out;
+}
+var SCROLL_STUCK_MS = 3e3;
+var MSG_NO_SCROLLER = "Autoscroll stopped: this view has nothing to scroll. Open the note in reading view (or make the note longer than one screen) and try again.";
+function isScrollStuck(stuckSince, now) {
+  return stuckSince > 0 && now - stuckSince >= SCROLL_STUCK_MS;
+}
 
 // src/guide.ts
 var TOOLBAR_COMMANDS = [
@@ -3005,6 +3176,12 @@ function anchoredTargets(boxes, cfg, container, anchor) {
       )
     };
   }).sort((a, b) => a.top - b.top);
+}
+function routeStopTops(container, box, a4, anchor) {
+  const tops = a4 ? pageStops(box.top, box.height, container.clientHeight) : [box.top];
+  return tops.map(
+    (top, i) => anchorScrollTop(container, top, a4 && i > 0 ? container.clientHeight : box.height, anchor)
+  );
 }
 
 // src/perf-report-modal.ts
@@ -4677,6 +4854,48 @@ function planBackspace(text, col, opts) {
   }
   return null;
 }
+function midLineEnterInsert(text, format) {
+  if (format !== "callout" || !/^>/.test(text))
+    return null;
+  return MCQ_OPTION2.test(text) || MCQ_EMPTY_OPTION.test(text) ? "\n> - [ ] " : "\n> ";
+}
+function newTogglePlan(input) {
+  const prefix = input.lineHasText ? "\n" : "";
+  const num = input.numbered ? `${input.nextNumber}. ` : "";
+  if (input.format === "details") {
+    const openTag = `<details${input.collapsed ? "" : " open"}>`;
+    const summaryOpen = input.boldSummary ? "<summary><b>" : "<summary>";
+    const summaryClose = input.boldSummary ? "</b></summary>" : "</summary>";
+    return {
+      block: `${prefix}${openTag}
+${summaryOpen}${num}${summaryClose}
+
+
+</details>
+`,
+      lineOffset: prefix ? 2 : 1,
+      ch: summaryOpen.length + num.length
+    };
+  }
+  const bold = input.boldSummary ? "**" : "";
+  return {
+    block: `${prefix}${input.header}${bold}${num}${bold}
+> 
+`,
+    lineOffset: prefix ? 1 : 0,
+    ch: input.header.length + bold.length + num.length
+  };
+}
+function questionBlockPlan(kind, opts, lineHasText) {
+  const prefix = lineHasText ? "\n" : "";
+  const built = kind === "mcq" ? buildMcqBlock(opts) : buildMatchBlock(opts);
+  const head = built.text.slice(0, built.cursorOffset).split("\n");
+  return {
+    block: `${prefix}${built.text}`,
+    lineOffset: (lineHasText ? 1 : 0) + head.length - 1,
+    ch: head[head.length - 1].length
+  };
+}
 
 // main.ts
 function nowMs() {
@@ -4755,6 +4974,8 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
     this.scrollBoxesAt = 0;
     /** v1.2.1 — last time we tried to re-find a scrollable container. */
     this.scrollRelocateAt = 0;
+    /** v1.4.10 — since when has the run made no visible progress? (0 = fine) */
+    this.scrollStuckSince = 0;
     /** v1.2.1 — the quick-controls sheet is open (FAB stays pinned). */
     this.scrollSheetOpen = false;
     this.scrollElByOrdinal = /* @__PURE__ */ new Map();
@@ -4780,6 +5001,9 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
     this.perf = new Telemetry();
     /** v1.4.7 — stops already visited on this leg (skip guard, per stop). */
     this.scrollVisited = /* @__PURE__ */ new Set();
+    /** v1.4.9 — stops recovered after a layout shift, for the debug overlay. */
+    this.scrollSkipCount = 0;
+    this.scrollLastSkips = [];
     this.quizBar = null;
     /** v1.4.2 — one inline countdown badge per question of the run. */
     this.quizBoard = null;
@@ -5435,37 +5659,17 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
   insertNewToggleBelow(editor, forceNumbered = false) {
     const cursor = editor.getCursor();
     const currentLine = editor.getLine(cursor.line);
-    const prefix = currentLine.trim().length === 0 ? "" : "\n";
-    const numbered = forceNumbered || this.settings.numberedByDefault;
-    if (this.settings.format === "details") {
-      const openAttr = this.settings.defaultCollapsed ? "" : " open";
-      const openTag = `<details${openAttr}>`;
-      const summaryOpen = this.settings.boldSummary ? "<summary><b>" : "<summary>";
-      const summaryClose = this.settings.boldSummary ? "</b></summary>" : "</summary>";
-      const num2 = numbered ? `${this.nextNumberAt(editor, cursor.line)}. ` : "";
-      const block2 = `${prefix}${openTag}
-${summaryOpen}${num2}${summaryClose}
-
-
-</details>
-`;
-      editor.replaceRange(block2, { line: cursor.line, ch: currentLine.length });
-      const summaryLine = cursor.line + (prefix ? 2 : 1);
-      editor.setCursor({ line: summaryLine, ch: summaryOpen.length + num2.length });
-      return;
-    }
-    const header = this.toggleHeader("");
-    const num = numbered ? `${this.nextNumberAt(editor, cursor.line)}. ` : "";
-    const bold = this.settings.boldSummary ? "**" : "";
-    const block = `${prefix}${header}${bold}${num}${bold}
-> 
-`;
-    editor.replaceRange(block, { line: cursor.line, ch: currentLine.length });
-    const headerLine = cursor.line + (prefix ? 1 : 0);
-    editor.setCursor({
-      line: headerLine,
-      ch: header.length + bold.length + num.length
+    const plan = newTogglePlan({
+      header: this.toggleHeader(""),
+      format: this.settings.format,
+      lineHasText: currentLine.trim().length > 0,
+      collapsed: this.settings.defaultCollapsed,
+      boldSummary: this.settings.boldSummary,
+      numbered: forceNumbered || this.settings.numberedByDefault,
+      nextNumber: this.nextNumberAt(editor, cursor.line)
     });
+    editor.replaceRange(plan.block, { line: cursor.line, ch: currentLine.length });
+    editor.setCursor({ line: cursor.line + plan.lineOffset, ch: plan.ch });
   }
   /** Next auto-number, based on the last numbered toggle above `line`. */
   nextNumberAt(editor, line) {
@@ -5478,26 +5682,23 @@ ${summaryOpen}${num2}${summaryClose}
   insertQuestionBlock(editor, kind) {
     const cursor = editor.getCursor();
     const currentLine = editor.getLine(cursor.line);
-    const prefix = currentLine.trim().length === 0 ? "" : "\n";
     const numbered = this.settings.numberedByDefault;
-    const opts = {
-      calloutType: this.activeCallout(),
-      collapsed: this.settings.defaultCollapsed,
-      boldSummary: this.settings.boldSummary,
-      format: this.settings.format,
-      numbered,
-      number: numbered ? this.nextNumberAt(editor, cursor.line) : void 0,
-      addAnswerLine: this.settings.addAnswerLine,
-      count: kind === "mcq" ? this.settings.mcqOptionCount : this.settings.matchRowCount
-    };
-    const built = kind === "mcq" ? buildMcqBlock(opts) : buildMatchBlock(opts);
-    editor.replaceRange(`${prefix}${built.text}`, { line: cursor.line, ch: currentLine.length });
-    const startLine = cursor.line + (prefix ? 1 : 0);
-    const headLines = built.text.slice(0, built.cursorOffset).split("\n");
-    editor.setCursor({
-      line: startLine + headLines.length - 1,
-      ch: headLines[headLines.length - 1].length
-    });
+    const plan = questionBlockPlan(
+      kind,
+      {
+        calloutType: this.activeCallout(),
+        collapsed: this.settings.defaultCollapsed,
+        boldSummary: this.settings.boldSummary,
+        format: this.settings.format,
+        numbered,
+        number: numbered ? this.nextNumberAt(editor, cursor.line) : void 0,
+        addAnswerLine: this.settings.addAnswerLine,
+        count: kind === "mcq" ? this.settings.mcqOptionCount : this.settings.matchRowCount
+      },
+      currentLine.trim().length > 0
+    );
+    editor.replaceRange(plan.block, { line: cursor.line, ch: currentLine.length });
+    editor.setCursor({ line: cursor.line + plan.lineOffset, ch: plan.ch });
   }
   /**
    * Enter inside a toggle:
@@ -5515,17 +5716,16 @@ ${summaryOpen}${num2}${summaryClose}
     const text = line.text;
     const atLineEnd = sel.head === line.to;
     if (!atLineEnd) {
-      if (this.settings.format === "callout" && /^>/.test(text)) {
-        const prefix = MCQ_OPTION2.test(text) || MCQ_EMPTY_OPTION.test(text) ? "\n> - [ ] " : "\n> ";
-        view.dispatch({
-          changes: { from: sel.head, to: sel.head, insert: prefix },
-          selection: { anchor: sel.head + prefix.length },
-          scrollIntoView: true,
-          userEvent: "input"
-        });
-        return true;
-      }
-      return false;
+      const prefix = midLineEnterInsert(text, this.settings.format);
+      if (!prefix)
+        return false;
+      view.dispatch({
+        changes: { from: sel.head, to: sel.head, insert: prefix },
+        selection: { anchor: sel.head + prefix.length },
+        scrollIntoView: true,
+        userEvent: "input"
+      });
+      return true;
     }
     const linesAbove = [];
     for (let n = 1; n <= line.number; n++)
@@ -5847,14 +6047,18 @@ ${row}`, { line: cursor.line, ch: line.length });
         new import_obsidian5.Notice(autoPauseNotice(reason2));
       return;
     }
-    if (this.settings.autoResumeOnReturn && this.timerState.autoPaused && document.visibilityState !== "hidden") {
-      const onNote = !this.sessionNotePath || !this.settings.pinToSessionNote || this.activeNotePath() === this.sessionNotePath;
-      if (onNote) {
-        this.timerState = resumeAfterAutoPause(this.timerState);
-        this.lastTick = Date.now();
-        this.lastActivityAt = Date.now();
-        this.renderTimer();
-      }
+    const resume = shouldAutoResume({
+      autoResume: this.settings.autoResumeOnReturn,
+      autoPaused: this.timerState.autoPaused === true,
+      visible: document.visibilityState !== "hidden",
+      pinned: this.settings.pinToSessionNote,
+      onSessionNote: !this.sessionNotePath || this.activeNotePath() === this.sessionNotePath
+    });
+    if (resume) {
+      this.timerState = resumeAfterAutoPause(this.timerState);
+      this.lastTick = Date.now();
+      this.lastActivityAt = Date.now();
+      this.renderTimer();
     }
   }
   /** Collapse every toggle in the active note (used on breaks / "recall again"). */
@@ -6078,42 +6282,23 @@ ${row}`, { line: cursor.line, ch: line.length });
       return;
     new import_obsidian5.Notice(message, ms2);
   }
-  findScrollContainer() {
-    var _a, _b, _c, _d;
-    const scrollable = (el) => {
-      const h = el;
-      return !!h && h.scrollHeight - h.clientHeight > 2;
-    };
-    const visible = (el) => !!el && el.offsetParent !== null;
-    const candidates = [];
+  /** v1.4.10 — candidates + pick rule live in `src/scroll-container.ts`. */
+  scrollCandidates() {
+    var _a, _b, _c;
     const view = this.app.workspace.getActiveViewOfType(import_obsidian5.MarkdownView);
-    if (view) {
-      const root = (_b = (_a = view.previewMode) == null ? void 0 : _a.containerEl) != null ? _b : view.contentEl;
-      candidates.push(
-        root == null ? void 0 : root.querySelector(".markdown-preview-view"),
-        view.contentEl.querySelector(".markdown-preview-view"),
-        root,
-        view.contentEl.querySelector(".cm-scroller"),
-        view.contentEl
-      );
-    }
-    const leaf = (_c = document.querySelector(".workspace-leaf.mod-active")) != null ? _c : document;
-    candidates.push(
-      leaf.querySelector(".markdown-preview-view"),
-      leaf.querySelector(".cm-scroller"),
-      ...Array.from(document.querySelectorAll(".markdown-preview-view")),
-      ...Array.from(document.querySelectorAll(".cm-scroller"))
-    );
-    for (const el of candidates)
-      if (scrollable(el) && visible(el))
-        return el;
-    for (const el of candidates)
-      if (scrollable(el))
-        return el;
-    for (const el of candidates)
-      if (visible(el != null ? el : null))
-        return el;
-    return (_d = candidates.find(Boolean)) != null ? _d : null;
+    const root = view ? (_b = (_a = view.previewMode) == null ? void 0 : _a.containerEl) != null ? _b : view.contentEl : null;
+    return [
+      ...viewScrollCandidates(root, (_c = view == null ? void 0 : view.contentEl) != null ? _c : null),
+      ...documentScrollCandidates(document)
+    ];
+  }
+  /** The element autoscroll writes `scrollTop` to, or `null` if none scrolls. */
+  findScrollContainer() {
+    return pickScrollContainer(this.scrollCandidates());
+  }
+  /** Good enough to *scan* for toggles (may not scroll). */
+  findViewContainer() {
+    return pickAnyContainer(this.scrollCandidates());
   }
   /**
    * v1.1.7 — does the active note's *source* contain toggles? Used when the
@@ -6160,7 +6345,7 @@ ${row}`, { line: cursor.line, ch: line.length });
    * does not fight the reader.
    */
   setAllAnswersOpen(open) {
-    const container = this.findScrollContainer();
+    const container = this.findViewContainer();
     if (!container) {
       new import_obsidian5.Notice("Open a note first.");
       return;
@@ -6306,7 +6491,7 @@ ${row}`, { line: cursor.line, ch: line.length });
   /** Rebuild the shuffle route from this note's FSRS memory. */
   async rebuildShuffleRoute(notify = true) {
     var _a, _b, _c;
-    const container = this.findScrollContainer();
+    const container = this.findViewContainer();
     const path = (_b = (_a = this.app.workspace.getActiveFile()) == null ? void 0 : _a.path) != null ? _b : "";
     if (!container || !path) {
       new import_obsidian5.Notice("Open a note first \u2014 shuffle needs a note view.");
@@ -6397,9 +6582,10 @@ ${deckSummary(
     var _a, _b;
     const container = this.findScrollContainer();
     if (!container) {
-      new import_obsidian5.Notice("Open a note first \u2014 autoscroll needs a note view.");
+      new import_obsidian5.Notice(this.findViewContainer() ? MSG_NO_SCROLLER : "Open a note first.", 8e3);
       return;
     }
+    this.scrollStuckSince = 0;
     this.scrollContainer = container;
     this.scrollNotePath = (_b = (_a = this.app.workspace.getActiveFile()) == null ? void 0 : _a.path) != null ? _b : null;
     this.scrollSeen = /* @__PURE__ */ new Set();
@@ -6641,27 +6827,51 @@ ${deckSummary(
     if (!overlay || !container)
       return;
     overlay.update({
-      pos: this.scrollPos,
-      scrollTop: container.scrollTop,
-      max: Math.max(0, container.scrollHeight - container.clientHeight),
-      speed: clampSpeed(this.settings.scrollSpeed),
-      dir: this.scrollDir,
-      mode: this.settings.scrollMode,
-      routeMode: false,
-      target: null,
-      routeIdx: this.scrollRouteIdx,
-      routeLen: ((_a = this.settings.scrollRoute) != null ? _a : []).length,
-      routeStop: this.scrollRouteStop,
-      routeStops: 1,
-      stops: this.scrollTargets.length,
-      at: this.scrollAt,
-      dwellKey: this.scrollDwellKey,
-      dwellLeft: this.scrollDwellUntil ? Math.max(0, this.scrollDwellUntil - ts) : 0,
-      lastEvent: this.scrollLastEvent,
-      lastGrade: this.scrollLastGrade,
-      progress: `progress ${this.scrollProgressLabel()}`,
+      ...loopFrame({
+        pos: this.scrollPos,
+        container,
+        speed: clampSpeed(this.settings.scrollSpeed),
+        dir: this.scrollDir,
+        mode: this.settings.scrollMode,
+        routeIdx: this.scrollRouteIdx,
+        routeLen: ((_a = this.settings.scrollRoute) != null ? _a : []).length,
+        routeStop: this.scrollRouteStop,
+        stops: this.scrollTargets.length,
+        at: this.scrollAt,
+        dwellKey: this.scrollDwellKey,
+        dwellUntil: this.scrollDwellUntil,
+        ts,
+        lastEvent: this.scrollLastEvent,
+        lastGrade: this.scrollLastGrade,
+        progress: this.scrollProgressLabel()
+      }),
       ...this.filterTelemetry(container),
+      ...this.stopTelemetry(container),
       ...frame
+    });
+  }
+  /**
+   * v1.4.9 — stop / anchor / skip read-out: which stop the loop is on, the
+   * anchored offset it parks at, the orientation the anchor maths ran against,
+   * and how many stops a layout shift left behind (recovered). Reverse legs use
+   * the same numbers; only the direction line differs.
+   */
+  stopTelemetry(container) {
+    var _a, _b, _c, _d;
+    const stop = this.scrollAt >= 0 ? this.scrollTargets[this.scrollAt] : void 0;
+    return stopFrame({
+      anchor: String((_a = this.settings.scrollStopAnchor) != null ? _a : DEFAULT_STOP_ANCHOR),
+      anchorTop: stop ? stop.top : null,
+      stopTop: (_c = (_b = this.scrollBoxes.find((b) => b.page === (stop == null ? void 0 : stop.page))) == null ? void 0 : _b.top) != null ? _c : null,
+      width: container.clientWidth,
+      height: container.clientHeight,
+      layoutSig: layoutSignature(this.scrollBoxes),
+      stopKey: (_d = stop == null ? void 0 : stop.key) != null ? _d : this.scrollDwellKey,
+      visited: this.scrollVisited.size,
+      pending: Math.max(0, this.scrollTargets.length - this.scrollVisited.size),
+      skipped: this.scrollSkipCount,
+      lastSkips: this.scrollLastSkips,
+      reverseWrap: this.scrollDir < 0 ? Math.max(0, this.scrollTargets.length - 1) : null
     });
   }
   /**
@@ -6745,7 +6955,10 @@ ${deckSummary(
   }
   /** v1.4.7 — a fresh leg: no stop is "already used" any more. */
   resetDwell() {
-    this.resetDwell();
+    this.scrollDwellKey = null;
+    this.scrollVisited.clear();
+    this.scrollSkipCount = 0;
+    this.scrollLastSkips = [];
   }
   /** Repaint the debug overlay (when on) and queue the next frame. */
   endScrollFrame(ts) {
@@ -6833,6 +7046,21 @@ ${deckSummary(
    * float position, per-leg route direction, `crossedTarget` dwell guard and
    * the sub-pixel `translate3d` remainder.
    */
+  /** v1.4.10 — no progress for SCROLL_STUCK_MS stops the run. True = stopped. */
+  noteScrollProgress(moved, ts, why) {
+    if (moved) {
+      this.scrollStuckSince = 0;
+      return false;
+    }
+    if (!this.scrollStuckSince)
+      this.scrollStuckSince = ts;
+    if (!isScrollStuck(this.scrollStuckSince, ts))
+      return false;
+    this.scrollLastEvent = `stopped: ${why}`;
+    new import_obsidian5.Notice(MSG_NO_SCROLLER, 8e3);
+    this.stopAutoScroll(false);
+    return true;
+  }
   autoScrollFrame(ts) {
     this.scrollRaf = null;
     if (!this.scrollRunning || this.scrollHoldPaused)
@@ -6880,10 +7108,7 @@ ${deckSummary(
         const wanted = cfg.route[this.scrollRouteIdx % cfg.route.length];
         const hit = this.scrollBoxes.find((b) => b.page === wanted);
         if (hit) {
-          const anchor = this.settings.scrollStopAnchor;
-          routeStops = (cfg.a4 ? pageStops(hit.top, hit.height, container.clientHeight) : [hit.top]).map(
-            (top, i) => anchorScrollTop(container, top, cfg.a4 && i > 0 ? container.clientHeight : hit.height, anchor)
-          );
+          routeStops = routeStopTops(container, hit, cfg.a4, this.settings.scrollStopAnchor);
           routeTarget = routeStops[Math.min(this.scrollRouteStop, routeStops.length - 1)];
           this.scrollDir = legDirection(routeTarget, this.scrollPos, this.scrollDir);
         }
@@ -6895,6 +7120,8 @@ ${deckSummary(
       this.scrollMovedPx += Math.abs(this.scrollPos - prevPos);
       const whole = Math.floor(this.scrollPos);
       container.scrollTop = whole;
+      if (this.noteScrollProgress(Math.abs(container.scrollTop - whole) <= 2, ts, "scrollTop writes ignored"))
+        return;
       if (routeMode) {
         if (routeTarget != null && waypointReached(prevPos, this.scrollPos, routeTarget)) {
           this.scrollPos = routeTarget;
@@ -6931,8 +7158,11 @@ ${deckSummary(
         }
         const targets = this.currentTargets(container, cfg);
         const pick = pickStops(targets, prevPos, this.scrollPos, this.scrollDir, this.scrollVisited);
-        if (pick.missed.length)
+        if (pick.missed.length) {
           this.perf.noteSkipped(pick.missed.length);
+          this.scrollSkipCount += pick.missed.length;
+          this.scrollLastSkips = [...this.scrollLastSkips, ...pick.missed.map((m) => m.key)].slice(-3);
+        }
         const crossed = pick.stop;
         if (shouldPark(this.scrollDwellKey, crossed)) {
           const stop = crossed;
@@ -6986,7 +7216,9 @@ ${deckSummary(
         this.scrollBoxes = [];
         this.scrollBoxesAt = 0;
         this.scrollSmoothEl = null;
-      }
+        this.scrollStuckSince = 0;
+      } else if (this.noteScrollProgress(false, ts, "no scrollable container"))
+        return;
     }
     if (this.scrollDebugOverlay)
       this.paintScrollDebug({}, ts);
@@ -7020,7 +7252,7 @@ ${deckSummary(
   }
   startQuizRun() {
     var _a;
-    const container = this.findScrollContainer();
+    const container = this.findViewContainer();
     if (!container) {
       new import_obsidian5.Notice("Open a note first \u2014 quiz mode needs a note view.");
       return;
@@ -7050,8 +7282,12 @@ ${deckSummary(
     this.quizSnapshot = snapshotToggles(stops.map((s) => s.el));
     document.body.classList.add(QUIZ_ACTIVE_CLASS);
     for (const s of stops) {
-      if (s.el)
-        setQuizVisible(s.el, this.settings.quizKeepAnswersOpen);
+      if (!s.el)
+        continue;
+      if (this.settings.quizKeepAnswersOpen)
+        this.forceQuizOpen(s.el);
+      else
+        setQuizVisible(s.el, false);
     }
     this.quizState = startQuiz(this.quizTitles, this.settings);
     if (!this.quizBoard)
@@ -7159,9 +7395,7 @@ ${deckSummary(
     if (event === "reveal") {
       this.ensureQuizEls();
       this.applyQuizVisibility(this.quizState.at, true);
-      const el = (_a = this.quizStops[this.quizState.at]) == null ? void 0 : _a.el;
-      if (el && el.isConnected && !revealLanded(el))
-        this.setToggleOpen(el, true);
+      this.forceQuizOpen((_a = this.quizStops[this.quizState.at]) == null ? void 0 : _a.el);
       if (this.settings.quizBeepOnTimeUp && !this.settings.scrollQuiet) {
         new import_obsidian5.Notice("\u23F0 Time up \u2014 answer revealed.");
       }
@@ -7177,12 +7411,22 @@ ${perfVerdict(this.perf.report())}`, 9e3);
     }
     this.renderQuizHud();
   }
+  /**
+   * v1.4.10 — reveal an answer for real: plugin classes first, a genuine open
+   * only when that did not land (natively collapsed / re-rendered callout).
+   */
+  forceQuizOpen(el) {
+    if (!el || !el.isConnected)
+      return;
+    setQuizVisible(el, true);
+    if (!revealLanded(el))
+      this.setToggleOpen(el, true);
+  }
   /** Only the current question may show its answer, and only after the reveal. */
   applyQuizVisibility(index, revealed) {
     if (this.settings.quizKeepAnswersOpen) {
       for (const s of this.quizStops)
-        if (s.el)
-          setQuizVisible(s.el, true);
+        this.forceQuizOpen(s.el);
       return;
     }
     applyQuizVisibilityClasses(

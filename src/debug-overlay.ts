@@ -288,3 +288,50 @@ export function stopFrame(input: {
     ...skipFrame(input),
   };
 }
+
+/**
+ * v1.4.10 — the per-frame numbers that come straight from the loop's own
+ * state. Pure so the overlay's contents are testable, and so `main.ts` only
+ * has to hand over values instead of composing the frame inline.
+ */
+export function loopFrame(input: {
+  pos: number;
+  container: { scrollTop: number; scrollHeight: number; clientHeight: number };
+  speed: number;
+  dir: 1 | -1;
+  mode: string;
+  routeIdx: number;
+  routeLen: number;
+  routeStop: number;
+  stops: number;
+  at: number;
+  dwellKey: string | null;
+  dwellUntil: number;
+  ts: number;
+  lastEvent: string;
+  lastGrade: string;
+  progress: string;
+}): Partial<DebugFrame> {
+  const { container } = input;
+  return {
+    pos: input.pos,
+    scrollTop: container.scrollTop,
+    max: Math.max(0, container.scrollHeight - container.clientHeight),
+    speed: input.speed,
+    dir: input.dir,
+    mode: input.mode,
+    routeMode: false,
+    target: null,
+    routeIdx: input.routeIdx,
+    routeLen: input.routeLen,
+    routeStop: input.routeStop,
+    routeStops: 1,
+    stops: input.stops,
+    at: input.at,
+    dwellKey: input.dwellKey,
+    dwellLeft: input.dwellUntil ? Math.max(0, input.dwellUntil - input.ts) : 0,
+    lastEvent: input.lastEvent,
+    lastGrade: input.lastGrade,
+    progress: `progress ${input.progress}`,
+  };
+}
