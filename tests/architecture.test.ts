@@ -57,7 +57,10 @@ const srcFiles = readdirSync("src")
 const OBSIDIAN_SHELLS = new Set([
   "src/modals.ts",
   "src/sheet-modal.ts",
-
+  // v1.5.0 — command registration shell for the callout playground / breakdown.
+  "src/callout-commands.ts",
+  // v1.5.1 — view-mode shell around the pure reader-mode module.
+  "src/reader-mode-view.ts",
   "src/settings-tab.ts",
   "src/perf-report-modal.ts",
   "src/guide.ts",

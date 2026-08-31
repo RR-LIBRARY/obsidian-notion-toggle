@@ -474,6 +474,26 @@ export class NotionToggleSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Switch to Reading View while scrolling")
+      .setDesc("Uses Obsidian's stable reading surface, then restores Source View when the run ends.")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.scrollForceReading).onChange(async (v) => {
+          this.plugin.settings.scrollForceReading = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Restore previous view after scrolling")
+      .setDesc("Return to Source View automatically when autoscroll stops.")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.scrollRestoreMode).onChange(async (v) => {
+          this.plugin.settings.scrollRestoreMode = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
       .setName("Close it again when leaving")
       .setDesc("Keeps active recall honest: only one answer is visible at a time.")
       .addToggle((tg) =>

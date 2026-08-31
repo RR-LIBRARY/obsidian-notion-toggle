@@ -1,6 +1,8 @@
-# Notion Toggle — Poora Manual (v1.1.6)
+# Notion Toggle — Poora Manual (v1.5.1)
 
-> **v1.4.10** — bug fix: autoscroll ab galat wrapper par scroll nahi likhta (mobile me "chalta hai par hilta nahi" gaya), aur quiz reveal zaroorat padne par toggle ko sach me kholta hai — koi question chhupa nahi rehta. Kuch bhi scroll na hone par run 3s me saaf message ke saath rukta hai.
+> **v1.5.1** — autoscroll shuru hote hi Reading View me switch karta hai, aur stop par aapka pehla view mode wapas laata hai. Filter picker grouped + expandable hai, har callout type ka count aur percentage dikhata hai, aur quiz re-render ke baad bhi question skip nahi karta.
+
+> **Important:** Reading View switch ko Settings → Auto-scroll revision → **Auto Reading View** se band kiya ja sakta hai. **Restore previous view on stop** ON rakhen to Source / Live Preview session ke baad wapas aata hai.
 
 Ye manual me **har ek setting** ka matlab, use karne ka tarika aur recommended value hai —
 exactly usi order me jaisa Obsidian ke settings tab me dikhta hai.
@@ -792,3 +794,55 @@ performance report"* ek modal kholta hai jisme:
 - **Autoscroll** — skipped (recovered) stops.
 
 Modal me **Copy report** aur **Save to note** buttons hain.
+
+## 14. v1.5.0 — filter groups, note ke asli numbers, callout tracking
+
+### 14.1 "Odd toggles (1, 3, 5 …)" ka matlab badla (bug fix)
+
+Pehle filter lagane ke baad plugin bache hue toggles ko dobara 1..N number
+deta tha, is liye "Odd toggles" un positions par rukta tha jo note me kahin
+dikhti hi nahi thi. Ab numbering **note ki apni** hai (document order, filter
+ignore). Matlab:
+
+- Red filter + Odd → note ke toggle #1, #3, #5 me se jo red hain.
+- Custom list `4` → note ka chautha toggle, chahe woh `!important` ho.
+- Route bhi note ke numbers se likho — jo numbers note me dikhte hain.
+
+### 14.2 Filter picker ab grouped aur expandable hai
+
+Dono pickers (Autoscroll aur Quiz) me teen collapsible groups hain:
+
+| Group | Kya hai andar |
+|---|---|
+| 🔴🟡🟢 Traffic light | All toggles, Red, Yellow, Green, Red+Yellow, All graded |
+| ❓💡📝 Callout types | Har built-in type alag row — `!question`, `!tip`, `!note`, `!info`, `!abstract`, `!warning`, `!success`, `!todo`, `!important`, `!failure`, `!danger`, `!bug`, `!example`, `!quote` + "All built-in callouts" |
+| 🌐 Everything else | Ungraded wildcard aur "Everything, graded + ungraded" |
+
+Har row par: icon, naam, **kaunse callout words match karte hain** (aliases
+sameth, jaise `!failure / !fail / !missing`), aur is note me uska **count ·
+percentage**. Jis type ka note me ek bhi toggle nahi, woh row dim dikhti hai —
+to "filter kaam nahi kar raha" ki jagah saaf pata chalta hai ki note me woh
+type hi nahi hai. Group open/close tap se hota hai, aur active filter ka group
+apne aap khulta hai.
+
+### 14.3 Callout tracking (count + percentage)
+
+- **Stats panel** (Autoscroll revision stats) ke neeche "Callout breakdown"
+  table: Type / Callout / Count / % of note.
+- **Command "Copy callout breakdown (counts + %)"** — wahi table markdown me
+  clipboard par, note me paste karne layak.
+- Picker rows me inline count, upar ek line ka summary.
+
+### 14.4 Callout playground note
+
+Command: **"Insert callout type playground note"**. Ye ek naya note banata hai
+jisme har supported type ka ek live example hai — filter ka naam, matching
+words aur ek deep link (`obsidian://notion-toggle?action=autoscroll&filter=important`).
+`!important`, `!todo`, `!failure`, `!danger`, `!bug`, `!example`, `!quote`
+sach me filter hote hain — isi note par 10 second me verify kar sakte hain.
+
+### 14.5 Toggle khulne ka blink hata
+
+Quiz/autoscroll reveal ab 120ms ka minimal fade + 2px slide hai (fold animation
+band hi rehti hai, kyunki wahi flicker karti thi). `prefers-reduced-motion`
+respect hota hai — us case me instant reveal.

@@ -86,6 +86,10 @@ export interface AutoScrollSettings {
   scrollPerNote: Record<string, { speed: number; reverse: boolean; hold: number }>;
   /** v1.4.7 — where a stop lands on screen (portrait and landscape alike). */
   scrollStopAnchor: StopAnchor;
+  /** v1.5.1 — switch the note into Obsidian's reading view when autoscroll starts. */
+  scrollForceReading: boolean;
+  /** v1.5.1 — put the note back into its old view mode when the run stops. */
+  scrollRestoreMode: boolean;
 }
 
 export const DEFAULT_AUTOSCROLL: AutoScrollSettings = {
@@ -113,6 +117,8 @@ export const DEFAULT_AUTOSCROLL: AutoScrollSettings = {
   scrollMemory: {},
   scrollPerNote: {},
   scrollStopAnchor: "middle",
+  scrollForceReading: true,
+  scrollRestoreMode: true,
 };
 
 export const SPEED_MIN = 1;

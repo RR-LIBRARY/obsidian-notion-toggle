@@ -110,6 +110,83 @@
 }
 
 
+
+/* v1.5.0 — grouped, expandable picker rows. */
+.ntt-filter-summary {
+  font-size: 0.85em;
+  opacity: 0.75;
+  margin: 0 0 8px;
+  line-height: 1.35;
+}
+
+.ntt-filter-group {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 4px 6px;
+  margin-bottom: 6px;
+}
+
+.ntt-filter-group-title {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 4px 2px;
+  list-style: none;
+}
+
+.ntt-filter-group[open] > .ntt-filter-group-title {
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 6px;
+}
+
+.ntt-filter-group > .notion-toggle-color-btn {
+  display: block;
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+.ntt-filter-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ntt-filter-count {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8em;
+  opacity: 0.7;
+  flex: 0 0 auto;
+}
+
+.ntt-filter-hint {
+  font-size: 0.78em;
+  opacity: 0.6;
+  margin-top: 2px;
+}
+
+.notion-toggle-color-btn.is-empty {
+  opacity: 0.45;
+}
+
+/* v1.5.0 — opening a toggle fades/slides in (120ms) instead of blinking. */
+@keyframes ntt-reveal {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: none; }
+}
+
+body.ntt-quiz-active .callout.ntt-quiz-shown > .callout-content,
+body.ntt-quiz-active details.ntt-quiz-shown > *:not(summary) {
+  animation: ntt-reveal 120ms ease-out both;
+  will-change: opacity, transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.ntt-quiz-active .callout.ntt-quiz-shown > .callout-content,
+  body.ntt-quiz-active details.ntt-quiz-shown > *:not(summary) {
+    animation: none;
+  }
+}
+
 /* ===== v1.0.4 — MCQ + Match the following ===== */
 .callout[data-callout^="recall-"] .callout-content ul,
 .callout[data-callout="question"] .callout-content ul {
@@ -559,8 +636,10 @@ body.ntt-quiz-active .callout,
 body.ntt-quiz-active .callout-content,
 body.ntt-quiz-active .callout-title,
 body.ntt-quiz-active .callout-fold {
+  /* v1.5.0 — the fold animation still stays off (that was the flicker), but the
+     revealed content gets its own 120ms fade so it no longer pops. */
   transition: none !important;
-  animation: none !important;
+  animation: none;
 }
 
 /* Slim control strip (hidden in minimal quiz UI mode). */
