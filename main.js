@@ -1037,6 +1037,8 @@ var DEFAULT_AUTOSCROLL = {
   scrollChunkTall: true,
   scrollAdvanceBy: "toggles",
   scrollScreenOverlap: 0.1,
+  scrollScreenDwellMs: 4e3,
+  scrollViewportPct: 0.9,
   scrollShuffleFrom: 0,
   scrollShuffleTo: 0,
   scrollRetention: 0.9,
@@ -1498,6 +1500,7 @@ var ScrollBar = class {
       return b;
     };
     this.runBtn = btn("\u23F8", "is-run", () => this.cb.onToggleRun());
+    this.runBtn.setAttribute("data-action", "pause-resume");
     btn("\u2212", "is-slower", () => this.cb.onSlower());
     btn("+", "is-faster", () => this.cb.onFaster());
     this.revBtn = btn("\u2193", "is-reverse", () => this.cb.onReverse());
@@ -1514,6 +1517,10 @@ var ScrollBar = class {
       var _a, _b;
       return (_b = (_a = this.cb).onTop) == null ? void 0 : _b.call(_a);
     });
+    btn("\u25A0", "is-stop", () => {
+      var _a, _b, _c;
+      return (_c = (_b = (_a = this.cb).onStop) == null ? void 0 : _b.call(_a)) != null ? _c : this.cb.onClose();
+    });
     btn("\u2715", "is-close", () => this.cb.onClose());
     this.runBtn.addEventListener("dblclick", () => {
       var _a, _b;
@@ -1527,6 +1534,8 @@ var ScrollBar = class {
   render(d) {
     var _a, _b, _c, _d, _e, _f;
     this.runBtn.textContent = d.running ? "\u23F8" : "\u25B6";
+    this.runBtn.setAttribute("aria-label", d.running ? "Pause autoscroll" : "Resume autoscroll");
+    this.runBtn.title = d.running ? "Pause autoscroll" : "Resume autoscroll";
     this.revBtn.textContent = d.reverse ? "\u2191" : "\u2193";
     this.revBtn.setAttribute("aria-label", d.reverse ? "Reverse (up)" : "Forward (down)");
     this.filterBtn.textContent = d.filterLabel === "all toggles" ? "\u26AA" : d.filterLabel;
@@ -2071,6 +2080,37 @@ function mergeStops(screens, toggles, tolerance = 0) {
   const tol = Math.max(0, Math.floor(tolerance));
   const keep = screens.filter((s) => !toggles.some((t) => Math.abs(t.top - s.top) <= tol));
   return [...toggles, ...keep].sort((a, b) => a.top - b.top);
+}
+var DEFAULT_VIEWPORT_PCT = 0.9;
+var MIN_VIEWPORT_PCT = 0.5;
+var DEFAULT_SCREEN_DWELL_MS = 4e3;
+var MIN_SCREEN_DWELL_MS = 250;
+var MAX_SCREEN_DWELL_MS = 12e4;
+function clampViewportPct(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0)
+    return DEFAULT_VIEWPORT_PCT;
+  const pct2 = n > 1 ? n / 100 : n;
+  return Math.min(1, Math.max(MIN_VIEWPORT_PCT, Math.round(pct2 * 100) / 100));
+}
+function clampScreenDwellMs(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0)
+    return DEFAULT_SCREEN_DWELL_MS;
+  return Math.min(MAX_SCREEN_DWELL_MS, Math.max(MIN_SCREEN_DWELL_MS, Math.round(n)));
+}
+function usableViewport(clientHeight, pct2 = DEFAULT_VIEWPORT_PCT) {
+  const h = Number(clientHeight);
+  const vh = Number.isFinite(h) && h > 0 ? h : 1;
+  return Math.max(1, Math.floor(vh * clampViewportPct(pct2)));
+}
+function filterScreenStops(stops, toggleTops, viewport) {
+  const tops = toggleTops.filter((t) => Number.isFinite(t));
+  if (tops.length === 0)
+    return stops;
+  const vh = Math.max(1, Math.floor(viewport));
+  const kept = stops.filter((top) => tops.some((t) => t >= top && t < top + vh));
+  return kept;
 }
 
 // src/reader/fsrsScheduler.ts
@@ -4824,6 +4864,20 @@ var NotionToggleSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
+    new import_obsidian5.Setting(containerEl).setName("Screen pause duration").setDesc("How long each screenful stays still before the next screen (seconds).").addSlider(
+      (sl) => sl.setLimits(0.25, 30, 0.25).setValue(clampScreenDwellMs(this.plugin.settings.scrollScreenDwellMs) / 1e3).setDynamicTooltip().onChange(async (v) => {
+        this.plugin.settings.scrollScreenDwellMs = clampScreenDwellMs(v * 1e3);
+        await this.plugin.saveSettings();
+        this.plugin.reanchorAfterResize();
+      })
+    );
+    new import_obsidian5.Setting(containerEl).setName("Usable viewport").setDesc("Percentage of the live screen height used for one screenful on mobile and desktop.").addSlider(
+      (sl) => sl.setLimits(0.5, 1, 0.05).setValue(clampViewportPct(this.plugin.settings.scrollViewportPct)).setDynamicTooltip().onChange(async (v) => {
+        this.plugin.settings.scrollViewportPct = clampViewportPct(v);
+        await this.plugin.saveSettings();
+        this.plugin.reanchorAfterResize();
+      })
+    );
     new import_obsidian5.Setting(containerEl).setName("Stop position on screen").setDesc(
       "Where an auto-scroll stop parks. Middle keeps the toggle (and its answer) in the centre in portrait and landscape alike."
     ).addDropdown(
@@ -5149,6 +5203,16 @@ var ScrollSheetModal = class extends import_obsidian6.Modal {
         this.plugin.refreshScrollPlan();
       })
     );
+    new import_obsidian6.Setting(this.contentEl).setName("Screen pause duration").setDesc("Pause on each screenful (seconds).").addSlider((sl) => sl.setLimits(0.25, 30, 0.25).setValue(clampScreenDwellMs(s.scrollScreenDwellMs) / 1e3).setDynamicTooltip().onChange(async (v) => {
+      this.plugin.settings.scrollScreenDwellMs = clampScreenDwellMs(v * 1e3);
+      await this.plugin.saveSettings();
+      this.plugin.refreshScrollPlan();
+    }));
+    new import_obsidian6.Setting(this.contentEl).setName("Usable viewport").setDesc("Percentage of live screen height used for one screenful.").addSlider((sl) => sl.setLimits(0.5, 1, 0.05).setValue(clampViewportPct(s.scrollViewportPct)).setDynamicTooltip().onChange(async (v) => {
+      this.plugin.settings.scrollViewportPct = clampViewportPct(v);
+      await this.plugin.saveSettings();
+      this.plugin.refreshScrollPlan();
+    }));
     new import_obsidian6.Setting(this.contentEl).setName("Debug overlay").addToggle(
       (tg) => tg.setValue(s.scrollDebug).onChange(async (v) => {
         this.plugin.settings.scrollDebug = v;
@@ -7089,6 +7153,17 @@ ${row}`, { line: cursor.line, ch: line.length });
     await this.saveSettings();
   }
   /**
+   * v1.5.3 — screen stops use one percentage of the live viewport on every device.
+   */
+  screenPlanTops(container, keptTops) {
+    var _a;
+    const vh = usableViewport(container.clientHeight, this.settings.scrollViewportPct);
+    const stops = screenStops(container.scrollHeight, vh, this.settings.scrollScreenOverlap);
+    const selected = ((_a = this.settings.scrollFilter) != null ? _a : []).length > 0 ? filterScreenStops(stops, keptTops, vh) : stops;
+    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+    return [...new Set(selected.map((top) => Math.min(top, maxScroll)))];
+  }
+  /**
    * v1.1.1 — build the plan: colour filter first, then the pause-at mode
    * (every / odd / even / custom / route / shuffle) and tall-toggle chunking.
    */
@@ -7102,8 +7177,9 @@ ${row}`, { line: cursor.line, ch: line.length });
     const items = kept.map((s) => ({ ordinal: s.ordinal, top: s.top, height: s.height }));
     const toggleStops = buildModeStops(items, cfg, container.clientHeight, this.settings.scrollChunkTall);
     const advanceBy = (_a = this.settings.scrollAdvanceBy) != null ? _a : "toggles";
+    const keptTops = kept.map((s) => s.top);
     if (advanceBy === "screens") {
-      return screenStops(container.scrollHeight, container.clientHeight, this.settings.scrollScreenOverlap).map((top, part) => ({
+      return this.screenPlanTops(container, keptTops).map((top, part) => ({
         index: -1,
         top,
         color: "other",
@@ -7127,7 +7203,7 @@ ${row}`, { line: cursor.line, ch: line.length });
     });
     if (advanceBy !== "both")
       return togglePlan;
-    const screenPlan = screenStops(container.scrollHeight, container.clientHeight, this.settings.scrollScreenOverlap).map((top, part) => ({
+    const screenPlan = this.screenPlanTops(container, keptTops).map((top, part) => ({
       index: -1,
       top,
       color: "other",
@@ -7327,6 +7403,7 @@ ${deckSummary(
         onDwell: () => new ScrollDwellModal(this.app, this).open(),
         onSpeedPresets: () => new ScrollSpeedModal(this.app, this).open(),
         onTop: () => this.scrollToStart(),
+        onStop: () => this.stopAutoScroll(true),
         onClose: () => this.stopAutoScroll(true)
       });
     }
@@ -7618,15 +7695,16 @@ ${deckSummary(
   currentTargets(container, cfg) {
     var _a, _b, _c;
     const anchor = this.settings.scrollStopAnchor;
-    const key = `${targetsKey(container, cfg, anchor, this.scrollBoxes)}|${(_a = this.settings.scrollAdvanceBy) != null ? _a : "toggles"}|${(_b = this.settings.scrollScreenOverlap) != null ? _b : 0.1}|${container.scrollHeight}`;
+    const key = `${targetsKey(container, cfg, anchor, this.scrollBoxes)}|${(_a = this.settings.scrollAdvanceBy) != null ? _a : "toggles"}|${(_b = this.settings.scrollScreenOverlap) != null ? _b : 0.1}|${clampViewportPct(this.settings.scrollViewportPct)}|${container.scrollHeight}`;
     if (key !== this.scrollTargetsKey) {
       this.scrollTargetsKey = key;
       const toggleTargets = anchoredTargets(this.scrollBoxes, cfg, container, anchor);
       const advanceBy = (_c = this.settings.scrollAdvanceBy) != null ? _c : "toggles";
-      const screenTargets = screenStops(container.scrollHeight, container.clientHeight, this.settings.scrollScreenOverlap).map((top, index) => ({
+      const screenVh = usableViewport(container.clientHeight, this.settings.scrollViewportPct);
+      const screenTargets = this.screenPlanTops(container, this.scrollBoxes.map((b) => b.top)).map((top, index) => ({
         page: -(index + 1),
         top,
-        height: container.clientHeight,
+        height: screenVh,
         index: 0,
         key: `screen:${index}`
       }));
@@ -7814,7 +7892,7 @@ ${deckSummary(
         if (routeTarget != null && waypointReached(prevPos, this.scrollPos, routeTarget)) {
           this.scrollPos = routeTarget;
           container.scrollTop = Math.floor(routeTarget);
-          this.scrollDwellUntil = ts + cfg.seconds * 1e3;
+          this.scrollDwellUntil = ts + (routeTarget != null && this.scrollRouteStop < routeStops.length ? clampScreenDwellMs(this.settings.scrollScreenDwellMs) : cfg.seconds * 1e3);
           const ordinal = cfg.route[this.scrollRouteIdx % cfg.route.length];
           this.scrollLastEvent = `waypointReached toggle ${ordinal} @ ${Math.round(routeTarget)}`;
           this.parkOnToggle(ordinal, ts);
