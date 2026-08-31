@@ -110,6 +110,97 @@
 }
 
 
+
+/* v1.5.0 — grouped, expandable picker rows. */
+.ntt-filter-summary {
+  font-size: 0.85em;
+  opacity: 0.75;
+  margin: 0 0 8px;
+  line-height: 1.35;
+}
+
+.ntt-filter-group {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 4px 6px;
+  margin-bottom: 6px;
+}
+
+.ntt-filter-group-title {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 4px 2px;
+  list-style: none;
+}
+
+.ntt-filter-group[open] > .ntt-filter-group-title {
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 6px;
+}
+
+.ntt-filter-group > .notion-toggle-color-btn {
+  display: block;
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+.ntt-filter-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ntt-filter-count {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8em;
+  opacity: 0.7;
+  flex: 0 0 auto;
+}
+
+.ntt-filter-hint {
+  font-size: 0.78em;
+  opacity: 0.6;
+  margin-top: 2px;
+}
+
+.notion-toggle-color-btn.is-empty {
+  opacity: 0.45;
+}
+
+/* v1.5.2 — a calm reveal: no nudge, no pop, no fixed-height clipping. */
+@keyframes ntt-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+body.ntt-quiz-active .callout.ntt-quiz-shown,
+body.ntt-quiz-active .callout.ntt-quiz-shown > .callout-content,
+body.ntt-quiz-active .callout.is-collapsed.ntt-quiz-shown > .callout-content,
+body.ntt-quiz-active details.ntt-quiz-shown > *:not(summary) {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+body.ntt-quiz-active .callout.ntt-quiz-shown > .callout-content {
+  max-height: var(--ntt-reveal-height, none) !important;
+}
+
+body.ntt-quiz-active .callout.ntt-quiz-shown > .callout-content,
+body.ntt-quiz-active details.ntt-quiz-shown > *:not(summary) {
+  animation: ntt-reveal 160ms ease-out both;
+  transition: max-height 160ms ease-out, opacity 160ms ease-out !important;
+  will-change: max-height, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.ntt-quiz-active .callout.ntt-quiz-shown > .callout-content,
+  body.ntt-quiz-active details.ntt-quiz-shown > *:not(summary) {
+    animation: none;
+    transition: none !important;
+  }
+}
+
 /* ===== v1.0.4 — MCQ + Match the following ===== */
 .callout[data-callout^="recall-"] .callout-content ul,
 .callout[data-callout="question"] .callout-content ul {
@@ -365,10 +456,15 @@ body.is-phone .notion-toggle-timer .ntt-time {
     overflow-x: auto;
     font-size: 0.92em;
   }
-  /* Keep the last lines above Obsidian's mobile toolbar. */
+  /* Keep the last lines above Obsidian's mobile toolbar and quiz dock. */
   .is-mobile .markdown-preview-view,
-  .is-mobile .cm-contentContainer {
-    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  .is-mobile .markdown-reading-view,
+  .is-mobile .view-content,
+  .is-mobile .cm-contentContainer,
+  body.ntt-quiz-active.is-mobile .markdown-preview-view,
+  body.ntt-quiz-active.is-mobile .markdown-reading-view,
+  body.ntt-quiz-active.is-mobile .view-content {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -545,22 +641,35 @@ body.is-mobile .ntt-quiz-ring {
    reading view does not blink and the note keeps its own collapsed state. */
 body.ntt-quiz-active .callout.ntt-quiz-hidden > .callout-content,
 body.ntt-quiz-active details.ntt-quiz-hidden > *:not(summary) {
-  display: none !important;
+  display: block !important;
+  max-height: 0 !important;
+  opacity: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none;
 }
 body.ntt-quiz-active .callout.ntt-quiz-shown > .callout-content,
 body.ntt-quiz-active .callout.is-collapsed.ntt-quiz-shown > .callout-content,
 body.ntt-quiz-active details.ntt-quiz-shown > *:not(summary) {
   display: block !important;
   height: auto !important;
+  min-height: 0 !important;
+  max-height: var(--ntt-reveal-height, none) !important;
   overflow: visible !important;
+  pointer-events: auto;
 }
-/* No fold animation while a quiz runs — this is what caused the flicker. */
+/* Keep Obsidian's fold controls still, but let the answer itself reveal gently. */
 body.ntt-quiz-active .callout,
-body.ntt-quiz-active .callout-content,
 body.ntt-quiz-active .callout-title,
 body.ntt-quiz-active .callout-fold {
   transition: none !important;
-  animation: none !important;
+  animation: none;
+}
+body.ntt-quiz-active .callout-content,
+body.ntt-quiz-active details > *:not(summary) {
+  transition: max-height 160ms ease-out, opacity 160ms ease-out !important;
+}
+body.ntt-quiz-active .callout.ntt-quiz-shown > .callout-content {
+  animation: ntt-reveal 160ms ease-out both;
 }
 
 /* Slim control strip (hidden in minimal quiz UI mode). */

@@ -133,6 +133,7 @@ import {
   type PageBox,
   type ScrollMode,
 } from "./src/scrollmode";
+import { screenStops, mergeStops as mergeScreenStops } from "./src/screen-stops";
 import {
   buildShuffleOrder,
   deckStats,
@@ -833,6 +834,17 @@ export default class NotionTogglePlugin extends Plugin {
       icon: "eraser",
       name: "Autoscroll: reset revision memory for this note",
       callback: () => void this.resetScrollMemory(),
+    });
+    this.addCommand({
+      id: "autoscroll-screen-mode",
+      icon: "panels-top-left",
+      name: "Autoscroll: read screen-by-screen",
+      callback: async () => {
+        this.settings.scrollAdvanceBy = "screens";
+        await this.saveSettings();
+        this.refreshScrollPlan();
+        if (!this.scrollRunning) this.startAutoScroll();
+      },
     });
     /* ---------- v1.1.0: quiz mode (timed question run) ---------- */
     // Primary 6: timed run through the toggles — question timer, auto reveal,
@@ -1864,22 +1876,39 @@ export default class NotionTogglePlugin extends Plugin {
     // v1.5.0 — plan on note-wide numbers: "odd" means note toggle 1, 3, 5 …
     const byOrdinal = new Map(kept.map((s) => [s.ordinal, s]));
     const items = kept.map((s) => ({ ordinal: s.ordinal, top: s.top, height: s.height }));
-    const stops = buildModeStops(items, cfg, container.clientHeight, this.settings.scrollChunkTall);
-    const ordered = orderModeStops(stops, cfg, this.settings.scrollReverse);
-    return ordered.flatMap((ms) => {
+    const toggleStops = buildModeStops(items, cfg, container.clientHeight, this.settings.scrollChunkTall);
+    const advanceBy = this.settings.scrollAdvanceBy ?? "toggles";
+    if (advanceBy === "screens") {
+      return screenStops(container.scrollHeight, container.clientHeight, this.settings.scrollScreenOverlap).map((top, part) => ({
+        index: -1,
+        top,
+        color: "other",
+        ordinal: 0,
+        part,
+      } as ToggleStop & { el?: HTMLElement; ordinal: number; part: number }));
+    }
+    const ordered = orderModeStops(toggleStops, cfg, this.settings.scrollReverse);
+    const togglePlan = ordered.flatMap((ms) => {
       const src = byOrdinal.get(ms.ordinal);
       if (!src) return [];
-      return [
-        {
-          index: src.index,
-          top: ms.top,
-          color: src.color,
-          el: src.el,
-          ordinal: ms.ordinal,
-          part: ms.part,
-        } as ToggleStop & { el: HTMLElement; ordinal: number; part: number },
-      ];
+      return [{
+        index: src.index,
+        top: ms.top,
+        color: src.color,
+        el: src.el,
+        ordinal: ms.ordinal,
+        part: ms.part,
+      } as ToggleStop & { el: HTMLElement; ordinal: number; part: number }];
     });
+    if (advanceBy !== "both") return togglePlan;
+    const screenPlan = screenStops(container.scrollHeight, container.clientHeight, this.settings.scrollScreenOverlap).map((top, part) => ({
+      index: -1,
+      top,
+      color: "other",
+      ordinal: 0,
+      part,
+    } as ToggleStop & { el?: HTMLElement; ordinal: number; part: number }));
+    return [...togglePlan, ...screenPlan].sort((a, b) => a.top - b.top);
   }
   /** Rebuild the shuffle route from this note's FSRS memory. */
   async rebuildShuffleRoute(notify = true) {
@@ -2319,6 +2348,8 @@ export default class NotionTogglePlugin extends Plugin {
       ...toDwellSettings(
         this.modeConfig(),
         clampHold(this.settings.scrollHold),
+        // Tall answers must be paged in every advance mode. “Screens” adds
+        // note-level stops; “Both” must still finish each selected toggle.
         this.settings.scrollChunkTall
       ),
       loopRoute: this.settings.scrollLoopRoute,
@@ -2354,14 +2385,25 @@ export default class NotionTogglePlugin extends Plugin {
   private currentTargets(container: HTMLElement, cfg: DwellSettings): DwellTarget[] {
     // v1.4.7 — keyed on stop *positions* and the anchor, not just the count.
     const anchor = this.settings.scrollStopAnchor;
-    const key = targetsKey(container, cfg, anchor, this.scrollBoxes);
+    const key = `${targetsKey(container, cfg, anchor, this.scrollBoxes)}|${this.settings.scrollAdvanceBy ?? "toggles"}|${this.settings.scrollScreenOverlap ?? 0.1}|${container.scrollHeight}`;
     if (key !== this.scrollTargetsKey) {
       this.scrollTargetsKey = key;
-      this.scrollTargets = anchoredTargets(this.scrollBoxes, cfg, container, anchor);
-      this.scrollPlan = this.scrollTargets.map((t) => ({
-        index: t.page - 1,
+      const toggleTargets = anchoredTargets(this.scrollBoxes, cfg, container, anchor);
+      const advanceBy = this.settings.scrollAdvanceBy ?? "toggles";
+      const screenTargets = screenStops(container.scrollHeight, container.clientHeight, this.settings.scrollScreenOverlap).map((top, index) => ({
+        page: -(index + 1), top, height: container.clientHeight, index: 0, key: `screen:${index}`,
+      }));
+      const targets = advanceBy === "screens"
+        ? screenTargets
+        : advanceBy === "both"
+          ? mergeScreenStops(screenTargets, toggleTargets)
+          : toggleTargets;
+      this.scrollTargets = targets;
+      this.scrollPlan = targets.map((t) => ({
+        index: t.page > 0 ? t.page - 1 : -1,
         top: t.top,
-        color: "other",
+        color: t.page > 0 ? "other" : "other",
+        ordinal: t.page > 0 ? t.page : 0,
       })) as ToggleStop[];
     }
     return this.scrollTargets;

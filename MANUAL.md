@@ -1,6 +1,6 @@
-# Notion Toggle — Poora Manual (v1.5.1)
+# Notion Toggle — Poora Manual (v1.5.2)
 
-> **v1.5.1** — autoscroll shuru hote hi Reading View me switch karta hai, aur stop par aapka pehla view mode wapas laata hai. Filter picker grouped + expandable hai, har callout type ka count aur percentage dikhata hai, aur quiz re-render ke baad bhi question skip nahi karta.
+> **v1.5.2** — autoscroll ab Toggles, Screens, ya Toggles + screens mode me chal sakta hai. Reading View mobile aur desktop viewport ke hisaab se screen-by-screen advance karta hai, configurable overlap ke saath.
 
 > **Important:** Reading View switch ko Settings → Auto-scroll revision → **Auto Reading View** se band kiya ja sakta hai. **Restore previous view on stop** ON rakhen to Source / Live Preview session ke baad wapas aata hai.
 
@@ -371,21 +371,22 @@ Sabse zaroori command sirf ek hai — **Autoscroll (start / pause revision)**; b
 - **Kya hai:** autoscroll kaun se toggles par rukega.
 - **Modes:**
   - **∞ Every toggle** — sab par.
-  - **1️⃣ Odd toggles** — 1, 3, 5 …
-  - **2️⃣ Even toggles** — 2, 4, 6 …
+  - **1️⃣ Odd toggles** — note ke asli toggle numbers: 1, 3, 5 …; filter ke baad survivors ko dobara number nahi milta.
+  - **2️⃣ Even toggles** — note ke asli numbers: 2, 4, 6 …
   - **✍️ Custom list** — apne numbers, e.g. `2, 5, 9`.
   - **🧭 Route (my own order)** — apna visit order, e.g. `7, 2, 9, 2`. Har leg ka direction
     khud calculate hota hai (neeche → upar → neeche).
   - **🔀 Shuffle (weakest first)** — FSRS-weighted order: due aur weak toggles pehle,
     naye toggles beech me mix, session ke andar deterministic.
+- **Advance by:** **Toggles** (selected toggle stops), **Screens** (mobile/desktop viewport ki poori screen), ya **Toggles + screens** (dono merged, duplicate stops hatakar).
 - Isi modal ke andar milta hai:
   - **Custom list** text box
   - **Route** text box
   - **Loop the route** toggle
   - **Shuffle range** — `from` / `to` toggle numbers (`0` = poora note)
-  - **Deck summary** + **Due next 7 days** forecast
-  - **Tall toggles screen-by-screen** toggle
-- **Default:** Every toggle
+  - **Tall toggles screen-by-screen** toggle — lamba answer har viewport slice ko poora dikhata hai; question top par anchored rehta hai.
+  - **Screen overlap** — default 10%, taaki screen ke seam par line na kategi.
+- **Default:** Every toggle + Toggles advance
 
 #### Pause for → "Choose time"
 - **Kya hai:** har stop par hold time, 1 second se 1 hour tak ladder me

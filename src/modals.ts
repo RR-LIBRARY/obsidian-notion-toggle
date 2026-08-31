@@ -24,6 +24,7 @@ import {
   speedFromMultiplier,
   type ScrollMode,
 } from "./scrollmode";
+import { advanceLabel, clampScreenOverlap, normalizeAdvanceBy, type AdvanceBy } from "./screen-stops";
 import {
   QUIZ_PRESETS,
   QUIZ_SECONDS_MAX,
@@ -35,7 +36,15 @@ import {
 } from "./quiz";
 import { TOOLBAR_COMMANDS, TOOLBAR_STEPS, guideProgress, toggleGuideDone } from "./guide";
 import { deckSummary } from "./fsrs";
+import { nextDueLabel, type SrsCard } from "./srs";
 import { orderExplainer, rowLabel, weakRows } from "./stats-panel";
+import { breakdownSummary, presentKinds, type KindCount } from "./callout-stats";
+import {
+  filterGroups,
+  flatFilterOptions,
+  isEmptyOption,
+  optionCount,
+} from "./filter-picker";
 
 /**
  * v1.4.0 — slider for the common range + a free number input for anything up
@@ -128,10 +137,63 @@ export class ScrollStatsModal extends Modal {
         text: `Due next 7 days: ${forecast.join(" · ")}`,
       });
     }
+
+    // v1.5.0 — what this note is actually made of: type, count, percentage.
+    const kinds = this.plugin.calloutBreakdown();
+    const noteTotal = kinds.reduce((n, r) => n + r.count, 0);
+    const box = this.contentEl.createDiv({ cls: "ntt-breakdown" });
+    box.createDiv({ cls: "notion-toggle-deck-summary", text: "Callout breakdown" });
+    box.createDiv({ cls: "ntt-filter-summary", text: breakdownSummary(kinds, noteTotal) });
+    const table = box.createEl("table", { cls: "ntt-breakdown-table" });
+    const head = table.createEl("tr");
+    for (const h of ["Type", "Callout", "Count", "%"]) head.createEl("th", { text: h });
+    for (const row of presentKinds(kinds)) {
+      const tr = table.createEl("tr");
+      tr.createEl("td", { text: `${row.icon} ${row.name}` });
+      tr.createEl("td", { text: row.word });
+      tr.createEl("td", { text: String(row.count) });
+      tr.createEl("td", { text: `${row.percent}%` });
+    }
+    if (noteTotal === 0) box.createDiv({ text: "No toggles in this note yet." });
   }
+
 
   onClose() {
     this.contentEl.empty();
+  }
+}
+
+/**
+ * v1.5.0 — grouped, expandable picker shared by autoscroll and quiz.
+ *
+ * Each group is a `<details>`; each row shows the icon, the human name, the
+ * callout words it matches and the live count in this note.
+ */
+function renderFilterPicker(
+  host: HTMLElement,
+  active: RecallColor[],
+  rows: KindCount[],
+  onPick: (filter: RecallColor[]) => Promise<void> | void
+): void {
+  const list = host.createDiv({ cls: "notion-toggle-color-list" });
+  for (const group of filterGroups()) {
+    const hasActive = group.options.some((o) => sameFilter(o.filter, active));
+    const box = list.createEl("details", { cls: "ntt-filter-group" });
+    box.open = group.open || hasActive;
+    box.createEl("summary", { text: group.label, cls: "ntt-filter-group-title" });
+    for (const opt of group.options) {
+      const btn = box.createEl("button", { cls: "notion-toggle-color-btn ntt-filter-row" });
+      const main = btn.createDiv({ cls: "ntt-filter-main" });
+      main.createSpan({ text: opt.label, cls: "ntt-filter-label" });
+      const badge = optionCount(opt, rows);
+      if (badge) main.createSpan({ text: badge, cls: "ntt-filter-count" });
+      if (opt.hint) btn.createDiv({ text: opt.hint, cls: "ntt-filter-hint" });
+      if (isEmptyOption(opt, rows)) btn.addClass("is-empty");
+      if (sameFilter(opt.filter, active)) btn.addClass("is-suggested");
+      btn.onclick = async () => {
+        await onPick(opt.filter);
+      };
+    }
   }
 }
 
@@ -142,45 +204,15 @@ export class ScrollFilterModal extends Modal {
 
   onOpen() {
     this.setTitle("Autoscroll — revise which toggles?");
-    const list = this.contentEl.createDiv({ cls: "notion-toggle-color-list" });
-    const options: { label: string; filter: RecallColor[] }[] = [
-      { label: "⚪ All toggles", filter: [] },
-      { label: "🔴 Red only", filter: ["red"] },
-      { label: "🟡 Yellow only", filter: ["yellow"] },
-      { label: "🟢 Green only", filter: ["green"] },
-      { label: "🔴🟡 Red + Yellow (weak spots)", filter: ["red", "yellow"] },
-      { label: "🔴🟡🟢 All graded toggles", filter: ["red", "yellow", "green"] },
-      { label: "⚪ All ungraded notes / callouts", filter: ["other"] },
-      { label: "❓ Question callouts (!question)", filter: ["question"] },
-      { label: "💡 Tip callouts (!tip)", filter: ["tip"] },
-      { label: "📝 Note callouts (!note)", filter: ["note"] },
-      { label: "ℹ️ Info callouts (!info)", filter: ["info"] },
-      { label: "📋 Abstract callouts (!abstract)", filter: ["abstract"] },
-      { label: "⚠️ Warning callouts (!warning)", filter: ["warning"] },
-      { label: "✅ Success callouts (!success)", filter: ["success"] },
-      { label: "☑️ Todo callouts (!todo)", filter: ["todo"] },
-      { label: "❗ Important callouts (!important)", filter: ["important"] },
-      { label: "❌ Failure callouts (!failure / !fail / !missing)", filter: ["failure"] },
-      { label: "🚨 Danger callouts (!danger / !error)", filter: ["danger"] },
-      { label: "🐞 Bug callouts (!bug)", filter: ["bug"] },
-      { label: "🧩 Example callouts (!example)", filter: ["example"] },
-      { label: "❝ Quote callouts (!quote / !cite)", filter: ["quote"] },
-      { label: "❓💡📝 All built-in callouts", filter: CALLOUT_KINDS },
-      { label: "🔴🟡🟢⚪ Everything, graded + notes", filter: ["red", "yellow", "green", "other"] },
-    ];
-
-    const active = this.plugin.settings.scrollFilter;
-    for (const opt of options) {
-      const btn = list.createEl("button", {
-        text: opt.label,
-        cls: "notion-toggle-color-btn",
-      });
-      if (sameFilter(opt.filter, active)) btn.addClass("is-suggested");
-      btn.onclick = async () => {
-        await this.plugin.setScrollFilter(opt.filter);
-        this.close();
-      };
-    }
+    const rows = this.plugin.calloutBreakdown();
+    this.contentEl.createDiv({
+      cls: "ntt-filter-summary",
+      text: breakdownSummary(rows, rows.reduce((n, r) => n + r.count, 0)),
+    });
+    renderFilterPicker(this.contentEl, this.plugin.settings.scrollFilter, rows, async (filter) => {
+      await this.plugin.setScrollFilter(filter);
+      this.close();
+    });
   }
 
   onClose() {
@@ -188,33 +220,8 @@ export class ScrollFilterModal extends Modal {
   }
 }
 
-/** v1.3.0 — the same picker, but for quiz mode. */
-export const QUIZ_FILTER_OPTIONS: { label: string; filter: RecallColor[] }[] = [
-  { label: "⚪ Default — every toggle", filter: [] },
-  { label: "🔴 Red only", filter: ["red"] },
-  { label: "🟡 Yellow only", filter: ["yellow"] },
-  { label: "🟢 Green only", filter: ["green"] },
-  { label: "🔴🟡 Red + Yellow (weak spots)", filter: ["red", "yellow"] },
-  { label: "🔴🟡🟢 All graded toggles", filter: ["red", "yellow", "green"] },
-  { label: "⚪ All ungraded notes / callouts", filter: ["other"] },
-  { label: "❓ Question callouts (!question)", filter: ["question"] },
-  { label: "💡 Tip callouts (!tip)", filter: ["tip"] },
-  { label: "📝 Note callouts (!note)", filter: ["note"] },
-  { label: "ℹ️ Info callouts (!info)", filter: ["info"] },
-  { label: "📋 Abstract callouts (!abstract)", filter: ["abstract"] },
-  { label: "⚠️ Warning callouts (!warning)", filter: ["warning"] },
-  { label: "✅ Success callouts (!success)", filter: ["success"] },
-  { label: "☑️ Todo callouts (!todo)", filter: ["todo"] },
-  { label: "❗ Important callouts (!important)", filter: ["important"] },
-  { label: "❌ Failure callouts (!failure / !fail / !missing)", filter: ["failure"] },
-  { label: "🚨 Danger callouts (!danger / !error)", filter: ["danger"] },
-  { label: "🐞 Bug callouts (!bug)", filter: ["bug"] },
-  { label: "🧩 Example callouts (!example)", filter: ["example"] },
-  { label: "❝ Quote callouts (!quote / !cite)", filter: ["quote"] },
-  { label: "❓💡📝 All built-in callouts", filter: CALLOUT_KINDS },
-  { label: "🔴🟡🟢⚪ Everything, graded + notes", filter: ["red", "yellow", "green", "other"] },
-];
-
+/** v1.3.0 — the same options as a flat list (deep links, tests, legacy callers). */
+export const QUIZ_FILTER_OPTIONS: { label: string; filter: RecallColor[] }[] = flatFilterOptions();
 
 export class QuizFilterModal extends Modal {
   constructor(app: App, private plugin: NotionTogglePlugin) {
@@ -223,22 +230,22 @@ export class QuizFilterModal extends Modal {
 
   onOpen() {
     this.setTitle("Quiz — ask about which toggles?");
-    const list = this.contentEl.createDiv({ cls: "notion-toggle-color-list" });
-    const active = this.plugin.quizFilterColors();
-    for (const opt of QUIZ_FILTER_OPTIONS) {
-      const btn = list.createEl("button", { text: opt.label, cls: "notion-toggle-color-btn" });
-      if (sameFilter(opt.filter, active)) btn.addClass("is-suggested");
-      btn.onclick = async () => {
-        await this.plugin.setQuizFilter(opt.filter);
-        this.close();
-      };
-    }
+    const rows = this.plugin.calloutBreakdown();
+    this.contentEl.createDiv({
+      cls: "ntt-filter-summary",
+      text: breakdownSummary(rows, rows.reduce((n, r) => n + r.count, 0)),
+    });
+    renderFilterPicker(this.contentEl, this.plugin.quizFilterColors(), rows, async (filter) => {
+      await this.plugin.setQuizFilter(filter);
+      this.close();
+    });
   }
 
   onClose() {
     this.contentEl.empty();
   }
 }
+
 
 
 
@@ -423,6 +430,30 @@ export class ScrollModeModal extends Modal {
         tg.setValue(this.plugin.settings.scrollChunkTall).onChange(async (v) => {
           this.plugin.settings.scrollChunkTall = v;
           await this.commit();
+        })
+      );
+
+    new Setting(this.contentEl)
+      .setName("Advance by")
+      .setDesc("Toggles, full screens, or both in Reading View.")
+      .addDropdown((dd) =>
+        dd.addOptions({ toggles: "Toggles", screens: "Screens", both: "Toggles + screens" })
+          .setValue(normalizeAdvanceBy(this.plugin.settings.scrollAdvanceBy))
+          .onChange(async (v) => {
+            this.plugin.settings.scrollAdvanceBy = normalizeAdvanceBy(v);
+            await this.commit();
+            this.plugin.refreshScrollPlan();
+          })
+      );
+
+    new Setting(this.contentEl)
+      .setName("Screen overlap")
+      .setDesc("Keep part of the previous screen visible between stops.")
+      .addSlider((sl) =>
+        sl.setLimits(0, 0.5, 0.05).setValue(clampScreenOverlap(this.plugin.settings.scrollScreenOverlap)).setDynamicTooltip().onChange(async (v) => {
+          this.plugin.settings.scrollScreenOverlap = clampScreenOverlap(v);
+          await this.commit();
+          this.plugin.refreshScrollPlan();
         })
       );
 
@@ -710,3 +741,36 @@ export class ColorPickerModal extends Modal {
     this.contentEl.empty();
   }
 }
+
+
+/** Simple picker listing notes whose recall is due (v1.0.7). */
+export class DueNotesModal extends Modal {
+  constructor(
+    app: App,
+    private due: { path: string; card: SrsCard }[],
+    private onPick: (path: string) => void
+  ) {
+    super(app);
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    this.setTitle(`Due for recall (${this.due.length})`);
+    for (const { path, card } of this.due) {
+      const row = contentEl.createDiv({ cls: "ntt-due-row" });
+      const btn = row.createEl("button", { text: path.replace(/\.md$/, "") });
+      btn.addClass("ntt-due-btn");
+      row.createSpan({ text: ` ${nextDueLabel(card, Date.now())} · ease ${card.ease}` });
+      btn.addEventListener("click", () => {
+        this.close();
+        this.onPick(path);
+      });
+    }
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+

@@ -27,6 +27,36 @@ export function collectToggleEls(root: ParentNode): HTMLElement[] {
   return collectToggleElsFiltered(root, () => true);
 }
 
+/**
+ * v1.5.0 — a toggle plus its **note-wide** number.
+ *
+ * The number is the toggle's position among *all* toggles in the note, in
+ * document order — the same counting `renumberToggles` writes into the note.
+ * Before this, plans renumbered the filtered survivors 1..N, so "Odd toggles
+ * (1, 3, 5 …)" pointed at positions nobody could see.
+ */
+export interface ToggleScan {
+  el: HTMLElement;
+  /** 1-based note-wide toggle number. */
+  ordinal: number;
+}
+
+export function scanToggleEls(root: ParentNode, keep: (el: HTMLElement) => boolean): ToggleScan[] {
+  const all = Array.from(root.querySelectorAll(TOGGLE_SELECTOR)) as HTMLElement[];
+  const numberOf = new Map<HTMLElement, number>();
+  all.forEach((el, i) => numberOf.set(el, i + 1));
+  return collectToggleElsFiltered(root, keep).map((el) => ({
+    el,
+    ordinal: numberOf.get(el) ?? 0,
+  }));
+}
+
+/** How many toggles the note has in total (nested ones included). */
+export function noteToggleCount(root: ParentNode): number {
+  return root.querySelectorAll(TOGGLE_SELECTOR).length;
+}
+
+
 
 /** Callout type / class string used for the colour filter. */
 export function toggleTypeOf(el: HTMLElement): string {

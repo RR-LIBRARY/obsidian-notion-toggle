@@ -1035,6 +1035,8 @@ var DEFAULT_AUTOSCROLL = {
   scrollLoopRoute: false,
   scrollDebug: false,
   scrollChunkTall: true,
+  scrollAdvanceBy: "toggles",
+  scrollScreenOverlap: 0.1,
   scrollShuffleFrom: 0,
   scrollShuffleTo: 0,
   scrollRetention: 0.9,
@@ -2037,6 +2039,40 @@ function hotkeyLabel(id) {
   return (_b = (_a = HOTKEYS.find((h) => h.id === id)) == null ? void 0 : _a.label) != null ? _b : "";
 }
 
+// src/screen-stops.ts
+var DEFAULT_SCREEN_OVERLAP = 0.1;
+var MAX_SCREEN_OVERLAP = 0.5;
+var MAX_SCREEN_STOPS = 2e3;
+var KNOWN_ADVANCE = ["toggles", "screens", "both"];
+function normalizeAdvanceBy(value) {
+  return KNOWN_ADVANCE.includes(value) ? value : "toggles";
+}
+function clampScreenOverlap(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0)
+    return 0;
+  return Math.min(MAX_SCREEN_OVERLAP, Math.round(n * 100) / 100);
+}
+function screenStops(contentHeight, viewport, overlap = DEFAULT_SCREEN_OVERLAP) {
+  const vh = Math.max(1, Math.floor(Number.isFinite(Number(viewport)) ? Number(viewport) : 0));
+  const height = Math.max(0, Math.floor(Number.isFinite(Number(contentHeight)) ? Number(contentHeight) : 0));
+  if (height <= vh)
+    return [0];
+  const step = Math.max(1, Math.round(vh * (1 - clampScreenOverlap(overlap))));
+  const last = height - vh;
+  const out = [];
+  for (let top = 0; top < last && out.length < MAX_SCREEN_STOPS - 1; top += step) {
+    out.push(top);
+  }
+  out.push(last);
+  return out;
+}
+function mergeStops(screens, toggles, tolerance = 0) {
+  const tol = Math.max(0, Math.floor(tolerance));
+  const keep = screens.filter((s) => !toggles.some((t) => Math.abs(t.top - s.top) <= tol));
+  return [...toggles, ...keep].sort((a, b) => a.top - b.top);
+}
+
 // src/reader/fsrsScheduler.ts
 var FSRS_W = [
   0.4072,
@@ -2864,6 +2900,15 @@ function setQuizVisible(el, visible) {
   }
   el.classList.toggle(QUIZ_SHOWN_CLASS, visible);
   el.classList.toggle(QUIZ_HIDDEN_CLASS, !visible);
+  const content = el.querySelector(".callout-content");
+  if (!content)
+    return;
+  if (visible) {
+    const height = Math.max(content.scrollHeight, content.getBoundingClientRect().height);
+    content.style.setProperty("--ntt-reveal-height", `${height}px`);
+  } else {
+    content.style.removeProperty("--ntt-reveal-height");
+  }
 }
 function applyQuizVisibilityClasses(els, index, revealed, closeOthers) {
   els.forEach((el, i) => {
@@ -2877,12 +2922,13 @@ function applyQuizVisibilityClasses(els, index, revealed, closeOthers) {
 }
 function clearQuizVisibility(els, snapshot = []) {
   els.forEach((el, i) => {
-    var _a;
+    var _a, _b;
     if (!el)
       return;
     el.classList.remove(QUIZ_HIDDEN_CLASS, QUIZ_SHOWN_CLASS);
+    (_a = el.querySelector(".callout-content")) == null ? void 0 : _a.style.removeProperty("--ntt-reveal-height");
     if (isDetails(el))
-      el.open = !!((_a = snapshot[i]) == null ? void 0 : _a.open);
+      el.open = !!((_b = snapshot[i]) == null ? void 0 : _b.open);
   });
 }
 
@@ -4143,6 +4189,20 @@ var ScrollModeModal = class extends import_obsidian4.Modal {
         await this.commit();
       })
     );
+    new import_obsidian4.Setting(this.contentEl).setName("Advance by").setDesc("Toggles, full screens, or both in Reading View.").addDropdown(
+      (dd) => dd.addOptions({ toggles: "Toggles", screens: "Screens", both: "Toggles + screens" }).setValue(normalizeAdvanceBy(this.plugin.settings.scrollAdvanceBy)).onChange(async (v) => {
+        this.plugin.settings.scrollAdvanceBy = normalizeAdvanceBy(v);
+        await this.commit();
+        this.plugin.refreshScrollPlan();
+      })
+    );
+    new import_obsidian4.Setting(this.contentEl).setName("Screen overlap").setDesc("Keep part of the previous screen visible between stops.").addSlider(
+      (sl) => sl.setLimits(0, 0.5, 0.05).setValue(clampScreenOverlap(this.plugin.settings.scrollScreenOverlap)).setDynamicTooltip().onChange(async (v) => {
+        this.plugin.settings.scrollScreenOverlap = clampScreenOverlap(v);
+        await this.commit();
+        this.plugin.refreshScrollPlan();
+      })
+    );
     this.paint();
   }
   onClose() {
@@ -4750,6 +4810,20 @@ var NotionToggleSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
+    new import_obsidian5.Setting(containerEl).setName("Advance by").setDesc("Choose whether Reading View pauses on toggles, full screens, or both.").addDropdown(
+      (dd) => dd.addOptions({ toggles: "Toggles", screens: "Screens", both: "Toggles + screens" }).setValue(normalizeAdvanceBy(this.plugin.settings.scrollAdvanceBy)).onChange(async (v) => {
+        this.plugin.settings.scrollAdvanceBy = normalizeAdvanceBy(v);
+        this.plugin.reanchorAfterResize();
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian5.Setting(containerEl).setName("Screen overlap").setDesc("Keep this percentage of the previous screen visible while advancing.").addSlider(
+      (sl) => sl.setLimits(0, 0.5, 0.05).setValue(clampScreenOverlap(this.plugin.settings.scrollScreenOverlap)).setDynamicTooltip().onChange(async (v) => {
+        this.plugin.settings.scrollScreenOverlap = clampScreenOverlap(v);
+        this.plugin.reanchorAfterResize();
+        await this.plugin.saveSettings();
+      })
+    );
     new import_obsidian5.Setting(containerEl).setName("Stop position on screen").setDesc(
       "Where an auto-scroll stop parks. Middle keeps the toggle (and its answer) in the centre in portrait and landscape alike."
     ).addDropdown(
@@ -5054,9 +5128,23 @@ var ScrollSheetModal = class extends import_obsidian6.Modal {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian6.Setting(this.contentEl).setName("Tall toggles screen-by-screen").addToggle(
+    new import_obsidian6.Setting(this.contentEl).setName("Tall toggles screen-by-screen").setDesc("Long answers are read one screen at a time before the next toggle.").addToggle(
       (tg) => tg.setValue(s.scrollChunkTall).onChange(async (v) => {
         this.plugin.settings.scrollChunkTall = v;
+        await this.plugin.saveSettings();
+        this.plugin.refreshScrollPlan();
+      })
+    );
+    new import_obsidian6.Setting(this.contentEl).setName("Advance by").setDesc("Toggles, full screens, or both in Reading View.").addDropdown(
+      (dd) => dd.addOptions({ toggles: "Toggles", screens: "Screens", both: "Toggles + screens" }).setValue(normalizeAdvanceBy(s.scrollAdvanceBy)).onChange(async (v) => {
+        this.plugin.settings.scrollAdvanceBy = normalizeAdvanceBy(v);
+        await this.plugin.saveSettings();
+        this.plugin.refreshScrollPlan();
+      })
+    );
+    new import_obsidian6.Setting(this.contentEl).setName("Screen overlap").setDesc("Keep part of the previous screen visible between stops.").addSlider(
+      (sl) => sl.setLimits(0, 0.5, 0.05).setValue(clampScreenOverlap(s.scrollScreenOverlap)).setDynamicTooltip().onChange(async (v) => {
+        this.plugin.settings.scrollScreenOverlap = clampScreenOverlap(v);
         await this.plugin.saveSettings();
         this.plugin.refreshScrollPlan();
       })
@@ -5937,6 +6025,18 @@ var NotionTogglePlugin = class extends import_obsidian7.Plugin {
       icon: "eraser",
       name: "Autoscroll: reset revision memory for this note",
       callback: () => void this.resetScrollMemory()
+    });
+    this.addCommand({
+      id: "autoscroll-screen-mode",
+      icon: "panels-top-left",
+      name: "Autoscroll: read screen-by-screen",
+      callback: async () => {
+        this.settings.scrollAdvanceBy = "screens";
+        await this.saveSettings();
+        this.refreshScrollPlan();
+        if (!this.scrollRunning)
+          this.startAutoScroll();
+      }
     });
     this.addCommand({
       id: "scroll-stats",
@@ -6993,29 +7093,48 @@ ${row}`, { line: cursor.line, ch: line.length });
    * (every / odd / even / custom / route / shuffle) and tall-toggle chunking.
    */
   buildScrollPlan(container) {
+    var _a;
     const kept = this.collectStops(container, this.settings.scrollFilter);
     this.scrollTotalItems = kept.length;
     this.scrollNoteTotal = noteToggleCount(container);
     const cfg = this.modeConfig();
     const byOrdinal = new Map(kept.map((s) => [s.ordinal, s]));
     const items = kept.map((s) => ({ ordinal: s.ordinal, top: s.top, height: s.height }));
-    const stops = buildModeStops(items, cfg, container.clientHeight, this.settings.scrollChunkTall);
-    const ordered = orderModeStops(stops, cfg, this.settings.scrollReverse);
-    return ordered.flatMap((ms2) => {
+    const toggleStops = buildModeStops(items, cfg, container.clientHeight, this.settings.scrollChunkTall);
+    const advanceBy = (_a = this.settings.scrollAdvanceBy) != null ? _a : "toggles";
+    if (advanceBy === "screens") {
+      return screenStops(container.scrollHeight, container.clientHeight, this.settings.scrollScreenOverlap).map((top, part) => ({
+        index: -1,
+        top,
+        color: "other",
+        ordinal: 0,
+        part
+      }));
+    }
+    const ordered = orderModeStops(toggleStops, cfg, this.settings.scrollReverse);
+    const togglePlan = ordered.flatMap((ms2) => {
       const src = byOrdinal.get(ms2.ordinal);
       if (!src)
         return [];
-      return [
-        {
-          index: src.index,
-          top: ms2.top,
-          color: src.color,
-          el: src.el,
-          ordinal: ms2.ordinal,
-          part: ms2.part
-        }
-      ];
+      return [{
+        index: src.index,
+        top: ms2.top,
+        color: src.color,
+        el: src.el,
+        ordinal: ms2.ordinal,
+        part: ms2.part
+      }];
     });
+    if (advanceBy !== "both")
+      return togglePlan;
+    const screenPlan = screenStops(container.scrollHeight, container.clientHeight, this.settings.scrollScreenOverlap).map((top, part) => ({
+      index: -1,
+      top,
+      color: "other",
+      ordinal: 0,
+      part
+    }));
+    return [...togglePlan, ...screenPlan].sort((a, b) => a.top - b.top);
   }
   /** Rebuild the shuffle route from this note's FSRS memory. */
   async rebuildShuffleRoute(notify = true) {
@@ -7469,6 +7588,8 @@ ${deckSummary(
       ...toDwellSettings(
         this.modeConfig(),
         clampHold(this.settings.scrollHold),
+        // Tall answers must be paged in every advance mode. “Screens” adds
+        // note-level stops; “Both” must still finish each selected toggle.
         this.settings.scrollChunkTall
       ),
       loopRoute: this.settings.scrollLoopRoute
@@ -7495,15 +7616,27 @@ ${deckSummary(
   }
   /** Cached dwell targets — rebuilt only when the inputs change. */
   currentTargets(container, cfg) {
+    var _a, _b, _c;
     const anchor = this.settings.scrollStopAnchor;
-    const key = targetsKey(container, cfg, anchor, this.scrollBoxes);
+    const key = `${targetsKey(container, cfg, anchor, this.scrollBoxes)}|${(_a = this.settings.scrollAdvanceBy) != null ? _a : "toggles"}|${(_b = this.settings.scrollScreenOverlap) != null ? _b : 0.1}|${container.scrollHeight}`;
     if (key !== this.scrollTargetsKey) {
       this.scrollTargetsKey = key;
-      this.scrollTargets = anchoredTargets(this.scrollBoxes, cfg, container, anchor);
-      this.scrollPlan = this.scrollTargets.map((t) => ({
-        index: t.page - 1,
+      const toggleTargets = anchoredTargets(this.scrollBoxes, cfg, container, anchor);
+      const advanceBy = (_c = this.settings.scrollAdvanceBy) != null ? _c : "toggles";
+      const screenTargets = screenStops(container.scrollHeight, container.clientHeight, this.settings.scrollScreenOverlap).map((top, index) => ({
+        page: -(index + 1),
+        top,
+        height: container.clientHeight,
+        index: 0,
+        key: `screen:${index}`
+      }));
+      const targets = advanceBy === "screens" ? screenTargets : advanceBy === "both" ? mergeStops(screenTargets, toggleTargets) : toggleTargets;
+      this.scrollTargets = targets;
+      this.scrollPlan = targets.map((t) => ({
+        index: t.page > 0 ? t.page - 1 : -1,
         top: t.top,
-        color: "other"
+        color: t.page > 0 ? "other" : "other",
+        ordinal: t.page > 0 ? t.page : 0
       }));
     }
     return this.scrollTargets;

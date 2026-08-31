@@ -1,4 +1,4 @@
-# Feature status — v1.5.1
+# Feature status — v1.5.2
 
 **Verification rule:** Working means covered by a passing automated test, a deterministic source audit, or an explicitly named end-to-end fixture. Remaining means the capability is not broken; it still needs the validation gate listed below.
 
@@ -6,9 +6,9 @@
 
 | Status | Count | Meaning |
 |---|---:|---|
-| Working | 29 | Implemented and verified in the current suite / audit |
+| Working | 31 | Implemented and verified in the current suite / audit |
 | Remaining validation | 4 | Needs real-device, long-note, or accessibility proof |
-| **Total tracked** | **33** | Full product surface |
+| **Total tracked** | **35** | Full product surface |
 
 ## Working features
 
@@ -41,6 +41,8 @@
 27. Playground note for supported callout types
 28. Command palette / hotkey / settings integration
 29. Release metadata and architecture guardrails
+30. Screen-by-screen reading with viewport-aware stops and overlap
+31. Tall-answer chunking and top anchoring on mobile and desktop
 
 ## Remaining validation gates
 

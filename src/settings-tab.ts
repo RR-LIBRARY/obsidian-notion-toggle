@@ -19,6 +19,7 @@ import {
   filterLabel,
 } from "./autoscroll";
 import { formatDwell, modeLabel, multiplierFromSpeed } from "./scrollmode";
+import { clampScreenOverlap, normalizeAdvanceBy } from "./screen-stops";
 import { scheduleStoreSummary } from "./maintenance";
 import { hotkeyLabel } from "./guide";
 import { QUIZ_SECONDS_MAX, QUIZ_SECONDS_MIN, REVEAL_SECONDS_MAX, clampQuizSeconds, clampRevealSeconds } from "./quiz";
@@ -549,6 +550,31 @@ export class NotionToggleSettingTab extends PluginSettingTab {
       .addToggle((tg) =>
         tg.setValue(this.plugin.settings.scrollChunkTall).onChange(async (v) => {
           this.plugin.settings.scrollChunkTall = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Advance by")
+      .setDesc("Choose whether Reading View pauses on toggles, full screens, or both.")
+      .addDropdown((dd) =>
+        dd
+          .addOptions({ toggles: "Toggles", screens: "Screens", both: "Toggles + screens" })
+          .setValue(normalizeAdvanceBy(this.plugin.settings.scrollAdvanceBy))
+          .onChange(async (v) => {
+            this.plugin.settings.scrollAdvanceBy = normalizeAdvanceBy(v);
+            this.plugin.reanchorAfterResize();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Screen overlap")
+      .setDesc("Keep this percentage of the previous screen visible while advancing.")
+      .addSlider((sl) =>
+        sl.setLimits(0, 0.5, 0.05).setValue(clampScreenOverlap(this.plugin.settings.scrollScreenOverlap)).setDynamicTooltip().onChange(async (v) => {
+          this.plugin.settings.scrollScreenOverlap = clampScreenOverlap(v);
+          this.plugin.reanchorAfterResize();
           await this.plugin.saveSettings();
         })
       );

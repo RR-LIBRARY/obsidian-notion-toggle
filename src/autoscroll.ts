@@ -71,7 +71,10 @@ export interface AutoScrollSettings {
   scrollDebug: boolean;
   /** Read tall toggles screen-by-screen before moving on. */
   scrollChunkTall: boolean;
-  /** Shuffle range (0 = whole note). */
+  /** v1.5.2 — advance by toggle stops, full screens, or both. */
+  scrollAdvanceBy: "toggles" | "screens" | "both";
+  /** v1.5.2 — fraction of the previous screen retained in screen mode. */
+  scrollScreenOverlap: number;
   scrollShuffleFrom: number;
   scrollShuffleTo: number;
   /** Target recall for shuffle scheduling (0.7 … 0.97). */
@@ -109,6 +112,8 @@ export const DEFAULT_AUTOSCROLL: AutoScrollSettings = {
 
   scrollDebug: false,
   scrollChunkTall: true,
+  scrollAdvanceBy: "toggles",
+  scrollScreenOverlap: 0.1,
   scrollShuffleFrom: 0,
   scrollShuffleTo: 0,
   scrollRetention: 0.9,

@@ -44,6 +44,16 @@ export function setQuizVisible(el: HTMLElement, visible: boolean): void {
   }
   el.classList.toggle(QUIZ_SHOWN_CLASS, visible);
   el.classList.toggle(QUIZ_HIDDEN_CLASS, !visible);
+  const content = el.querySelector<HTMLElement>(".callout-content");
+  if (!content) return;
+  if (visible) {
+    // The measured height lets CSS reveal the full answer without a fixed
+    // max-height, which is important for long mobile answers.
+    const height = Math.max(content.scrollHeight, content.getBoundingClientRect().height);
+    content.style.setProperty("--ntt-reveal-height", `${height}px`);
+  } else {
+    content.style.removeProperty("--ntt-reveal-height");
+  }
 }
 
 /** Is this toggle currently revealed by the quiz? */
@@ -76,6 +86,7 @@ export function clearQuizVisibility(
   els.forEach((el, i) => {
     if (!el) return;
     el.classList.remove(QUIZ_HIDDEN_CLASS, QUIZ_SHOWN_CLASS);
+    el.querySelector<HTMLElement>(".callout-content")?.style.removeProperty("--ntt-reveal-height");
     if (isDetails(el)) (el as HTMLDetailsElement).open = !!snapshot[i]?.open;
   });
 }

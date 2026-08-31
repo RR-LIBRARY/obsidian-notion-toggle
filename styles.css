@@ -168,22 +168,36 @@
   opacity: 0.45;
 }
 
-/* v1.5.0 — opening a toggle fades/slides in (120ms) instead of blinking. */
+/* v1.5.2 — a calm reveal: no nudge, no pop, no fixed-height clipping. */
 @keyframes ntt-reveal {
-  from { opacity: 0; transform: translateY(-2px); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+body.ntt-quiz-active .callout.ntt-quiz-shown,
+body.ntt-quiz-active .callout.ntt-quiz-shown > .callout-content,
+body.ntt-quiz-active .callout.is-collapsed.ntt-quiz-shown > .callout-content,
+body.ntt-quiz-active details.ntt-quiz-shown > *:not(summary) {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+body.ntt-quiz-active .callout.ntt-quiz-shown > .callout-content {
+  max-height: var(--ntt-reveal-height, none) !important;
 }
 
 body.ntt-quiz-active .callout.ntt-quiz-shown > .callout-content,
 body.ntt-quiz-active details.ntt-quiz-shown > *:not(summary) {
-  animation: ntt-reveal 120ms ease-out both;
-  will-change: opacity, transform;
+  animation: ntt-reveal 160ms ease-out both;
+  transition: max-height 160ms ease-out, opacity 160ms ease-out !important;
+  will-change: max-height, opacity;
 }
 
 @media (prefers-reduced-motion: reduce) {
   body.ntt-quiz-active .callout.ntt-quiz-shown > .callout-content,
   body.ntt-quiz-active details.ntt-quiz-shown > *:not(summary) {
     animation: none;
+    transition: none !important;
   }
 }
 
@@ -442,10 +456,15 @@ body.is-phone .notion-toggle-timer .ntt-time {
     overflow-x: auto;
     font-size: 0.92em;
   }
-  /* Keep the last lines above Obsidian's mobile toolbar. */
+  /* Keep the last lines above Obsidian's mobile toolbar and quiz dock. */
   .is-mobile .markdown-preview-view,
-  .is-mobile .cm-contentContainer {
-    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  .is-mobile .markdown-reading-view,
+  .is-mobile .view-content,
+  .is-mobile .cm-contentContainer,
+  body.ntt-quiz-active.is-mobile .markdown-preview-view,
+  body.ntt-quiz-active.is-mobile .markdown-reading-view,
+  body.ntt-quiz-active.is-mobile .view-content {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -622,24 +641,35 @@ body.is-mobile .ntt-quiz-ring {
    reading view does not blink and the note keeps its own collapsed state. */
 body.ntt-quiz-active .callout.ntt-quiz-hidden > .callout-content,
 body.ntt-quiz-active details.ntt-quiz-hidden > *:not(summary) {
-  display: none !important;
+  display: block !important;
+  max-height: 0 !important;
+  opacity: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none;
 }
 body.ntt-quiz-active .callout.ntt-quiz-shown > .callout-content,
 body.ntt-quiz-active .callout.is-collapsed.ntt-quiz-shown > .callout-content,
 body.ntt-quiz-active details.ntt-quiz-shown > *:not(summary) {
   display: block !important;
   height: auto !important;
+  min-height: 0 !important;
+  max-height: var(--ntt-reveal-height, none) !important;
   overflow: visible !important;
+  pointer-events: auto;
 }
-/* No fold animation while a quiz runs — this is what caused the flicker. */
+/* Keep Obsidian's fold controls still, but let the answer itself reveal gently. */
 body.ntt-quiz-active .callout,
-body.ntt-quiz-active .callout-content,
 body.ntt-quiz-active .callout-title,
 body.ntt-quiz-active .callout-fold {
-  /* v1.5.0 — the fold animation still stays off (that was the flicker), but the
-     revealed content gets its own 120ms fade so it no longer pops. */
   transition: none !important;
   animation: none;
+}
+body.ntt-quiz-active .callout-content,
+body.ntt-quiz-active details > *:not(summary) {
+  transition: max-height 160ms ease-out, opacity 160ms ease-out !important;
+}
+body.ntt-quiz-active .callout.ntt-quiz-shown > .callout-content {
+  animation: ntt-reveal 160ms ease-out both;
 }
 
 /* Slim control strip (hidden in minimal quiz UI mode). */

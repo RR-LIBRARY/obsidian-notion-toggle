@@ -7,6 +7,7 @@ import { App, Modal, Notice, Setting } from "obsidian";
 import type NotionTogglePlugin from "../main";
 import { clampHold, filterLabel } from "./autoscroll";
 import { formatDwell, modeLabel, multiplierFromSpeed } from "./scrollmode";
+import { clampScreenOverlap, normalizeAdvanceBy } from "./screen-stops";
 import {
   QUIZ_SECONDS_MAX,
   QUIZ_SECONDS_MIN,
@@ -243,9 +244,34 @@ export class ScrollSheetModal extends Modal {
 
     new Setting(this.contentEl)
       .setName("Tall toggles screen-by-screen")
+      .setDesc("Long answers are read one screen at a time before the next toggle.")
       .addToggle((tg) =>
         tg.setValue(s.scrollChunkTall).onChange(async (v) => {
           this.plugin.settings.scrollChunkTall = v;
+          await this.plugin.saveSettings();
+          this.plugin.refreshScrollPlan();
+        })
+      );
+
+    new Setting(this.contentEl)
+      .setName("Advance by")
+      .setDesc("Toggles, full screens, or both in Reading View.")
+      .addDropdown((dd) =>
+        dd.addOptions({ toggles: "Toggles", screens: "Screens", both: "Toggles + screens" })
+          .setValue(normalizeAdvanceBy(s.scrollAdvanceBy))
+          .onChange(async (v) => {
+            this.plugin.settings.scrollAdvanceBy = normalizeAdvanceBy(v);
+            await this.plugin.saveSettings();
+            this.plugin.refreshScrollPlan();
+          })
+      );
+
+    new Setting(this.contentEl)
+      .setName("Screen overlap")
+      .setDesc("Keep part of the previous screen visible between stops.")
+      .addSlider((sl) =>
+        sl.setLimits(0, 0.5, 0.05).setValue(clampScreenOverlap(s.scrollScreenOverlap)).setDynamicTooltip().onChange(async (v) => {
+          this.plugin.settings.scrollScreenOverlap = clampScreenOverlap(v);
           await this.plugin.saveSettings();
           this.plugin.refreshScrollPlan();
         })

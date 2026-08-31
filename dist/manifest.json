@@ -1,7 +1,7 @@
 {
   "id": "notion-toggle",
   "name": "Notion Toggle",
-  "version": "1.4.14",
+  "version": "1.5.2",
   "minAppVersion": "1.4.0",
   "description": "Notion-style collapsible toggles via commands. Insert, wrap, or convert <details> blocks to foldable callouts \u2014 no manual brackets.",
   "author": "Anuj Yadav",

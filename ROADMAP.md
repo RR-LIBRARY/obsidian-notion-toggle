@@ -1,10 +1,10 @@
-# Notion Toggle — v1.5.1 founder roadmap
+# Notion Toggle — v1.5.2 founder roadmap
 
 ## Product principle
 
 Autoscroll should remove friction from recall, not take control away from the reader. The highest-performance version is predictable, interruptible, measurable, and conservative with a user's note state.
 
-## What v1.5.1 ships
+## What v1.5.2 ships
 
 - Reading View is enabled automatically when autoscroll starts (default on).
 - The exact original view mode is restored when the run stops (default on).
@@ -12,7 +12,8 @@ Autoscroll should remove friction from recall, not take control away from the re
 - Filter pickers cover traffic-light grades and the supported Obsidian callout vocabulary, with grouped expandable rows and live count / percentage.
 - Note-wide ordinals make odd/even/custom modes stable after filtering.
 - Quiz runs one question at a time, force-open collapsed callouts, heal after a render, and restore the pre-run fold state.
-- Smooth reveal avoids the old blink and respects reduced-motion preferences.
+- Smooth height-aware reveal avoids the old blink and respects reduced-motion preferences.
+- Tall answers are top-anchored and paged by viewport in every toggle advance mode.
 - Stats, deep links, shuffle/SRS, mobile controls, and debug telemetry remain available.
 
 ## Founder review: plus and minus

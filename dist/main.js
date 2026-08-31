@@ -50,7 +50,7 @@ __export(main_exports, {
   toggleOptionCheckbox: () => toggleOptionCheckbox
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian5 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 var import_state = require("@codemirror/state");
 var import_view = require("@codemirror/view");
 
@@ -1035,6 +1035,8 @@ var DEFAULT_AUTOSCROLL = {
   scrollLoopRoute: false,
   scrollDebug: false,
   scrollChunkTall: true,
+  scrollAdvanceBy: "toggles",
+  scrollScreenOverlap: 0.1,
   scrollShuffleFrom: 0,
   scrollShuffleTo: 0,
   scrollRetention: 0.9,
@@ -1042,7 +1044,9 @@ var DEFAULT_AUTOSCROLL = {
   scrollAutoGrade: true,
   scrollMemory: {},
   scrollPerNote: {},
-  scrollStopAnchor: "middle"
+  scrollStopAnchor: "middle",
+  scrollForceReading: true,
+  scrollRestoreMode: true
 };
 var SPEED_MIN = 1;
 var SPEED_MAX = 1200;
@@ -1247,6 +1251,55 @@ function applyQuizFilter(s, filter) {
   s.scrollFilter = next;
   s.quizUseColorFilter = true;
   return s;
+}
+
+// src/reader-mode-view.ts
+var import_obsidian = require("obsidian");
+
+// src/reader-mode.ts
+function snapshotMode(mode, restore) {
+  const normalized = mode === "preview" ? "preview" : "source";
+  return { mode: normalized, shouldRestore: restore && normalized !== "preview" };
+}
+function needsReadingMode(mode, forceReading) {
+  return forceReading && mode !== "preview";
+}
+function withMode(leafState, viewState, mode) {
+  return { ...leafState, state: { ...viewState, mode } };
+}
+function enterReadingMode(leaf, view, opts) {
+  var _a;
+  if (!needsReadingMode(view.getMode(), opts.forceReading))
+    return opts.existing;
+  const snapshot = (_a = opts.existing) != null ? _a : snapshotMode(view.getMode(), opts.restoreMode);
+  leaf.setViewState(withMode(leaf.getViewState(), view.getState(), "preview"), { history: false });
+  return snapshot;
+}
+function exitReadingMode(leaf, view, snapshot) {
+  if (!(snapshot == null ? void 0 : snapshot.shouldRestore) || !leaf || !view)
+    return false;
+  leaf.setViewState(withMode(leaf.getViewState(), view.getState(), snapshot.mode), { history: false });
+  return true;
+}
+
+// src/reader-mode-view.ts
+function ensureReadingView(app, opts) {
+  var _a;
+  const view = app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
+  const leaf = (_a = view == null ? void 0 : view.leaf) != null ? _a : null;
+  if (!view || !leaf || !needsReadingMode(view.getMode(), opts.forceReading)) {
+    return { snapshot: opts.snapshot, leaf: opts.leaf, switched: false };
+  }
+  const snapshot = enterReadingMode(leaf, view, {
+    forceReading: true,
+    restoreMode: opts.restoreMode,
+    existing: opts.snapshot
+  });
+  return { snapshot, leaf, switched: true };
+}
+function restoreReadingView(leaf, snapshot) {
+  const view = (leaf == null ? void 0 : leaf.view) instanceof import_obsidian.MarkdownView ? leaf.view : null;
+  exitReadingMode(leaf, view, snapshot);
 }
 
 // src/debug-overlay.ts
@@ -1986,6 +2039,40 @@ function hotkeyLabel(id) {
   return (_b = (_a = HOTKEYS.find((h) => h.id === id)) == null ? void 0 : _a.label) != null ? _b : "";
 }
 
+// src/screen-stops.ts
+var DEFAULT_SCREEN_OVERLAP = 0.1;
+var MAX_SCREEN_OVERLAP = 0.5;
+var MAX_SCREEN_STOPS = 2e3;
+var KNOWN_ADVANCE = ["toggles", "screens", "both"];
+function normalizeAdvanceBy(value) {
+  return KNOWN_ADVANCE.includes(value) ? value : "toggles";
+}
+function clampScreenOverlap(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0)
+    return 0;
+  return Math.min(MAX_SCREEN_OVERLAP, Math.round(n * 100) / 100);
+}
+function screenStops(contentHeight, viewport, overlap = DEFAULT_SCREEN_OVERLAP) {
+  const vh = Math.max(1, Math.floor(Number.isFinite(Number(viewport)) ? Number(viewport) : 0));
+  const height = Math.max(0, Math.floor(Number.isFinite(Number(contentHeight)) ? Number(contentHeight) : 0));
+  if (height <= vh)
+    return [0];
+  const step = Math.max(1, Math.round(vh * (1 - clampScreenOverlap(overlap))));
+  const last = height - vh;
+  const out = [];
+  for (let top = 0; top < last && out.length < MAX_SCREEN_STOPS - 1; top += step) {
+    out.push(top);
+  }
+  out.push(last);
+  return out;
+}
+function mergeStops(screens, toggles, tolerance = 0) {
+  const tol = Math.max(0, Math.floor(tolerance));
+  const keep = screens.filter((s) => !toggles.some((t) => Math.abs(t.top - s.top) <= tol));
+  return [...toggles, ...keep].sort((a, b) => a.top - b.top);
+}
+
 // src/reader/fsrsScheduler.ts
 var FSRS_W = [
   0.4072,
@@ -2483,6 +2570,21 @@ function collectToggleElsFiltered(root, keep) {
 function collectToggleEls(root) {
   return collectToggleElsFiltered(root, () => true);
 }
+function scanToggleEls(root, keep) {
+  const all = Array.from(root.querySelectorAll(TOGGLE_SELECTOR));
+  const numberOf = /* @__PURE__ */ new Map();
+  all.forEach((el, i) => numberOf.set(el, i + 1));
+  return collectToggleElsFiltered(root, keep).map((el) => {
+    var _a;
+    return {
+      el,
+      ordinal: (_a = numberOf.get(el)) != null ? _a : 0
+    };
+  });
+}
+function noteToggleCount(root) {
+  return root.querySelectorAll(TOGGLE_SELECTOR).length;
+}
 function toggleTypeOf(el) {
   var _a;
   return (_a = el.getAttribute("data-callout")) != null ? _a : el.className || (el.tagName.toLowerCase() === "details" ? "details" : "");
@@ -2798,6 +2900,15 @@ function setQuizVisible(el, visible) {
   }
   el.classList.toggle(QUIZ_SHOWN_CLASS, visible);
   el.classList.toggle(QUIZ_HIDDEN_CLASS, !visible);
+  const content = el.querySelector(".callout-content");
+  if (!content)
+    return;
+  if (visible) {
+    const height = Math.max(content.scrollHeight, content.getBoundingClientRect().height);
+    content.style.setProperty("--ntt-reveal-height", `${height}px`);
+  } else {
+    content.style.removeProperty("--ntt-reveal-height");
+  }
 }
 function applyQuizVisibilityClasses(els, index, revealed, closeOthers) {
   els.forEach((el, i) => {
@@ -2811,12 +2922,13 @@ function applyQuizVisibilityClasses(els, index, revealed, closeOthers) {
 }
 function clearQuizVisibility(els, snapshot = []) {
   els.forEach((el, i) => {
-    var _a;
+    var _a, _b;
     if (!el)
       return;
     el.classList.remove(QUIZ_HIDDEN_CLASS, QUIZ_SHOWN_CLASS);
+    (_a = el.querySelector(".callout-content")) == null ? void 0 : _a.style.removeProperty("--ntt-reveal-height");
     if (isDetails(el))
-      el.open = !!((_a = snapshot[i]) == null ? void 0 : _a.open);
+      el.open = !!((_b = snapshot[i]) == null ? void 0 : _b.open);
   });
 }
 
@@ -3319,7 +3431,7 @@ function routeStopTops(container, box, a4, anchor) {
 }
 
 // src/perf-report-modal.ts
-var import_obsidian = require("obsidian");
+var import_obsidian2 = require("obsidian");
 var stampNow = () => (/* @__PURE__ */ new Date()).toISOString().replace("T", " ").slice(0, 19);
 function quizReportMarkdown(host) {
   var _a, _b;
@@ -3350,14 +3462,14 @@ async function exportPerfReport(host) {
   const report = quizReportMarkdown(host);
   try {
     await navigator.clipboard.writeText(report);
-    new import_obsidian.Notice("Performance report copied to clipboard.", 5e3);
+    new import_obsidian2.Notice("Performance report copied to clipboard.", 5e3);
   } catch (e) {
-    new import_obsidian.Notice(report.slice(0, 1200), 12e3);
+    new import_obsidian2.Notice(report.slice(0, 1200), 12e3);
   }
   if (host.settings.perfLog)
     await appendPerfLog(host, report);
 }
-var PerfReportModal = class extends import_obsidian.Modal {
+var PerfReportModal = class extends import_obsidian2.Modal {
   constructor(host) {
     super(host.app);
     this.host = host;
@@ -3370,7 +3482,7 @@ var PerfReportModal = class extends import_obsidian.Modal {
     contentEl.createEl("h2", { text: "Quiz performance report" });
     const md = contentEl.createDiv({ cls: "ntt-perf-body" });
     try {
-      void import_obsidian.MarkdownRenderer.render(this.host.app, this.body, md, "", this);
+      void import_obsidian2.MarkdownRenderer.render(this.host.app, this.body, md, "", this);
     } catch (e) {
       md.createEl("pre", { text: this.body });
     }
@@ -3379,15 +3491,15 @@ var PerfReportModal = class extends import_obsidian.Modal {
     copy.onclick = async () => {
       try {
         await navigator.clipboard.writeText(this.body);
-        new import_obsidian.Notice("Report copied.");
+        new import_obsidian2.Notice("Report copied.");
       } catch (e) {
-        new import_obsidian.Notice("Clipboard unavailable on this device.");
+        new import_obsidian2.Notice("Clipboard unavailable on this device.");
       }
     };
     const save = row.createEl("button", { text: "Save to note" });
     save.onclick = async () => {
       await appendPerfLog(this.host, this.body);
-      new import_obsidian.Notice("Saved to perf-log.md");
+      new import_obsidian2.Notice("Saved to perf-log.md");
     };
     row.createEl("button", { text: "Close" }).onclick = () => this.close();
   }
@@ -3464,11 +3576,200 @@ function calloutForColor(colorId, fallback) {
   return found && found.callout ? found.callout : fallback;
 }
 
-// src/settings-tab.ts
+// src/callout-catalog.ts
+var NAMES = {
+  red: "Red \u2014 didn't know",
+  yellow: "Yellow \u2014 half known",
+  green: "Green \u2014 known",
+  question: "Question",
+  info: "Info",
+  note: "Note",
+  abstract: "Abstract / summary",
+  tip: "Tip / hint",
+  warning: "Warning",
+  success: "Success",
+  todo: "Todo",
+  important: "Important",
+  failure: "Failure",
+  danger: "Danger / error",
+  bug: "Bug",
+  example: "Example",
+  quote: "Quote",
+  other: "Ungraded \u2014 anything else"
+};
+function aliasesOf(kind) {
+  return Object.entries(KIND_WORD_ALIASES).filter(([, target]) => target === kind).map(([word]) => word).sort();
+}
+function metaOf(kind) {
+  var _a;
+  const aliases = aliasesOf(kind);
+  const graded = GRADED_COLORS.includes(kind);
+  return {
+    kind,
+    icon: COLOR_ICON[kind],
+    name: (_a = NAMES[kind]) != null ? _a : kind,
+    word: graded ? `!recall-${kind}` : kind === "other" ? "(no matching type)" : `!${kind}`,
+    aliases,
+    param: kind
+  };
+}
+var CALLOUT_META = CALLOUT_KINDS.map(metaOf);
+var GRADED_META = [...GRADED_COLORS, "other"].map(metaOf);
+function kindWords(kind) {
+  const m = metaOf(kind);
+  return [m.word, ...m.aliases.map((a) => `!${a}`)].join(" / ");
+}
+
+// src/callout-stats.ts
+var REPORT_ORDER = [
+  ...GRADED_COLORS,
+  ...CALLOUT_KINDS,
+  "other"
+];
+function percentOf(count, total) {
+  if (!total || count <= 0)
+    return 0;
+  return Math.round(count / total * 1e3) / 10;
+}
+function countKinds(kinds) {
+  var _a;
+  const total = kinds.length;
+  const tally = /* @__PURE__ */ new Map();
+  for (const k of kinds)
+    tally.set(k, ((_a = tally.get(k)) != null ? _a : 0) + 1);
+  return REPORT_ORDER.map((kind) => {
+    var _a2;
+    const meta = metaOf(kind);
+    const count = (_a2 = tally.get(kind)) != null ? _a2 : 0;
+    return {
+      kind,
+      icon: meta.icon,
+      name: meta.name,
+      word: meta.word,
+      count,
+      percent: percentOf(count, total)
+    };
+  });
+}
+function presentKinds(rows) {
+  return rows.filter((r) => r.count > 0).sort((a, b) => b.count - a.count);
+}
+function countBadge(row) {
+  if (!row)
+    return "";
+  if (row.count === 0)
+    return "0";
+  return `${row.count} \xB7 ${row.percent}%`;
+}
+function breakdownTable(rows, total) {
+  const present = presentKinds(rows);
+  const head = ["| Type | Callout | Count | % of note |", "|---|---|---:|---:|"];
+  const body = present.map(
+    (r) => `| ${r.icon} ${r.name} | \`${r.word}\` | ${r.count} | ${r.percent}% |`
+  );
+  const foot = `| **Total** | | **${total}** | 100% |`;
+  if (present.length === 0)
+    return "No toggles found in this note.";
+  return [...head, ...body, foot].join("\n");
+}
+function breakdownSummary(rows, total) {
+  const present = presentKinds(rows);
+  if (!present.length)
+    return "no toggles";
+  return `${total} toggles \xB7 ${present.map((r) => `${r.icon} ${r.count} (${r.percent}%)`).join(" \xB7 ")}`;
+}
+
+// src/callout-commands.ts
 var import_obsidian3 = require("obsidian");
 
+// src/callout-playground.ts
+var PLAYGROUND_BASENAME = "Callout playground";
+function example(kind, n) {
+  const m = metaOf(kind);
+  const word = GRADED_COLORS.includes(kind) ? `recall-${kind}` : kind;
+  return [
+    `> [!${word}]- **${n}. ${m.icon} ${m.name}**`,
+    `> Filter name: **${m.name}**`,
+    `> Types that match: ${kindWords(kind)}`,
+    `> Deep link: \`obsidian://notion-toggle?action=autoscroll&filter=${m.param}\``,
+    ">",
+    `> Ye answer ${m.icon} ${m.name} filter chunne par hi khulega.`,
+    ""
+  ].join("\n");
+}
+function playgroundMarkdown() {
+  const kinds = [...GRADED_COLORS, ...CALLOUT_KINDS];
+  const body = kinds.map((k, i) => example(k, i + 1)).join("\n");
+  return [
+    "# Callout playground",
+    "",
+    "Har supported toggle type ka ek live example. Autoscroll ya Quiz kholo,",
+    "filter picker me koi bhi type chuno, aur dekho ki sirf wahi toggles ruk rahe hain.",
+    "",
+    `Total examples: ${kinds.length} (3 traffic light + ${CALLOUT_KINDS.length} built-in callouts).`,
+    "",
+    'Numbers note ke asli toggle numbers hain \u2014 "Odd toggles (1, 3, 5 \u2026)" inhi par chalta hai.',
+    "",
+    "---",
+    "",
+    body,
+    "---",
+    "",
+    "## Counts",
+    "",
+    "Stats panel (Autoscroll revision stats) me **Callout breakdown** table har type ka",
+    'count aur percentage dikhata hai, aur "Copy callout breakdown" command wahi table',
+    "clipboard par de deta hai.",
+    ""
+  ].join("\n");
+}
+function playgroundPath(exists, folder = "") {
+  const dir = folder ? `${folder.replace(/\/+$/, "")}/` : "";
+  let name = `${dir}${PLAYGROUND_BASENAME}.md`;
+  let n = 2;
+  while (exists(name)) {
+    name = `${dir}${PLAYGROUND_BASENAME} ${n}.md`;
+    n += 1;
+  }
+  return name;
+}
+
+// src/callout-commands.ts
+function registerCalloutCommands(plugin) {
+  plugin.addCommand({
+    id: "insert-callout-playground",
+    name: "Insert callout type playground note",
+    callback: async () => {
+      var _a, _b, _c;
+      const folder = (_c = (_b = (_a = plugin.app.workspace.getActiveFile()) == null ? void 0 : _a.parent) == null ? void 0 : _b.path) != null ? _c : "";
+      const dir = folder === "/" ? "" : folder;
+      const path = playgroundPath(
+        (p) => plugin.app.vault.getAbstractFileByPath(p) !== null,
+        dir
+      );
+      const file = await plugin.app.vault.create(path, playgroundMarkdown());
+      await plugin.app.workspace.getLeaf(true).openFile(file);
+      new import_obsidian3.Notice(`Playground note banaya: ${path}`);
+    }
+  });
+  plugin.addCommand({
+    id: "copy-callout-breakdown",
+    name: "Copy callout breakdown (counts + %)",
+    callback: async () => {
+      const rows = plugin.calloutBreakdown();
+      const total = rows.reduce((n, r) => n + r.count, 0);
+      const table = breakdownTable(rows, total);
+      await navigator.clipboard.writeText(table);
+      new import_obsidian3.Notice(`Copied \u2014 ${breakdownSummary(rows, total)}`);
+    }
+  });
+}
+
+// src/settings-tab.ts
+var import_obsidian5 = require("obsidian");
+
 // src/modals.ts
-var import_obsidian2 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 
 // src/stats-panel.ts
 var pct = (n) => `${Math.round(n * 100)}%`;
@@ -3530,6 +3831,66 @@ function orderExplainer(rows) {
   return `Shuffle visits the lowest recall first: #${first.ordinal} (${first.fresh ? "new" : pct(first.recall)}) leads, ${due} due and ${fresh} new toggle${fresh === 1 ? "" : "s"} queued.`;
 }
 
+// src/filter-picker.ts
+var GRADED_OPTIONS = [
+  { label: "\u26AA All toggles (no filter)", filter: [] },
+  { label: `\u{1F534} ${metaOf("red").name}`, hint: "!recall-red", filter: ["red"], kind: "red" },
+  { label: `\u{1F7E1} ${metaOf("yellow").name}`, hint: "!recall-yellow", filter: ["yellow"], kind: "yellow" },
+  { label: `\u{1F7E2} ${metaOf("green").name}`, hint: "!recall-green", filter: ["green"], kind: "green" },
+  { label: "\u{1F534}\u{1F7E1} Red + Yellow (weak spots)", filter: ["red", "yellow"] },
+  { label: "\u{1F534}\u{1F7E1}\u{1F7E2} All graded toggles", filter: [...GRADED_COLORS] }
+];
+function filterGroups() {
+  return [
+    { id: "graded", label: "\u{1F534}\u{1F7E1}\u{1F7E2} Traffic light (recall grades)", open: true, options: GRADED_OPTIONS },
+    {
+      id: "callouts",
+      label: `\u2753\u{1F4A1}\u{1F4DD} Callout types (${CALLOUT_KINDS.length})`,
+      open: false,
+      options: [
+        ...CALLOUT_META.map((m) => ({
+          label: `${m.icon} ${m.name}`,
+          hint: kindWords(m.kind),
+          filter: [m.kind],
+          kind: m.kind
+        })),
+        { label: "\u2753\u{1F4A1}\u{1F4DD} All built-in callouts", filter: [...CALLOUT_KINDS] }
+      ]
+    },
+    {
+      id: "everything",
+      label: "\u{1F310} Everything else",
+      open: false,
+      options: [
+        {
+          label: "\u26AA Ungraded \u2014 anything without a grade",
+          hint: "plain toggles and every non-graded callout",
+          filter: ["other"],
+          kind: "other"
+        },
+        {
+          label: "\u{1F534}\u{1F7E1}\u{1F7E2}\u26AA Everything, graded + ungraded",
+          filter: [...GRADED_COLORS, "other"]
+        }
+      ]
+    }
+  ];
+}
+function flatFilterOptions() {
+  return filterGroups().flatMap((g) => g.options);
+}
+function optionCount(opt, rows) {
+  if (!opt.kind)
+    return "";
+  return countBadge(rows.find((r) => r.kind === opt.kind));
+}
+function isEmptyOption(opt, rows) {
+  var _a, _b;
+  if (!opt.kind)
+    return false;
+  return ((_b = (_a = rows.find((r) => r.kind === opt.kind)) == null ? void 0 : _a.count) != null ? _b : 0) === 0;
+}
+
 // src/modals.ts
 function addSecondsPicker(setting, opts) {
   let text = null;
@@ -3559,7 +3920,7 @@ function addSecondsPicker(setting, opts) {
     txt.inputEl.addEventListener("change", () => void commit());
   });
 }
-var ScrollStatsModal = class extends import_obsidian2.Modal {
+var ScrollStatsModal = class extends import_obsidian4.Modal {
   constructor(app, plugin) {
     super(app);
     this.plugin = plugin;
@@ -3597,111 +3958,99 @@ var ScrollStatsModal = class extends import_obsidian2.Modal {
         text: `Due next 7 days: ${forecast.join(" \xB7 ")}`
       });
     }
+    const kinds = this.plugin.calloutBreakdown();
+    const noteTotal = kinds.reduce((n, r) => n + r.count, 0);
+    const box = this.contentEl.createDiv({ cls: "ntt-breakdown" });
+    box.createDiv({ cls: "notion-toggle-deck-summary", text: "Callout breakdown" });
+    box.createDiv({ cls: "ntt-filter-summary", text: breakdownSummary(kinds, noteTotal) });
+    const table = box.createEl("table", { cls: "ntt-breakdown-table" });
+    const head = table.createEl("tr");
+    for (const h of ["Type", "Callout", "Count", "%"])
+      head.createEl("th", { text: h });
+    for (const row of presentKinds(kinds)) {
+      const tr = table.createEl("tr");
+      tr.createEl("td", { text: `${row.icon} ${row.name}` });
+      tr.createEl("td", { text: row.word });
+      tr.createEl("td", { text: String(row.count) });
+      tr.createEl("td", { text: `${row.percent}%` });
+    }
+    if (noteTotal === 0)
+      box.createDiv({ text: "No toggles in this note yet." });
   }
   onClose() {
     this.contentEl.empty();
   }
 };
-var ScrollFilterModal = class extends import_obsidian2.Modal {
+function renderFilterPicker(host, active, rows, onPick) {
+  const list = host.createDiv({ cls: "notion-toggle-color-list" });
+  for (const group of filterGroups()) {
+    const hasActive = group.options.some((o) => sameFilter(o.filter, active));
+    const box = list.createEl("details", { cls: "ntt-filter-group" });
+    box.open = group.open || hasActive;
+    box.createEl("summary", { text: group.label, cls: "ntt-filter-group-title" });
+    for (const opt of group.options) {
+      const btn = box.createEl("button", { cls: "notion-toggle-color-btn ntt-filter-row" });
+      const main = btn.createDiv({ cls: "ntt-filter-main" });
+      main.createSpan({ text: opt.label, cls: "ntt-filter-label" });
+      const badge = optionCount(opt, rows);
+      if (badge)
+        main.createSpan({ text: badge, cls: "ntt-filter-count" });
+      if (opt.hint)
+        btn.createDiv({ text: opt.hint, cls: "ntt-filter-hint" });
+      if (isEmptyOption(opt, rows))
+        btn.addClass("is-empty");
+      if (sameFilter(opt.filter, active))
+        btn.addClass("is-suggested");
+      btn.onclick = async () => {
+        await onPick(opt.filter);
+      };
+    }
+  }
+}
+var ScrollFilterModal = class extends import_obsidian4.Modal {
   constructor(app, plugin) {
     super(app);
     this.plugin = plugin;
   }
   onOpen() {
     this.setTitle("Autoscroll \u2014 revise which toggles?");
-    const list = this.contentEl.createDiv({ cls: "notion-toggle-color-list" });
-    const options = [
-      { label: "\u26AA All toggles", filter: [] },
-      { label: "\u{1F534} Red only", filter: ["red"] },
-      { label: "\u{1F7E1} Yellow only", filter: ["yellow"] },
-      { label: "\u{1F7E2} Green only", filter: ["green"] },
-      { label: "\u{1F534}\u{1F7E1} Red + Yellow (weak spots)", filter: ["red", "yellow"] },
-      { label: "\u{1F534}\u{1F7E1}\u{1F7E2} All graded toggles", filter: ["red", "yellow", "green"] },
-      { label: "\u26AA All ungraded notes / callouts", filter: ["other"] },
-      { label: "\u2753 Question callouts (!question)", filter: ["question"] },
-      { label: "\u{1F4A1} Tip callouts (!tip)", filter: ["tip"] },
-      { label: "\u{1F4DD} Note callouts (!note)", filter: ["note"] },
-      { label: "\u2139\uFE0F Info callouts (!info)", filter: ["info"] },
-      { label: "\u{1F4CB} Abstract callouts (!abstract)", filter: ["abstract"] },
-      { label: "\u26A0\uFE0F Warning callouts (!warning)", filter: ["warning"] },
-      { label: "\u2705 Success callouts (!success)", filter: ["success"] },
-      { label: "\u2611\uFE0F Todo callouts (!todo)", filter: ["todo"] },
-      { label: "\u2757 Important callouts (!important)", filter: ["important"] },
-      { label: "\u274C Failure callouts (!failure / !fail / !missing)", filter: ["failure"] },
-      { label: "\u{1F6A8} Danger callouts (!danger / !error)", filter: ["danger"] },
-      { label: "\u{1F41E} Bug callouts (!bug)", filter: ["bug"] },
-      { label: "\u{1F9E9} Example callouts (!example)", filter: ["example"] },
-      { label: "\u275D Quote callouts (!quote / !cite)", filter: ["quote"] },
-      { label: "\u2753\u{1F4A1}\u{1F4DD} All built-in callouts", filter: CALLOUT_KINDS },
-      { label: "\u{1F534}\u{1F7E1}\u{1F7E2}\u26AA Everything, graded + notes", filter: ["red", "yellow", "green", "other"] }
-    ];
-    const active = this.plugin.settings.scrollFilter;
-    for (const opt of options) {
-      const btn = list.createEl("button", {
-        text: opt.label,
-        cls: "notion-toggle-color-btn"
-      });
-      if (sameFilter(opt.filter, active))
-        btn.addClass("is-suggested");
-      btn.onclick = async () => {
-        await this.plugin.setScrollFilter(opt.filter);
-        this.close();
-      };
-    }
+    const rows = this.plugin.calloutBreakdown();
+    this.contentEl.createDiv({
+      cls: "ntt-filter-summary",
+      text: breakdownSummary(rows, rows.reduce((n, r) => n + r.count, 0))
+    });
+    renderFilterPicker(this.contentEl, this.plugin.settings.scrollFilter, rows, async (filter) => {
+      await this.plugin.setScrollFilter(filter);
+      this.close();
+    });
   }
   onClose() {
     this.contentEl.empty();
   }
 };
-var QUIZ_FILTER_OPTIONS = [
-  { label: "\u26AA Default \u2014 every toggle", filter: [] },
-  { label: "\u{1F534} Red only", filter: ["red"] },
-  { label: "\u{1F7E1} Yellow only", filter: ["yellow"] },
-  { label: "\u{1F7E2} Green only", filter: ["green"] },
-  { label: "\u{1F534}\u{1F7E1} Red + Yellow (weak spots)", filter: ["red", "yellow"] },
-  { label: "\u{1F534}\u{1F7E1}\u{1F7E2} All graded toggles", filter: ["red", "yellow", "green"] },
-  { label: "\u26AA All ungraded notes / callouts", filter: ["other"] },
-  { label: "\u2753 Question callouts (!question)", filter: ["question"] },
-  { label: "\u{1F4A1} Tip callouts (!tip)", filter: ["tip"] },
-  { label: "\u{1F4DD} Note callouts (!note)", filter: ["note"] },
-  { label: "\u2139\uFE0F Info callouts (!info)", filter: ["info"] },
-  { label: "\u{1F4CB} Abstract callouts (!abstract)", filter: ["abstract"] },
-  { label: "\u26A0\uFE0F Warning callouts (!warning)", filter: ["warning"] },
-  { label: "\u2705 Success callouts (!success)", filter: ["success"] },
-  { label: "\u2611\uFE0F Todo callouts (!todo)", filter: ["todo"] },
-  { label: "\u2757 Important callouts (!important)", filter: ["important"] },
-  { label: "\u274C Failure callouts (!failure / !fail / !missing)", filter: ["failure"] },
-  { label: "\u{1F6A8} Danger callouts (!danger / !error)", filter: ["danger"] },
-  { label: "\u{1F41E} Bug callouts (!bug)", filter: ["bug"] },
-  { label: "\u{1F9E9} Example callouts (!example)", filter: ["example"] },
-  { label: "\u275D Quote callouts (!quote / !cite)", filter: ["quote"] },
-  { label: "\u2753\u{1F4A1}\u{1F4DD} All built-in callouts", filter: CALLOUT_KINDS },
-  { label: "\u{1F534}\u{1F7E1}\u{1F7E2}\u26AA Everything, graded + notes", filter: ["red", "yellow", "green", "other"] }
-];
-var QuizFilterModal = class extends import_obsidian2.Modal {
+var QUIZ_FILTER_OPTIONS = flatFilterOptions();
+var QuizFilterModal = class extends import_obsidian4.Modal {
   constructor(app, plugin) {
     super(app);
     this.plugin = plugin;
   }
   onOpen() {
     this.setTitle("Quiz \u2014 ask about which toggles?");
-    const list = this.contentEl.createDiv({ cls: "notion-toggle-color-list" });
-    const active = this.plugin.quizFilterColors();
-    for (const opt of QUIZ_FILTER_OPTIONS) {
-      const btn = list.createEl("button", { text: opt.label, cls: "notion-toggle-color-btn" });
-      if (sameFilter(opt.filter, active))
-        btn.addClass("is-suggested");
-      btn.onclick = async () => {
-        await this.plugin.setQuizFilter(opt.filter);
-        this.close();
-      };
-    }
+    const rows = this.plugin.calloutBreakdown();
+    this.contentEl.createDiv({
+      cls: "ntt-filter-summary",
+      text: breakdownSummary(rows, rows.reduce((n, r) => n + r.count, 0))
+    });
+    renderFilterPicker(this.contentEl, this.plugin.quizFilterColors(), rows, async (filter) => {
+      await this.plugin.setQuizFilter(filter);
+      this.close();
+    });
   }
   onClose() {
     this.contentEl.empty();
   }
 };
-var ScrollModeModal = class extends import_obsidian2.Modal {
+var ScrollModeModal = class extends import_obsidian4.Modal {
   constructor(app, plugin) {
     super(app);
     this.plugin = plugin;
@@ -3735,7 +4084,7 @@ var ScrollModeModal = class extends import_obsidian2.Modal {
     await this.plugin.saveSettings();
     this.plugin.refreshScrollPlan();
     if (toast && !this.plugin.settings.scrollQuiet) {
-      new import_obsidian2.Notice(planSummary(this.plugin.modeConfig()));
+      new import_obsidian4.Notice(planSummary(this.plugin.modeConfig()));
     }
     this.paint();
   }
@@ -3781,7 +4130,7 @@ var ScrollModeModal = class extends import_obsidian2.Modal {
       await this.plugin.setAutoScrollEnabled(true);
       this.close();
     };
-    new import_obsidian2.Setting(this.contentEl).setName("Custom list").setDesc("Toggle numbers to stop at, e.g. 2, 5, 9.").addText((t) => {
+    new import_obsidian4.Setting(this.contentEl).setName("Custom list").setDesc("Toggle numbers to stop at, e.g. 2, 5, 9.").addText((t) => {
       var _a;
       t.setPlaceholder("2, 5, 9").setValue(((_a = this.plugin.settings.scrollPicks) != null ? _a : []).join(", ")).onChange(async (v) => {
         this.plugin.settings.scrollPicks = parsePicks(v);
@@ -3789,7 +4138,7 @@ var ScrollModeModal = class extends import_obsidian2.Modal {
       });
       t.inputEl.addEventListener("blur", () => void this.commit());
     });
-    new import_obsidian2.Setting(this.contentEl).setName("Route").setDesc("Your own visit order, e.g. 7, 2, 9, 2. Saved across vault reloads.").addText((t) => {
+    new import_obsidian4.Setting(this.contentEl).setName("Route").setDesc("Your own visit order, e.g. 7, 2, 9, 2. Saved across vault reloads.").addText((t) => {
       var _a, _b;
       t.setPlaceholder("7, 2, 9").setValue(
         ((_b = (_a = this.plugin.settings.scrollRoute) != null ? _a : this.plugin.settings.scrollUserRoute) != null ? _b : []).join(
@@ -3803,13 +4152,13 @@ var ScrollModeModal = class extends import_obsidian2.Modal {
       });
       t.inputEl.addEventListener("blur", () => void this.commit());
     });
-    new import_obsidian2.Setting(this.contentEl).setName("Loop the route").setDesc("Route khatam hone par phir se pehle waypoint se.").addToggle(
+    new import_obsidian4.Setting(this.contentEl).setName("Loop the route").setDesc("Route khatam hone par phir se pehle waypoint se.").addToggle(
       (tg) => tg.setValue(this.plugin.settings.scrollLoopRoute).onChange(async (v) => {
         this.plugin.settings.scrollLoopRoute = v;
         await this.commit(true);
       })
     );
-    new import_obsidian2.Setting(this.contentEl).setName("Shuffle range").setDesc("Limit shuffle to these toggle numbers (0 = whole note).").addText(
+    new import_obsidian4.Setting(this.contentEl).setName("Shuffle range").setDesc("Limit shuffle to these toggle numbers (0 = whole note).").addText(
       (t) => t.setPlaceholder("from").setValue(String(this.plugin.settings.scrollShuffleFrom || "")).onChange(async (v) => {
         this.plugin.settings.scrollShuffleFrom = Math.max(0, Math.floor(Number(v) || 0));
         await this.commit(true);
@@ -3834,10 +4183,24 @@ var ScrollModeModal = class extends import_obsidian2.Modal {
         });
       }
     }
-    new import_obsidian2.Setting(this.contentEl).setName("Tall toggles screen-by-screen").setDesc("Long answers are read one screen at a time before moving on.").addToggle(
+    new import_obsidian4.Setting(this.contentEl).setName("Tall toggles screen-by-screen").setDesc("Long answers are read one screen at a time before moving on.").addToggle(
       (tg) => tg.setValue(this.plugin.settings.scrollChunkTall).onChange(async (v) => {
         this.plugin.settings.scrollChunkTall = v;
         await this.commit();
+      })
+    );
+    new import_obsidian4.Setting(this.contentEl).setName("Advance by").setDesc("Toggles, full screens, or both in Reading View.").addDropdown(
+      (dd) => dd.addOptions({ toggles: "Toggles", screens: "Screens", both: "Toggles + screens" }).setValue(normalizeAdvanceBy(this.plugin.settings.scrollAdvanceBy)).onChange(async (v) => {
+        this.plugin.settings.scrollAdvanceBy = normalizeAdvanceBy(v);
+        await this.commit();
+        this.plugin.refreshScrollPlan();
+      })
+    );
+    new import_obsidian4.Setting(this.contentEl).setName("Screen overlap").setDesc("Keep part of the previous screen visible between stops.").addSlider(
+      (sl) => sl.setLimits(0, 0.5, 0.05).setValue(clampScreenOverlap(this.plugin.settings.scrollScreenOverlap)).setDynamicTooltip().onChange(async (v) => {
+        this.plugin.settings.scrollScreenOverlap = clampScreenOverlap(v);
+        await this.commit();
+        this.plugin.refreshScrollPlan();
       })
     );
     this.paint();
@@ -3846,7 +4209,7 @@ var ScrollModeModal = class extends import_obsidian2.Modal {
     this.contentEl.empty();
   }
 };
-var ScrollDwellModal = class extends import_obsidian2.Modal {
+var ScrollDwellModal = class extends import_obsidian4.Modal {
   constructor(app, plugin) {
     super(app);
     this.plugin = plugin;
@@ -3867,11 +4230,11 @@ var ScrollDwellModal = class extends import_obsidian2.Modal {
         this.plugin.settings.scrollHold = clampDwellSeconds2(secs);
         await this.plugin.saveSettings();
         this.plugin.refreshScrollPlan();
-        new import_obsidian2.Notice(`Autoscroll pauses for ${formatDwell(secs)}.`);
+        new import_obsidian4.Notice(`Autoscroll pauses for ${formatDwell(secs)}.`);
         this.close();
       };
     }
-    new import_obsidian2.Setting(this.contentEl).setName("Custom seconds").setDesc(`1 \u2013 ${DWELL_PRESETS[DWELL_PRESETS.length - 1]} seconds.`).addText(
+    new import_obsidian4.Setting(this.contentEl).setName("Custom seconds").setDesc(`1 \u2013 ${DWELL_PRESETS[DWELL_PRESETS.length - 1]} seconds.`).addText(
       (t) => t.setPlaceholder(String(current)).onChange(async (v) => {
         const n = clampDwellSeconds2(Number(v), current);
         this.plugin.settings.scrollHold = n;
@@ -3883,7 +4246,7 @@ var ScrollDwellModal = class extends import_obsidian2.Modal {
     this.contentEl.empty();
   }
 };
-var ScrollSpeedModal = class extends import_obsidian2.Modal {
+var ScrollSpeedModal = class extends import_obsidian4.Modal {
   constructor(app, plugin) {
     super(app);
     this.plugin = plugin;
@@ -3900,7 +4263,7 @@ var ScrollSpeedModal = class extends import_obsidian2.Modal {
         this.plugin.settings.scrollSpeed = speedFromMultiplier(mult);
         await this.plugin.saveSettings();
         this.plugin.refreshScrollPlan();
-        new import_obsidian2.Notice(`Autoscroll speed: ${mult}x`);
+        new import_obsidian4.Notice(`Autoscroll speed: ${mult}x`);
         this.close();
       };
     }
@@ -3909,7 +4272,7 @@ var ScrollSpeedModal = class extends import_obsidian2.Modal {
     this.contentEl.empty();
   }
 };
-var MobileToolbarGuideModal = class extends import_obsidian2.Modal {
+var MobileToolbarGuideModal = class extends import_obsidian4.Modal {
   constructor(app, plugin) {
     super(app);
     this.plugin = plugin;
@@ -3925,7 +4288,7 @@ var MobileToolbarGuideModal = class extends import_obsidian2.Modal {
     const steps = this.contentEl.createEl("ol", { cls: "ntt-guide-steps" });
     for (const step of TOOLBAR_STEPS)
       steps.createEl("li", { text: step });
-    new import_obsidian2.Setting(this.contentEl).setName("Open Obsidian settings").setDesc("Mobile \u2192 Manage toolbar me seedha jump (agar version support kare).").addButton(
+    new import_obsidian4.Setting(this.contentEl).setName("Open Obsidian settings").setDesc("Mobile \u2192 Manage toolbar me seedha jump (agar version support kare).").addButton(
       (btn) => btn.setButtonText("Open settings").onClick(() => {
         var _a2, _b2;
         try {
@@ -3933,7 +4296,7 @@ var MobileToolbarGuideModal = class extends import_obsidian2.Modal {
           (_a2 = setting == null ? void 0 : setting.open) == null ? void 0 : _a2.call(setting);
           (_b2 = setting == null ? void 0 : setting.openTabById) == null ? void 0 : _b2.call(setting, "mobile");
         } catch (e) {
-          new import_obsidian2.Notice("Settings manually kholo: \u2699\uFE0F \u2192 Mobile \u2192 Manage toolbar");
+          new import_obsidian4.Notice("Settings manually kholo: \u2699\uFE0F \u2192 Mobile \u2192 Manage toolbar");
         }
       })
     ).addButton(
@@ -3948,7 +4311,7 @@ var MobileToolbarGuideModal = class extends import_obsidian2.Modal {
     this.contentEl.createEl("h3", { text: "Ye commands add karo (tap = tick \u2713)" });
     const done = new Set((_b = this.plugin.settings.toolbarGuideDone) != null ? _b : []);
     for (const cmd of [...TOOLBAR_COMMANDS].sort((a, b) => a.priority - b.priority)) {
-      const row = new import_obsidian2.Setting(this.contentEl).setName(cmd.name).setDesc(cmd.why).addToggle(
+      const row = new import_obsidian4.Setting(this.contentEl).setName(cmd.name).setDesc(cmd.why).addToggle(
         (tg) => tg.setValue(done.has(cmd.id)).onChange(async () => {
           var _a2;
           this.plugin.settings.toolbarGuideDone = toggleGuideDone(
@@ -3974,7 +4337,7 @@ var MobileToolbarGuideModal = class extends import_obsidian2.Modal {
     this.contentEl.empty();
   }
 };
-var QuizSecondsModal = class extends import_obsidian2.Modal {
+var QuizSecondsModal = class extends import_obsidian4.Modal {
   constructor(app, plugin) {
     super(app);
     this.plugin = plugin;
@@ -3994,7 +4357,7 @@ var QuizSecondsModal = class extends import_obsidian2.Modal {
       btn.onclick = async () => {
         this.plugin.settings.quizSeconds = clampQuizSeconds(seconds);
         await this.plugin.saveSettings();
-        new import_obsidian2.Notice(`Quiz: ${formatQuizSeconds(clampQuizSeconds(seconds))} per question.`);
+        new import_obsidian4.Notice(`Quiz: ${formatQuizSeconds(clampQuizSeconds(seconds))} per question.`);
         this.close();
       };
     }
@@ -4011,7 +4374,7 @@ var QuizSecondsModal = class extends import_obsidian2.Modal {
       const seconds = clampQuizSeconds(Number(input.value));
       this.plugin.settings.quizSeconds = seconds;
       await this.plugin.saveSettings();
-      new import_obsidian2.Notice(`Quiz: ${formatQuizSeconds(seconds)} per question.`);
+      new import_obsidian4.Notice(`Quiz: ${formatQuizSeconds(seconds)} per question.`);
       this.close();
     };
   }
@@ -4019,7 +4382,7 @@ var QuizSecondsModal = class extends import_obsidian2.Modal {
     this.contentEl.empty();
   }
 };
-var QuickQAModal = class extends import_obsidian2.Modal {
+var QuickQAModal = class extends import_obsidian4.Modal {
   constructor(app, plugin, onSubmit) {
     super(app);
     this.plugin = plugin;
@@ -4052,7 +4415,7 @@ var QuickQAModal = class extends import_obsidian2.Modal {
     this.contentEl.empty();
   }
 };
-var ColorPickerModal = class extends import_obsidian2.Modal {
+var ColorPickerModal = class extends import_obsidian4.Modal {
   constructor(app, onPick) {
     super(app);
     this.onPick = onPick;
@@ -4077,9 +4440,34 @@ var ColorPickerModal = class extends import_obsidian2.Modal {
     this.contentEl.empty();
   }
 };
+var DueNotesModal = class extends import_obsidian4.Modal {
+  constructor(app, due, onPick) {
+    super(app);
+    this.due = due;
+    this.onPick = onPick;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    this.setTitle(`Due for recall (${this.due.length})`);
+    for (const { path, card } of this.due) {
+      const row = contentEl.createDiv({ cls: "ntt-due-row" });
+      const btn = row.createEl("button", { text: path.replace(/\.md$/, "") });
+      btn.addClass("ntt-due-btn");
+      row.createSpan({ text: ` ${nextDueLabel(card, Date.now())} \xB7 ease ${card.ease}` });
+      btn.addEventListener("click", () => {
+        this.close();
+        this.onPick(path);
+      });
+    }
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
 
 // src/settings-tab.ts
-var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
+var NotionToggleSettingTab = class extends import_obsidian5.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -4088,7 +4476,7 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
     var _a;
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian3.Setting(containerEl).setName("Toggle colour").setDesc("Traffic-light colours for active recall: red = hard, yellow = revise, green = mastered. Plain = clean black Notion look.").addDropdown((dropdown) => {
+    new import_obsidian5.Setting(containerEl).setName("Toggle colour").setDesc("Traffic-light colours for active recall: red = hard, yellow = revise, green = mastered. Plain = clean black Notion look.").addDropdown((dropdown) => {
       for (const c of TOGGLE_COLORS)
         dropdown.addOption(c.id, c.label);
       dropdown.setValue(this.plugin.settings.color);
@@ -4097,14 +4485,14 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("Auto-numbering").setDesc('New toggles get 1., 2., 3., ... automatically \u2014 you never type the number. Use "Renumber toggles in note" to fix gaps.').addToggle((toggle) => {
+    new import_obsidian5.Setting(containerEl).setName("Auto-numbering").setDesc('New toggles get 1., 2., 3., ... automatically \u2014 you never type the number. Use "Renumber toggles in note" to fix gaps.').addToggle((toggle) => {
       toggle.setValue(this.plugin.settings.numberedByDefault);
       toggle.onChange(async (value) => {
         this.plugin.settings.numberedByDefault = value;
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("MCQ options").setDesc("How many checkbox options a new MCQ toggle gets (2-6).").addSlider((slider) => {
+    new import_obsidian5.Setting(containerEl).setName("MCQ options").setDesc("How many checkbox options a new MCQ toggle gets (2-6).").addSlider((slider) => {
       slider.setLimits(2, 6, 1).setDynamicTooltip();
       slider.setValue(this.plugin.settings.mcqOptionCount);
       slider.onChange(async (value) => {
@@ -4112,7 +4500,7 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("Match the following rows").setDesc("How many rows a new match table gets (2-8).").addSlider((slider) => {
+    new import_obsidian5.Setting(containerEl).setName("Match the following rows").setDesc("How many rows a new match table gets (2-8).").addSlider((slider) => {
       slider.setLimits(2, 8, 1).setDynamicTooltip();
       slider.setValue(this.plugin.settings.matchRowCount);
       slider.onChange(async (value) => {
@@ -4120,14 +4508,14 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("Auto-add Answer line").setDesc('Add an "**Answer:** " line inside new MCQ / match toggles.').addToggle((toggle) => {
+    new import_obsidian5.Setting(containerEl).setName("Auto-add Answer line").setDesc('Add an "**Answer:** " line inside new MCQ / match toggles.').addToggle((toggle) => {
       toggle.setValue(this.plugin.settings.addAnswerLine);
       toggle.onChange(async (value) => {
         this.plugin.settings.addAnswerLine = value;
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("Default callout type").setDesc("Type used when inserting/wrapping toggles.").addDropdown((dropdown) => {
+    new import_obsidian5.Setting(containerEl).setName("Default callout type").setDesc("Type used when inserting/wrapping toggles.").addDropdown((dropdown) => {
       for (const t of CALLOUT_TYPES) {
         dropdown.addOption(t, t);
       }
@@ -4137,21 +4525,21 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("Default collapsed").setDesc("On: toggles start collapsed (answer hidden). Off: expanded.").addToggle((toggle) => {
+    new import_obsidian5.Setting(containerEl).setName("Default collapsed").setDesc("On: toggles start collapsed (answer hidden). Off: expanded.").addToggle((toggle) => {
       toggle.setValue(this.plugin.settings.defaultCollapsed);
       toggle.onChange(async (value) => {
         this.plugin.settings.defaultCollapsed = value;
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("Auto-continue on Enter").setDesc("Inside a toggle, Enter keeps writing the answer; Enter on an empty toggle line starts the NEXT toggle.").addToggle((toggle) => {
+    new import_obsidian5.Setting(containerEl).setName("Auto-continue on Enter").setDesc("Inside a toggle, Enter keeps writing the answer; Enter on an empty toggle line starts the NEXT toggle.").addToggle((toggle) => {
       toggle.setValue(this.plugin.settings.autoContinue);
       toggle.onChange(async (value) => {
         this.plugin.settings.autoContinue = value;
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("Toggle format").setDesc("Native callout (recommended, folds in Obsidian) or HTML <details>.").addDropdown((dropdown) => {
+    new import_obsidian5.Setting(containerEl).setName("Toggle format").setDesc("Native callout (recommended, folds in Obsidian) or HTML <details>.").addDropdown((dropdown) => {
       dropdown.addOption("callout", "Native callout (> [!question]-)");
       dropdown.addOption("details", "HTML <details>");
       dropdown.setValue(this.plugin.settings.format);
@@ -4160,15 +4548,15 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("Bold the question/summary").setDesc("Auto-wrap the title in **bold** (skips already-bold text).").addToggle((toggle) => {
+    new import_obsidian5.Setting(containerEl).setName("Bold the question/summary").setDesc("Auto-wrap the title in **bold** (skips already-bold text).").addToggle((toggle) => {
       toggle.setValue(this.plugin.settings.boldSummary);
       toggle.onChange(async (value) => {
         this.plugin.settings.boldSummary = value;
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("Recall timer (Pomodoro)").setHeading();
-    new import_obsidian3.Setting(containerEl).setName("Preset").setDesc("Pick a rhythm, or choose Custom and set your own minutes below.").addDropdown((dropdown) => {
+    new import_obsidian5.Setting(containerEl).setName("Recall timer (Pomodoro)").setHeading();
+    new import_obsidian5.Setting(containerEl).setName("Preset").setDesc("Pick a rhythm, or choose Custom and set your own minutes below.").addDropdown((dropdown) => {
       for (const p of POMODORO_PRESETS)
         dropdown.addOption(p.id, p.label);
       dropdown.setValue(this.plugin.settings.preset);
@@ -4181,7 +4569,7 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
       });
     });
     const minuteSetting = (name, desc, get, set, min, max) => {
-      new import_obsidian3.Setting(containerEl).setName(name).setDesc(desc).addSlider((slider) => {
+      new import_obsidian5.Setting(containerEl).setName(name).setDesc(desc).addSlider((slider) => {
         slider.setLimits(min, max, 1).setDynamicTooltip();
         slider.setValue(get());
         slider.onChange(async (value) => {
@@ -4216,7 +4604,7 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
       5,
       60
     );
-    new import_obsidian3.Setting(containerEl).setName("Sessions before long break").setDesc("How many focus sessions make one cycle (1-8).").addSlider((slider) => {
+    new import_obsidian5.Setting(containerEl).setName("Sessions before long break").setDesc("How many focus sessions make one cycle (1-8).").addSlider((slider) => {
       slider.setLimits(1, 8, 1).setDynamicTooltip();
       slider.setValue(this.plugin.settings.sessionsBeforeLongBreak);
       slider.onChange(async (value) => {
@@ -4226,7 +4614,7 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
       });
     });
     const boolSetting = (name, desc, get, set) => {
-      new import_obsidian3.Setting(containerEl).setName(name).setDesc(desc).addToggle((toggle) => {
+      new import_obsidian5.Setting(containerEl).setName(name).setDesc(desc).addToggle((toggle) => {
         toggle.setValue(get());
         toggle.onChange(async (value) => {
           set(value);
@@ -4264,7 +4652,7 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
       () => this.plugin.settings.compactByDefault,
       (v) => this.plugin.settings.compactByDefault = v
     );
-    new import_obsidian3.Setting(containerEl).setName("Timer focus guard (v1.0.6)").setHeading();
+    new import_obsidian5.Setting(containerEl).setName("Timer focus guard (v1.0.6)").setHeading();
     boolSetting(
       "Auto-pause when you leave",
       "Pause the running timer when Obsidian goes to the background or you switch away.",
@@ -4289,15 +4677,15 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
       () => this.plugin.settings.autoCollapseOnBreak,
       (v) => this.plugin.settings.autoCollapseOnBreak = v
     );
-    new import_obsidian3.Setting(containerEl).setName("Idle pause (minutes)").setDesc("Pause the focus phase after this much inactivity. 0 turns it off.").addText((text) => {
+    new import_obsidian5.Setting(containerEl).setName("Idle pause (minutes)").setDesc("Pause the focus phase after this much inactivity. 0 turns it off.").addText((text) => {
       text.setPlaceholder("2").setValue(String(this.plugin.settings.idlePauseMinutes)).onChange(async (value) => {
         const n = Number.parseInt(value, 10);
         this.plugin.settings.idlePauseMinutes = Number.isFinite(n) ? Math.max(0, Math.min(120, n)) : 0;
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("Minimal mode & spaced repetition").setHeading();
-    new import_obsidian3.Setting(containerEl).setName("Minimal command names").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Minimal mode & spaced repetition").setHeading();
+    new import_obsidian5.Setting(containerEl).setName("Minimal command names").setDesc(
       'Keep 4 primary commands (Toggle, Colour, Recall, Review) clean and prefix everything else with "Advanced:" so the toolbar stays uncluttered. Restart Obsidian to refresh names.'
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.minimalNames).onChange(async (v) => {
@@ -4305,18 +4693,18 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Ask for a grade after each focus phase").setDesc("Shows Again / Hard / Good / Easy on the timer; SM-2 then calculates your next recall date automatically.").addToggle(
+    new import_obsidian5.Setting(containerEl).setName("Ask for a grade after each focus phase").setDesc("Shows Again / Hard / Good / Easy on the timer; SM-2 then calculates your next recall date automatically.").addToggle(
       (tg) => tg.setValue(this.plugin.settings.autoReview).onChange(async (v) => {
         this.plugin.settings.autoReview = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Recall schedule").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Recall schedule").setDesc(
       `${scheduleStoreSummary(Object.keys((_a = this.plugin.settings.srs) != null ? _a : {}).length)} Schedules follow a note when you rename or move it (v1.0.8).`
     ).addButton((btn) => {
       btn.setButtonText("Clean up").onClick(async () => {
         const removed = await this.plugin.pruneSchedule();
-        new import_obsidian3.Notice(
+        new import_obsidian5.Notice(
           removed > 0 ? `Removed ${removed} schedule${removed === 1 ? "" : "s"} for missing notes.` : "Nothing to clean up."
         );
         this.display();
@@ -4325,12 +4713,12 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
       btn.setWarning().setButtonText("Clear all").onClick(async () => {
         this.plugin.settings.srs = {};
         await this.plugin.saveSettings();
-        new import_obsidian3.Notice("Recall schedule cleared.");
+        new import_obsidian5.Notice("Recall schedule cleared.");
         this.display();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("Auto-scroll revision").setHeading();
-    new import_obsidian3.Setting(containerEl).setName("Autoscroll running").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Auto-scroll revision").setHeading();
+    new import_obsidian5.Setting(containerEl).setName("Autoscroll running").setDesc(
       `ON = active note par autoscroll start, OFF = stop. Hotkey: ${hotkeyLabel(
         "smart-autoscroll"
       )} \xB7 reverse: ${hotkeyLabel("autoscroll-reverse")} \xB7 sheet: ${hotkeyLabel("autoscroll-sheet")}.`
@@ -4340,28 +4728,28 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
         tg.setValue(this.plugin.autoScrollActive());
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Hotkeys").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Hotkeys").setDesc(
       HOTKEYS.map((h) => `${h.id} \u2192 ${h.label}`).join("  \xB7  ") + "  \u2014 Settings \u2192 Hotkeys me badal sakte ho."
     );
-    new import_obsidian3.Setting(containerEl).setName("Scroll speed").setDesc("Pixels per second while gliding to the next toggle.").addSlider(
+    new import_obsidian5.Setting(containerEl).setName("Scroll speed").setDesc("Pixels per second while gliding to the next toggle.").addSlider(
       (sl) => sl.setLimits(SPEED_MIN, SPEED_MAX, SPEED_STEP).setValue(clampSpeed(this.plugin.settings.scrollSpeed)).setDynamicTooltip().onChange(async (v) => {
         this.plugin.settings.scrollSpeed = clampSpeed(v);
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Hold time on each toggle").setDesc("Seconds the opened toggle stays visible before moving on.").addSlider(
+    new import_obsidian5.Setting(containerEl).setName("Hold time on each toggle").setDesc("Seconds the opened toggle stays visible before moving on.").addSlider(
       (sl) => sl.setLimits(0, 30, 1).setValue(clampHold(this.plugin.settings.scrollHold)).setDynamicTooltip().onChange(async (v) => {
         this.plugin.settings.scrollHold = clampHold(v);
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Reverse direction").setDesc("Scroll bottom \u2192 top for fast backwards revision.").addToggle(
+    new import_obsidian5.Setting(containerEl).setName("Reverse direction").setDesc("Scroll bottom \u2192 top for fast backwards revision.").addToggle(
       (tg) => tg.setValue(this.plugin.settings.scrollReverse).onChange(async (v) => {
         this.plugin.settings.scrollReverse = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Colour filter").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Colour filter").setDesc(
       `Stop only at these toggles \u2014 currently ${filterLabel(this.plugin.settings.scrollFilter)}.`
     ).addButton((btn) => {
       btn.setButtonText("Choose colours").onClick(() => {
@@ -4369,48 +4757,74 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
         this.display();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("Open the toggle automatically").addToggle(
+    new import_obsidian5.Setting(containerEl).setName("Open the toggle automatically").addToggle(
       (tg) => tg.setValue(this.plugin.settings.scrollAutoOpen).onChange(async (v) => {
         this.plugin.settings.scrollAutoOpen = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Close it again when leaving").setDesc("Keeps active recall honest: only one answer is visible at a time.").addToggle(
+    new import_obsidian5.Setting(containerEl).setName("Switch to Reading View while scrolling").setDesc("Uses Obsidian's stable reading surface, then restores Source View when the run ends.").addToggle(
+      (tg) => tg.setValue(this.plugin.settings.scrollForceReading).onChange(async (v) => {
+        this.plugin.settings.scrollForceReading = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian5.Setting(containerEl).setName("Restore previous view after scrolling").setDesc("Return to Source View automatically when autoscroll stops.").addToggle(
+      (tg) => tg.setValue(this.plugin.settings.scrollRestoreMode).onChange(async (v) => {
+        this.plugin.settings.scrollRestoreMode = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian5.Setting(containerEl).setName("Close it again when leaving").setDesc("Keeps active recall honest: only one answer is visible at a time.").addToggle(
       (tg) => tg.setValue(this.plugin.settings.scrollAutoClose).onChange(async (v) => {
         this.plugin.settings.scrollAutoClose = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Loop the note").setDesc("Start over from the other end instead of stopping.").addToggle(
+    new import_obsidian5.Setting(containerEl).setName("Loop the note").setDesc("Start over from the other end instead of stopping.").addToggle(
       (tg) => tg.setValue(this.plugin.settings.scrollLoop).onChange(async (v) => {
         this.plugin.settings.scrollLoop = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Pause at").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Pause at").setDesc(
       `Which toggles the autoscroll stops at \u2014 currently ${modeLabel(this.plugin.modeConfig())}.`
     ).addButton(
       (btn) => btn.setButtonText("Choose mode").onClick(() => {
         new ScrollModeModal(this.app, this.plugin).open();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Pause for").setDesc(`Hold time on each stop \u2014 currently ${formatDwell(clampHold(this.plugin.settings.scrollHold))}.`).addButton(
+    new import_obsidian5.Setting(containerEl).setName("Pause for").setDesc(`Hold time on each stop \u2014 currently ${formatDwell(clampHold(this.plugin.settings.scrollHold))}.`).addButton(
       (btn) => btn.setButtonText("Choose time").onClick(() => {
         new ScrollDwellModal(this.app, this.plugin).open();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Speed presets").setDesc(`Multiplier of the reading speed \u2014 currently ${multiplierFromSpeed(this.plugin.settings.scrollSpeed)}x.`).addButton(
+    new import_obsidian5.Setting(containerEl).setName("Speed presets").setDesc(`Multiplier of the reading speed \u2014 currently ${multiplierFromSpeed(this.plugin.settings.scrollSpeed)}x.`).addButton(
       (btn) => btn.setButtonText("Choose speed").onClick(() => {
         new ScrollSpeedModal(this.app, this.plugin).open();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Tall toggles screen-by-screen").setDesc("Long answers are read one screen at a time before the next toggle.").addToggle(
+    new import_obsidian5.Setting(containerEl).setName("Tall toggles screen-by-screen").setDesc("Long answers are read one screen at a time before the next toggle.").addToggle(
       (tg) => tg.setValue(this.plugin.settings.scrollChunkTall).onChange(async (v) => {
         this.plugin.settings.scrollChunkTall = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Stop position on screen").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Advance by").setDesc("Choose whether Reading View pauses on toggles, full screens, or both.").addDropdown(
+      (dd) => dd.addOptions({ toggles: "Toggles", screens: "Screens", both: "Toggles + screens" }).setValue(normalizeAdvanceBy(this.plugin.settings.scrollAdvanceBy)).onChange(async (v) => {
+        this.plugin.settings.scrollAdvanceBy = normalizeAdvanceBy(v);
+        this.plugin.reanchorAfterResize();
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian5.Setting(containerEl).setName("Screen overlap").setDesc("Keep this percentage of the previous screen visible while advancing.").addSlider(
+      (sl) => sl.setLimits(0, 0.5, 0.05).setValue(clampScreenOverlap(this.plugin.settings.scrollScreenOverlap)).setDynamicTooltip().onChange(async (v) => {
+        this.plugin.settings.scrollScreenOverlap = clampScreenOverlap(v);
+        this.plugin.reanchorAfterResize();
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian5.Setting(containerEl).setName("Stop position on screen").setDesc(
       "Where an auto-scroll stop parks. Middle keeps the toggle (and its answer) in the centre in portrait and landscape alike."
     ).addDropdown(
       (dd) => {
@@ -4422,30 +4836,30 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
         });
       }
     );
-    new import_obsidian3.Setting(containerEl).setName("Loop the route").setDesc("Route / shuffle runs restart from the beginning instead of stopping.").addToggle(
+    new import_obsidian5.Setting(containerEl).setName("Loop the route").setDesc("Route / shuffle runs restart from the beginning instead of stopping.").addToggle(
       (tg) => tg.setValue(this.plugin.settings.scrollLoopRoute).onChange(async (v) => {
         this.plugin.settings.scrollLoopRoute = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Auto-grade during shuffle").setDesc("Toggles you linger on come back sooner; quick ones move further away.").addToggle(
+    new import_obsidian5.Setting(containerEl).setName("Auto-grade during shuffle").setDesc("Toggles you linger on come back sooner; quick ones move further away.").addToggle(
       (tg) => tg.setValue(this.plugin.settings.scrollAutoGrade).onChange(async (v) => {
         this.plugin.settings.scrollAutoGrade = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("New toggles mixed into shuffle").setDesc("0 = only revise old toggles, 1 = new ones first.").addSlider(
+    new import_obsidian5.Setting(containerEl).setName("New toggles mixed into shuffle").setDesc("0 = only revise old toggles, 1 = new ones first.").addSlider(
       (sl) => sl.setLimits(0, 1, 0.05).setValue(this.plugin.settings.scrollNewMix).setDynamicTooltip().onChange(async (v) => {
         this.plugin.settings.scrollNewMix = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Weak toggles / priority").setDesc("Why the shuffle picks what it picks \u2014 recall, difficulty and lapses per toggle.").addButton(
+    new import_obsidian5.Setting(containerEl).setName("Weak toggles / priority").setDesc("Why the shuffle picks what it picks \u2014 recall, difficulty and lapses per toggle.").addButton(
       (btn) => btn.setButtonText("Show stats").onClick(() => {
         new ScrollStatsModal(this.app, this.plugin).open();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Debug overlay").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Debug overlay").setDesc(
       "Shows the live loop state while autoscroll runs: position, direction, waypointReached / crossedTarget, dwell key and grade."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.scrollDebug).onChange(async (v) => {
@@ -4454,12 +4868,12 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
         this.plugin.syncScrollDebugOverlay();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Revision memory").setDesc("Forget what this note's shuffle learned about you.").addButton(
+    new import_obsidian5.Setting(containerEl).setName("Revision memory").setDesc("Forget what this note's shuffle learned about you.").addButton(
       (btn) => btn.setButtonText("Reset for this note").onClick(async () => {
         await this.plugin.resetScrollMemory();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Floating autoscroll button").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Floating autoscroll button").setDesc(
       "Note khulte hi bottom-right me \u25B6 button \u2014 tap = start / pause, chhota \u2191/\u2193 chip = reverse, long-press = autoscroll sheet. Session chalne par bhi screen par rehta hai."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.scrollFab).onChange(async (v) => {
@@ -4468,7 +4882,7 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
         this.plugin.syncScrollFab();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Classic control bar").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Classic control bar").setDesc(
       "OFF (default) = minimal UI: sirf floating \u25B6 aur \u2191/\u2193 button. ON = purani poori control bar (\u2212, +, filter, mode, \u23F1, \u2912, \u2715) bhi dikhegi."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.scrollBarClassic).onChange(async (v) => {
@@ -4476,7 +4890,7 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Quiet mode").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Quiet mode").setDesc(
       "ON (default) = autoscroll ke status popup (speed/direction/filter/plain-scroll) nahi dikhenge; sirf zaroori error notices aayenge."
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.scrollQuiet).onChange(async (v) => {
@@ -4484,13 +4898,13 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Mobile toolbar guide").setDesc("Kaunsi commands Settings \u2192 Mobile \u2192 Manage toolbar me add karni hain \u2014 one-tap checklist ke saath.").addButton(
+    new import_obsidian5.Setting(containerEl).setName("Mobile toolbar guide").setDesc("Kaunsi commands Settings \u2192 Mobile \u2192 Manage toolbar me add karni hain \u2014 one-tap checklist ke saath.").addButton(
       (btn) => btn.setButtonText("Open guide").onClick(() => {
         new MobileToolbarGuideModal(this.app, this.plugin).open();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Quiz mode").setHeading();
-    const qRow = new import_obsidian3.Setting(containerEl).setName("Time per question").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Quiz mode").setHeading();
+    const qRow = new import_obsidian5.Setting(containerEl).setName("Time per question").setDesc(
       "How long before the answer is revealed (1s\u201312h). Write \u23F130, \u23F115m or \u23F12h in a toggle title to override it for that question."
     );
     addSecondsPicker(qRow, {
@@ -4504,7 +4918,7 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       }
     });
-    const rRow = new import_obsidian3.Setting(containerEl).setName("Answer time").setDesc("How long the revealed answer stays open before the toggle closes (1s\u20131h).");
+    const rRow = new import_obsidian5.Setting(containerEl).setName("Answer time").setDesc("How long the revealed answer stays open before the toggle closes (1s\u20131h).");
     addSecondsPicker(rRow, {
       sliderMin: 1,
       sliderMax: 60,
@@ -4516,41 +4930,41 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       }
     });
-    new import_obsidian3.Setting(containerEl).setName("Go to the next question automatically").addToggle(
+    new import_obsidian5.Setting(containerEl).setName("Go to the next question automatically").addToggle(
       (tg) => tg.setValue(this.plugin.settings.quizAutoNext).onChange(async (v) => {
         this.plugin.settings.quizAutoNext = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Close the toggle after the answer").setDesc("Only one answer is visible at a time.").addToggle(
+    new import_obsidian5.Setting(containerEl).setName("Close the toggle after the answer").setDesc("Only one answer is visible at a time.").addToggle(
       (tg) => tg.setValue(this.plugin.settings.quizCloseAfterReveal).onChange(async (v) => {
         this.plugin.settings.quizCloseAfterReveal = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Use the colour filter").setDesc("Quiz only the chosen colours instead of every toggle.").addToggle(
+    new import_obsidian5.Setting(containerEl).setName("Use the colour filter").setDesc("Quiz only the chosen colours instead of every toggle.").addToggle(
       (tg) => tg.setValue(this.plugin.settings.quizUseColorFilter).onChange(async (v) => {
         this.plugin.settings.quizUseColorFilter = v;
         await this.plugin.saveSettings();
         this.display();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Quiz colours").setDesc(`Currently ${filterLabel(this.plugin.quizFilterColors())}.`).addButton(
+    new import_obsidian5.Setting(containerEl).setName("Quiz colours").setDesc(`Currently ${filterLabel(this.plugin.quizFilterColors())}.`).addButton(
       (b) => b.setButtonText("Choose").onClick(() => new QuizFilterModal(this.app, this.plugin).open())
     );
-    new import_obsidian3.Setting(containerEl).setName("Minimal quiz UI").setDesc("Only the small timer ring on the question \u2014 no floating control strip.").addToggle(
+    new import_obsidian5.Setting(containerEl).setName("Minimal quiz UI").setDesc("Only the small timer ring on the question \u2014 no floating control strip.").addToggle(
       (tg) => tg.setValue(this.plugin.settings.quizMinimalUi).onChange(async (v) => {
         this.plugin.settings.quizMinimalUi = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Loop the quiz").setDesc("Start again from the first question instead of finishing.").addToggle(
+    new import_obsidian5.Setting(containerEl).setName("Loop the quiz").setDesc("Start again from the first question instead of finishing.").addToggle(
       (tg) => tg.setValue(this.plugin.settings.quizLoop).onChange(async (v) => {
         this.plugin.settings.quizLoop = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Log performance to perf-log.md").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Log performance to perf-log.md").setDesc(
       'When on, "Performance report" also appends quiz-timer and scroll metrics to perf-log.md in your vault.'
     ).addToggle(
       (tg) => tg.setValue(this.plugin.settings.perfLog).onChange(async (v) => {
@@ -4558,13 +4972,13 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Notify when the time is up").addToggle(
+    new import_obsidian5.Setting(containerEl).setName("Notify when the time is up").addToggle(
       (tg) => tg.setValue(this.plugin.settings.quizBeepOnTimeUp).onChange(async (v) => {
         this.plugin.settings.quizBeepOnTimeUp = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Reset timer position").setDesc("Bring the floating timer back to the top-left if it drifted off-screen.").addButton((btn) => {
+    new import_obsidian5.Setting(containerEl).setName("Reset timer position").setDesc("Bring the floating timer back to the top-left if it drifted off-screen.").addButton((btn) => {
       btn.setButtonText("Reset position").onClick(async () => {
         this.plugin.settings.timerX = 24;
         this.plugin.settings.timerY = 120;
@@ -4577,8 +4991,8 @@ var NotionToggleSettingTab = class extends import_obsidian3.PluginSettingTab {
 };
 
 // src/sheet-modal.ts
-var import_obsidian4 = require("obsidian");
-var ScrollSheetModal = class extends import_obsidian4.Modal {
+var import_obsidian6 = require("obsidian");
+var ScrollSheetModal = class extends import_obsidian6.Modal {
   constructor(app, plugin) {
     super(app);
     this.plugin = plugin;
@@ -4592,13 +5006,13 @@ var ScrollSheetModal = class extends import_obsidian4.Modal {
     this.modalEl.addClass("ntt-sheet");
     this.setTitle("Autoscroll \u2014 quick controls");
     const s = this.plugin.settings;
-    new import_obsidian4.Setting(this.contentEl).setName("Autoscroll").setDesc("ON = is note par autoscroll chalu, OFF = band. Screen ko dabaye rakho to jab tak hold hai scroll ruka rahega.").addToggle(
+    new import_obsidian6.Setting(this.contentEl).setName("Autoscroll").setDesc("ON = is note par autoscroll chalu, OFF = band. Screen ko dabaye rakho to jab tak hold hai scroll ruka rahega.").addToggle(
       (tg) => tg.setValue(this.plugin.autoScrollActive() && this.plugin.scrollRunning).onChange(async (v) => {
         await this.plugin.setAutoScrollEnabled(v);
         tg.setValue(this.plugin.autoScrollActive() && this.plugin.scrollRunning);
       })
     );
-    new import_obsidian4.Setting(this.contentEl).setName("Quiz (timed question run)").setDesc("ON = timed quiz shuru \u2014 har toggle par timer, auto reveal, auto next.").addToggle(
+    new import_obsidian6.Setting(this.contentEl).setName("Quiz (timed question run)").setDesc("ON = timed quiz shuru \u2014 har toggle par timer, auto reveal, auto next.").addToggle(
       (tg) => tg.setValue(!!this.plugin.quizState).onChange((v) => {
         if (v)
           this.plugin.startQuizRun();
@@ -4607,7 +5021,7 @@ var ScrollSheetModal = class extends import_obsidian4.Modal {
         tg.setValue(!!this.plugin.quizState);
       })
     );
-    const qRow = new import_obsidian4.Setting(this.contentEl).setName("Quiz \u2014 time per question").setDesc(
+    const qRow = new import_obsidian6.Setting(this.contentEl).setName("Quiz \u2014 time per question").setDesc(
       "Kitne second baad answer khud reveal ho (1s\u201312h). Title me \u23F130 / \u23F115m / \u23F12h likho to us question par wahi chalega."
     );
     addSecondsPicker(qRow, {
@@ -4621,7 +5035,7 @@ var ScrollSheetModal = class extends import_obsidian4.Modal {
         await this.plugin.saveSettings();
       }
     });
-    const rRow = new import_obsidian4.Setting(this.contentEl).setName("Quiz \u2014 answer time").setDesc("Reveal hone ke baad answer kitni der khula rahe (1s\u20131h).");
+    const rRow = new import_obsidian6.Setting(this.contentEl).setName("Quiz \u2014 answer time").setDesc("Reveal hone ke baad answer kitni der khula rahe (1s\u20131h).");
     addSecondsPicker(rRow, {
       sliderMin: 1,
       sliderMax: 60,
@@ -4633,31 +5047,31 @@ var ScrollSheetModal = class extends import_obsidian4.Modal {
         await this.plugin.saveSettings();
       }
     });
-    new import_obsidian4.Setting(this.contentEl).setName("Quiz \u2014 auto next").setDesc("ON = answer ke baad agla question khud, OFF = wahin ruk jao.").addToggle(
+    new import_obsidian6.Setting(this.contentEl).setName("Quiz \u2014 auto next").setDesc("ON = answer ke baad agla question khud, OFF = wahin ruk jao.").addToggle(
       (tg) => tg.setValue(s.quizAutoNext).onChange(async (v) => {
         s.quizAutoNext = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian4.Setting(this.contentEl).setName("Quiz \u2014 kaunse toggle").setDesc(`Abhi ${filterLabel(this.plugin.quizFilterColors())} \u2014 default, \u{1F534}, \u{1F7E1}, \u{1F7E2} \u2026`).addButton(
+    new import_obsidian6.Setting(this.contentEl).setName("Quiz \u2014 kaunse toggle").setDesc(`Abhi ${filterLabel(this.plugin.quizFilterColors())} \u2014 default, \u{1F534}, \u{1F7E1}, \u{1F7E2} \u2026`).addButton(
       (b) => b.setButtonText("Filter").onClick(() => {
         this.close();
         new QuizFilterModal(this.app, this.plugin).open();
       })
     );
-    new import_obsidian4.Setting(this.contentEl).setName("Quiz \u2014 minimal UI").setDesc("Sirf question par chhota timer ring, koi floating box nahi.").addToggle(
+    new import_obsidian6.Setting(this.contentEl).setName("Quiz \u2014 minimal UI").setDesc("Sirf question par chhota timer ring, koi floating box nahi.").addToggle(
       (tg) => tg.setValue(s.quizMinimalUi).onChange(async (v) => {
         s.quizMinimalUi = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian4.Setting(this.contentEl).setName("Quiz \u2014 loop").setDesc("Aakhri question ke baad phir se question 1 se shuru.").addToggle(
+    new import_obsidian6.Setting(this.contentEl).setName("Quiz \u2014 loop").setDesc("Aakhri question ke baad phir se question 1 se shuru.").addToggle(
       (tg) => tg.setValue(s.quizLoop).onChange(async (v) => {
         s.quizLoop = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian4.Setting(this.contentEl).setName("Answers \u2014 open / close all").setDesc("Is note ke sabhi answer toggles ek tap me kholo ya band karo.").addButton(
+    new import_obsidian6.Setting(this.contentEl).setName("Answers \u2014 open / close all").setDesc("Is note ke sabhi answer toggles ek tap me kholo ya band karo.").addButton(
       (b) => b.setButtonText("Open all").onClick(() => {
         this.plugin.setAllAnswersOpen(true);
       })
@@ -4666,75 +5080,89 @@ var ScrollSheetModal = class extends import_obsidian4.Modal {
         this.plugin.setAllAnswersOpen(false);
       })
     );
-    new import_obsidian4.Setting(this.contentEl).setName("Open with auto-quiz (answers stay open)").setDesc("ON = quiz shuru hote hi har answer khula rahega aur band nahi hoga.").addToggle(
+    new import_obsidian6.Setting(this.contentEl).setName("Open with auto-quiz (answers stay open)").setDesc("ON = quiz shuru hote hi har answer khula rahega aur band nahi hoga.").addToggle(
       (tg) => tg.setValue(s.quizKeepAnswersOpen).onChange(async (v) => {
         s.quizKeepAnswersOpen = v;
         await this.plugin.saveSettings();
         this.plugin.refreshQuizAnswerVisibility();
       })
     );
-    new import_obsidian4.Setting(this.contentEl).setName("Direction").setDesc("Forward = neeche ki taraf, Reverse = upar ki taraf scroll.").addToggle(
+    new import_obsidian6.Setting(this.contentEl).setName("Direction").setDesc("Forward = neeche ki taraf, Reverse = upar ki taraf scroll.").addToggle(
       (tg) => tg.setTooltip("Reverse (upar)").setValue(!!s.scrollReverse).onChange(async (v) => {
         await this.plugin.setScrollReverse(v);
         tg.setValue(!!this.plugin.settings.scrollReverse);
       })
     );
-    new import_obsidian4.Setting(this.contentEl).setName("Speed").setDesc(`Currently ${multiplierFromSpeed(s.scrollSpeed)}x.`).addButton(
+    new import_obsidian6.Setting(this.contentEl).setName("Speed").setDesc(`Currently ${multiplierFromSpeed(s.scrollSpeed)}x.`).addButton(
       (btn) => btn.setButtonText("Choose").onClick(() => new ScrollSpeedModal(this.app, this.plugin).open())
     );
-    new import_obsidian4.Setting(this.contentEl).setName("Pause for").setDesc(`Hold time \u2014 currently ${formatDwell(clampHold(s.scrollHold))}.`).addButton(
+    new import_obsidian6.Setting(this.contentEl).setName("Pause for").setDesc(`Hold time \u2014 currently ${formatDwell(clampHold(s.scrollHold))}.`).addButton(
       (btn) => btn.setButtonText("Choose").onClick(() => new ScrollDwellModal(this.app, this.plugin).open())
     );
-    new import_obsidian4.Setting(this.contentEl).setName("Pause at").setDesc(`Currently ${modeLabel(this.plugin.modeConfig())}.`).addButton(
+    new import_obsidian6.Setting(this.contentEl).setName("Pause at").setDesc(`Currently ${modeLabel(this.plugin.modeConfig())}.`).addButton(
       (btn) => btn.setButtonText("Choose").onClick(() => new ScrollModeModal(this.app, this.plugin).open())
     );
-    new import_obsidian4.Setting(this.contentEl).setName("Colour filter").setDesc(`Currently ${filterLabel(s.scrollFilter)}.`).addButton(
+    new import_obsidian6.Setting(this.contentEl).setName("Colour filter").setDesc(`Currently ${filterLabel(s.scrollFilter)}.`).addButton(
       (btn) => btn.setButtonText("Choose").onClick(() => new ScrollFilterModal(this.app, this.plugin).open())
     );
-    new import_obsidian4.Setting(this.contentEl).setName("Reverse direction \u2191").addToggle(
+    new import_obsidian6.Setting(this.contentEl).setName("Reverse direction \u2191").addToggle(
       (tg) => tg.setValue(s.scrollReverse).onChange(async (v) => {
         await this.plugin.setScrollReverse(v);
       })
     );
-    new import_obsidian4.Setting(this.contentEl).setName("Loop the note").addToggle(
+    new import_obsidian6.Setting(this.contentEl).setName("Loop the note").addToggle(
       (tg) => tg.setValue(s.scrollLoop).onChange(async (v) => {
         this.plugin.settings.scrollLoop = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian4.Setting(this.contentEl).setName("Open toggles automatically").addToggle(
+    new import_obsidian6.Setting(this.contentEl).setName("Open toggles automatically").addToggle(
       (tg) => tg.setValue(s.scrollAutoOpen).onChange(async (v) => {
         this.plugin.settings.scrollAutoOpen = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian4.Setting(this.contentEl).setName("Close them when leaving").addToggle(
+    new import_obsidian6.Setting(this.contentEl).setName("Close them when leaving").addToggle(
       (tg) => tg.setValue(s.scrollAutoClose).onChange(async (v) => {
         this.plugin.settings.scrollAutoClose = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian4.Setting(this.contentEl).setName("Tall toggles screen-by-screen").addToggle(
+    new import_obsidian6.Setting(this.contentEl).setName("Tall toggles screen-by-screen").setDesc("Long answers are read one screen at a time before the next toggle.").addToggle(
       (tg) => tg.setValue(s.scrollChunkTall).onChange(async (v) => {
         this.plugin.settings.scrollChunkTall = v;
         await this.plugin.saveSettings();
         this.plugin.refreshScrollPlan();
       })
     );
-    new import_obsidian4.Setting(this.contentEl).setName("Debug overlay").addToggle(
+    new import_obsidian6.Setting(this.contentEl).setName("Advance by").setDesc("Toggles, full screens, or both in Reading View.").addDropdown(
+      (dd) => dd.addOptions({ toggles: "Toggles", screens: "Screens", both: "Toggles + screens" }).setValue(normalizeAdvanceBy(s.scrollAdvanceBy)).onChange(async (v) => {
+        this.plugin.settings.scrollAdvanceBy = normalizeAdvanceBy(v);
+        await this.plugin.saveSettings();
+        this.plugin.refreshScrollPlan();
+      })
+    );
+    new import_obsidian6.Setting(this.contentEl).setName("Screen overlap").setDesc("Keep part of the previous screen visible between stops.").addSlider(
+      (sl) => sl.setLimits(0, 0.5, 0.05).setValue(clampScreenOverlap(s.scrollScreenOverlap)).setDynamicTooltip().onChange(async (v) => {
+        this.plugin.settings.scrollScreenOverlap = clampScreenOverlap(v);
+        await this.plugin.saveSettings();
+        this.plugin.refreshScrollPlan();
+      })
+    );
+    new import_obsidian6.Setting(this.contentEl).setName("Debug overlay").addToggle(
       (tg) => tg.setValue(s.scrollDebug).onChange(async (v) => {
         this.plugin.settings.scrollDebug = v;
         await this.plugin.saveSettings();
         this.plugin.syncScrollDebugOverlay();
       })
     );
-    new import_obsidian4.Setting(this.contentEl).setName("Quiet mode (no popups)").setDesc("ON = speed / direction / plain-scroll wale notice nahi dikhenge.").addToggle(
+    new import_obsidian6.Setting(this.contentEl).setName("Quiet mode (no popups)").setDesc("ON = speed / direction / plain-scroll wale notice nahi dikhenge.").addToggle(
       (tg) => tg.setValue(s.scrollQuiet).onChange(async (v) => {
         this.plugin.settings.scrollQuiet = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian4.Setting(this.contentEl).setName("More").addButton(
+    new import_obsidian6.Setting(this.contentEl).setName("More").addButton(
       (btn) => btn.setButtonText("Go to first").onClick(() => {
         this.close();
         this.plugin.scrollToStart();
@@ -5091,11 +5519,13 @@ var DEFAULT_SETTINGS = {
   toolbarGuideDone: [],
   scrollBarClassic: false,
   scrollQuiet: true,
+  scrollForceReading: true,
+  scrollRestoreMode: true,
   quizFilter: [],
   quizMinimalUi: true,
   perfLog: false
 };
-var NotionTogglePlugin = class extends import_obsidian5.Plugin {
+var NotionTogglePlugin = class extends import_obsidian7.Plugin {
   constructor() {
     super(...arguments);
     this.settings = DEFAULT_SETTINGS;
@@ -5126,6 +5556,11 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
     this.scrollSeen = /* @__PURE__ */ new Set();
     this.scrollNotePath = null;
     this.scrollTotalItems = 0;
+    /** v1.5.0 — every toggle in the note, filter ignored (for note-wide numbers). */
+    this.scrollNoteTotal = 0;
+    /** v1.5.1 — source/live-preview mode before the reader takes over. */
+    this.scrollModeSnapshot = null;
+    this.scrollModeLeaf = null;
     /* v1.1.2 reader-exact loop state (mirrors useAutoScroll refs) */
     /** Authoritative float scroll position — scrollTop snaps to whole pixels. */
     this.scrollPos = 0;
@@ -5250,11 +5685,11 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
         const doc = editor.getValue();
         const converted = convertDetailsToCallouts(doc, this.activeCallout(), this.settings.defaultCollapsed, this.settings.boldSummary);
         if (converted === doc) {
-          new import_obsidian5.Notice("No <details> blocks found in this file.");
+          new import_obsidian7.Notice("No <details> blocks found in this file.");
           return;
         }
         editor.setValue(converted);
-        new import_obsidian5.Notice("Converted all <details> blocks to callout toggles.");
+        new import_obsidian7.Notice("Converted all <details> blocks to callout toggles.");
       }
     });
     this.addCommand({
@@ -5265,11 +5700,11 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
         const doc = editor.getValue();
         const converted = convertCalloutsToDetails(doc);
         if (converted === doc) {
-          new import_obsidian5.Notice("No foldable callout toggles found in this file.");
+          new import_obsidian7.Notice("No foldable callout toggles found in this file.");
           return;
         }
         editor.setValue(converted);
-        new import_obsidian5.Notice("Converted callout toggles to <details> blocks.");
+        new import_obsidian7.Notice("Converted callout toggles to <details> blocks.");
       }
     });
     this.addCommand({
@@ -5283,7 +5718,7 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
           const q = result.question.trim();
           const a = result.answer.trim();
           if (q.length === 0) {
-            new import_obsidian5.Notice("Question is empty \u2014 nothing inserted.");
+            new import_obsidian7.Notice("Question is empty \u2014 nothing inserted.");
             return;
           }
           const title = this.maybeBold(q);
@@ -5306,7 +5741,7 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
       callback: async () => {
         this.settings.autoContinue = !this.settings.autoContinue;
         await this.saveSettings();
-        new import_obsidian5.Notice(`Auto-continue on Enter: ${this.settings.autoContinue ? "ON" : "OFF"}`);
+        new import_obsidian7.Notice(`Auto-continue on Enter: ${this.settings.autoContinue ? "ON" : "OFF"}`);
       }
     });
     this.addCommand({
@@ -5323,13 +5758,13 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
         const doc = editor.getValue();
         const fixed = renumberToggles(doc);
         if (fixed === doc) {
-          new import_obsidian5.Notice("Numbering already correct (or no numbered toggles).");
+          new import_obsidian7.Notice("Numbering already correct (or no numbered toggles).");
           return;
         }
         const cursor = editor.getCursor();
         editor.setValue(fixed);
         editor.setCursor(cursor);
-        new import_obsidian5.Notice("Toggles renumbered.");
+        new import_obsidian7.Notice("Toggles renumbered.");
       }
     });
     this.addCommand({
@@ -5340,7 +5775,7 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
         new ColorPickerModal(this.app, (colorId) => {
           const callout = calloutForColor(colorId, this.settings.calloutType);
           if (!this.recolorToggleAtCursor(editor, callout)) {
-            new import_obsidian5.Notice("Cursor is not inside a toggle.");
+            new import_obsidian7.Notice("Cursor is not inside a toggle.");
           }
         }).open();
       }
@@ -5358,7 +5793,7 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
       callback: async () => {
         this.settings.numberedByDefault = !this.settings.numberedByDefault;
         await this.saveSettings();
-        new import_obsidian5.Notice(`Auto-numbering: ${this.settings.numberedByDefault ? "ON" : "OFF"}`);
+        new import_obsidian7.Notice(`Auto-numbering: ${this.settings.numberedByDefault ? "ON" : "OFF"}`);
       }
     });
     this.addCommand({
@@ -5375,7 +5810,7 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
         const cursor = editor.getCursor();
         const line = editor.getLine(cursor.line);
         if (!/^>/.test(line)) {
-          new import_obsidian5.Notice("Cursor is not inside a toggle.");
+          new import_obsidian7.Notice("Cursor is not inside a toggle.");
           return;
         }
         editor.replaceRange(`
@@ -5392,7 +5827,7 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
         const line = editor.getLine(cursor.line);
         const next = toggleOptionCheckbox(line);
         if (next === line) {
-          new import_obsidian5.Notice("Cursor is not on a checkbox option.");
+          new import_obsidian7.Notice("Cursor is not on a checkbox option.");
           return;
         }
         editor.setLine(cursor.line, next);
@@ -5412,7 +5847,7 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
       editorCallback: (editor) => {
         const found = this.findHeaderLine(editor);
         if (!found) {
-          new import_obsidian5.Notice("Cursor is not inside a toggle.");
+          new import_obsidian7.Notice("Cursor is not inside a toggle.");
           return;
         }
         let last = found.line;
@@ -5420,7 +5855,7 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
           if (!/^>/.test(editor.getLine(l)))
             break;
           if (ANSWER_LINE2.test(editor.getLine(l))) {
-            new import_obsidian5.Notice("This toggle already has an answer line.");
+            new import_obsidian7.Notice("This toggle already has an answer line.");
             return;
           }
           last = l;
@@ -5592,6 +6027,18 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
       callback: () => void this.resetScrollMemory()
     });
     this.addCommand({
+      id: "autoscroll-screen-mode",
+      icon: "panels-top-left",
+      name: "Autoscroll: read screen-by-screen",
+      callback: async () => {
+        this.settings.scrollAdvanceBy = "screens";
+        await this.saveSettings();
+        this.refreshScrollPlan();
+        if (!this.scrollRunning)
+          this.startAutoScroll();
+      }
+    });
+    this.addCommand({
       id: "scroll-stats",
       icon: "bar-chart-3",
       name: "Autoscroll: revision stats (weak toggles)",
@@ -5729,7 +6176,7 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
     this.registerObsidianProtocolHandler("notion-toggle", async (params) => {
       const link = parseDeepLink(params);
       if (!link) {
-        new import_obsidian5.Notice("Unknown notion-toggle link (use action=quiz | autoscroll | stop).");
+        new import_obsidian7.Notice("Unknown notion-toggle link (use action=quiz | autoscroll | stop).");
         return;
       }
       if (link.action === "stop") {
@@ -5783,6 +6230,7 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
         ])
       )
     );
+    registerCalloutCommands(this);
     this.addSettingTab(new NotionToggleSettingTab(this.app, this));
   }
   /** Callout type actually used, honouring the colour setting. */
@@ -5964,7 +6412,7 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
     if (selection.trim().length === 0) {
       const line = editor.getLine(editor.getCursor().line);
       if (line.trim().length === 0) {
-        new import_obsidian5.Notice("Nothing to wrap \u2014 select the question and answer first.");
+        new import_obsidian7.Notice("Nothing to wrap \u2014 select the question and answer first.");
         return;
       }
       const title2 = this.maybeBold(line.trim());
@@ -5988,7 +6436,7 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
       }
     }
     if (titleLine.length === 0) {
-      new import_obsidian5.Notice("Selection is empty.");
+      new import_obsidian7.Notice("Selection is empty.");
       return;
     }
     const title = this.maybeBold(titleLine);
@@ -6003,7 +6451,7 @@ var NotionTogglePlugin = class extends import_obsidian5.Plugin {
   cycleColorAtCursor(editor) {
     const found = this.findHeaderLine(editor);
     if (!found) {
-      new import_obsidian5.Notice("Cursor is not inside a toggle.");
+      new import_obsidian7.Notice("Cursor is not inside a toggle.");
       return;
     }
     const next = nextTrafficColor(calloutTypeOfLine(found.text));
@@ -6041,7 +6489,7 @@ ${row}`, { line: cursor.line, ch: line.length });
         this.insertNewToggleBelow(editor);
     }
     if (action !== "new-toggle")
-      new import_obsidian5.Notice(smartActionLabel(action));
+      new import_obsidian7.Notice(smartActionLabel(action));
   }
   /** Start, pause or resume the recall session with a single command. */
   runSmartRecall(editor) {
@@ -6051,12 +6499,12 @@ ${row}`, { line: cursor.line, ch: line.length });
     }
     if (this.timerState.running) {
       this.timerState = { ...this.timerState, running: false, autoPaused: false };
-      new import_obsidian5.Notice("\u231B Paused");
+      new import_obsidian7.Notice("\u231B Paused");
     } else {
       this.timerState = { ...this.timerState, running: true, autoPaused: false };
       this.lastTick = Date.now();
       this.lastActivityAt = Date.now();
-      new import_obsidian5.Notice("\u231B Running");
+      new import_obsidian7.Notice("\u231B Running");
     }
     this.renderTimer();
   }
@@ -6079,7 +6527,7 @@ ${row}`, { line: cursor.line, ch: line.length });
     this.lastTick = Date.now();
     this.lastActivityAt = Date.now();
     this.renderTimer();
-    new import_obsidian5.Notice(
+    new import_obsidian7.Notice(
       `Recall session started \u2014 ${stats.total} toggles (\u{1F534} ${stats.red} \xB7 \u{1F7E1} ${stats.yellow} \xB7 \u{1F7E2} ${stats.green})`
     );
   }
@@ -6105,7 +6553,7 @@ ${row}`, { line: cursor.line, ch: line.length });
     var _a, _b, _c;
     const path = (_a = this.sessionNotePath) != null ? _a : this.activeNotePath();
     if (!path) {
-      new import_obsidian5.Notice("Open a note first to schedule its recall.");
+      new import_obsidian7.Notice("Open a note first to schedule its recall.");
       return;
     }
     const card = gradeCard((_b = this.cardFor(path)) != null ? _b : newCard(), grade, Date.now());
@@ -6114,14 +6562,14 @@ ${row}`, { line: cursor.line, ch: line.length });
     this.reviewOpen = false;
     this.renderTimer();
     this.updateStatus();
-    new import_obsidian5.Notice(`${GRADE_LABEL[grade]} \u2192 ${nextDueLabel(card, Date.now())} \xB7 ease ${card.ease}`);
+    new import_obsidian7.Notice(`${GRADE_LABEL[grade]} \u2192 ${nextDueLabel(card, Date.now())} \xB7 ease ${card.ease}`);
   }
   /** List the notes whose recall is due, newest schedule first. */
   showDueNotes() {
     var _a;
     const due = dueNotes((_a = this.settings.srs) != null ? _a : {}, Date.now());
     if (!due.length) {
-      new import_obsidian5.Notice("Nothing due \u2014 everything is scheduled ahead.");
+      new import_obsidian7.Notice("Nothing due \u2014 everything is scheduled ahead.");
       return;
     }
     const rows = due.map((path) => ({ path, card: this.settings.srs[path] }));
@@ -6193,7 +6641,7 @@ ${row}`, { line: cursor.line, ch: line.length });
     this.sessionNotePath = null;
     this.renderTimer();
     this.updateStatus();
-    new import_obsidian5.Notice(summary);
+    new import_obsidian7.Notice(summary);
   }
   activeNotePath() {
     var _a, _b, _c;
@@ -6212,7 +6660,7 @@ ${row}`, { line: cursor.line, ch: line.length });
       this.timerState = pauseForInactivity(this.timerState);
       this.renderTimer();
       if (this.settings.notifyOnPhaseEnd)
-        new import_obsidian5.Notice(autoPauseNotice(reason2));
+        new import_obsidian7.Notice(autoPauseNotice(reason2));
       return;
     }
     const resume = shouldAutoResume({
@@ -6244,7 +6692,7 @@ ${row}`, { line: cursor.line, ch: line.length });
     }
     if (notify) {
       const stats = scanRecallStats(collapsed);
-      new import_obsidian5.Notice(`All ${stats.total} toggles collapsed \u2014 recall again \u{1F534} ${stats.red}`);
+      new import_obsidian7.Notice(`All ${stats.total} toggles collapsed \u2014 recall again \u{1F534} ${stats.red}`);
     }
   }
   onTimerTick() {
@@ -6258,7 +6706,7 @@ ${row}`, { line: cursor.line, ch: line.length });
       this.timerState = pauseForInactivity(this.timerState);
       this.renderTimer();
       if (this.settings.notifyOnPhaseEnd)
-        new import_obsidian5.Notice(autoPauseNotice("idle"));
+        new import_obsidian7.Notice(autoPauseNotice("idle"));
       return;
     }
     const result = tick(this.timerState, elapsed, this.settings);
@@ -6269,7 +6717,7 @@ ${row}`, { line: cursor.line, ch: line.length });
       (_a = this.timerWidget) == null ? void 0 : _a.flashPhaseEnd();
       if (this.settings.notifyOnPhaseEnd) {
         const ended = result.endedPhase === "focus" ? "Focus" : "Break";
-        new import_obsidian5.Notice(`${ended} done \u2192 ${phaseLabel(this.timerState.phase)} \xB7 ${(_b = this.recallHint()) != null ? _b : ""}`.trim());
+        new import_obsidian7.Notice(`${ended} done \u2192 ${phaseLabel(this.timerState.phase)} \xB7 ${(_b = this.recallHint()) != null ? _b : ""}`.trim());
       }
       if (this.settings.soundOnPhaseEnd)
         this.buzz();
@@ -6310,12 +6758,12 @@ ${row}`, { line: cursor.line, ch: line.length });
     var _a;
     const editor = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.editor;
     if (!editor) {
-      new import_obsidian5.Notice("Open a note first.");
+      new import_obsidian7.Notice("Open a note first.");
       return;
     }
     const stats = scanRecallStats(editor.getValue());
     if (stats.firstRedLine < 0) {
-      new import_obsidian5.Notice("No \u{1F534} red toggles in this note \u2014 nice work.");
+      new import_obsidian7.Notice("No \u{1F534} red toggles in this note \u2014 nice work.");
       return;
     }
     editor.setCursor({ line: stats.firstRedLine, ch: 0 });
@@ -6379,7 +6827,7 @@ ${row}`, { line: cursor.line, ch: line.length });
    */
   syncScrollFab() {
     var _a;
-    const mdView = this.app.workspace.getActiveViewOfType(import_obsidian5.MarkdownView);
+    const mdView = this.app.workspace.getActiveViewOfType(import_obsidian7.MarkdownView);
     const overlayOpen = !this.scrollSheetOpen && !!document.body.querySelector(".modal-container, .modal-bg");
     const want = fabShouldShow(
       !!this.settings.scrollFab,
@@ -6414,7 +6862,7 @@ ${row}`, { line: cursor.line, ch: line.length });
   requireScrollRunning() {
     if (this.scrollPlan.length > 0)
       return true;
-    new import_obsidian5.Notice(MSG_NOT_RUNNING, 6e3);
+    new import_obsidian7.Notice(MSG_NOT_RUNNING, 6e3);
     return false;
   }
   /** v1.1.6 — settings ON/OFF switch: start or stop the session. */
@@ -6448,12 +6896,12 @@ ${row}`, { line: cursor.line, ch: line.length });
   say(message, ms2 = 3e3) {
     if (this.settings.scrollQuiet)
       return;
-    new import_obsidian5.Notice(message, ms2);
+    new import_obsidian7.Notice(message, ms2);
   }
   /** v1.4.10 — candidates + pick rule live in `src/scroll-container.ts`. */
   scrollCandidates() {
     var _a, _b, _c;
-    const view = this.app.workspace.getActiveViewOfType(import_obsidian5.MarkdownView);
+    const view = this.app.workspace.getActiveViewOfType(import_obsidian7.MarkdownView);
     const root = view ? (_b = (_a = view.previewMode) == null ? void 0 : _a.containerEl) != null ? _b : view.contentEl : null;
     return [
       ...viewScrollCandidates(root, (_c = view == null ? void 0 : view.contentEl) != null ? _c : null),
@@ -6475,7 +6923,7 @@ ${row}`, { line: cursor.line, ch: line.length });
    */
   sourceHasToggles() {
     var _a, _b, _c;
-    const view = this.app.workspace.getActiveViewOfType(import_obsidian5.MarkdownView);
+    const view = this.app.workspace.getActiveViewOfType(import_obsidian7.MarkdownView);
     const text = (_c = (_b = (_a = view == null ? void 0 : view.editor) == null ? void 0 : _a.getValue) == null ? void 0 : _b.call(_a)) != null ? _c : "";
     return /^>\s*\[![^\]]+\][+-]?/m.test(text) || /<details[\s>]/i.test(text);
   }
@@ -6484,21 +6932,29 @@ ${row}`, { line: cursor.line, ch: line.length });
     return this.perf.remeasure.measure(() => nowMs(), () => this.collectStopsNow(container, filter));
   }
   collectStopsNow(container, filter = []) {
-    const nodes = filter.length === 0 ? collectToggleEls(container) : collectToggleElsFiltered(
+    const scan = scanToggleEls(
       container,
-      (el) => matchesFilter(kindOf(toggleTypeOf(el)), filter)
+      (el) => filter.length === 0 ? true : matchesFilter(kindOf(toggleTypeOf(el)), filter)
     );
     const base = container.getBoundingClientRect().top - container.scrollTop;
-    return nodes.map((el, index) => {
-      const rect = el.getBoundingClientRect();
+    return scan.map((s, index) => {
+      const rect = s.el.getBoundingClientRect();
       return {
         index,
+        ordinal: s.ordinal,
         top: Math.max(0, Math.round(rect.top - base)),
         height: Math.round(rect.height),
-        color: kindOf(toggleTypeOf(el)),
-        el
+        color: kindOf(toggleTypeOf(s.el)),
+        el: s.el
       };
     });
+  }
+  /** v1.5.0 — per-kind counts + percentages for the active note. */
+  calloutBreakdown() {
+    const container = this.findViewContainer();
+    if (!container)
+      return countKinds([]);
+    return countKinds(this.collectStops(container).map((s) => s.color));
   }
   /** v1.2.0 — is this toggle currently expanded? */
   isToggleOpen(el) {
@@ -6515,7 +6971,7 @@ ${row}`, { line: cursor.line, ch: line.length });
   setAllAnswersOpen(open) {
     const container = this.findViewContainer();
     if (!container) {
-      new import_obsidian5.Notice("Open a note first.");
+      new import_obsidian7.Notice("Open a note first.");
       return;
     }
     const stops = this.collectStops(container);
@@ -6530,7 +6986,7 @@ ${row}`, { line: cursor.line, ch: line.length });
       n++;
     }
     if (!this.settings.scrollQuiet) {
-      new import_obsidian5.Notice(`${open ? "Opened" : "Closed"} ${n} answer toggle${n === 1 ? "" : "s"}.`);
+      new import_obsidian7.Notice(`${open ? "Opened" : "Closed"} ${n} answer toggle${n === 1 ? "" : "s"}.`);
     }
   }
   /** Re-apply the quiz answer rule after the "keep answers open" switch flips. */
@@ -6597,7 +7053,7 @@ ${row}`, { line: cursor.line, ch: line.length });
       this.scrollRunning = false;
       this.renderScrollBar();
       this.syncScrollFab();
-      new import_obsidian5.Notice(`Autoscroll paused \u2014 ${hotkeyLabel("smart-autoscroll")} se resume.`);
+      new import_obsidian7.Notice(`Autoscroll paused \u2014 ${hotkeyLabel("smart-autoscroll")} se resume.`);
       return;
     }
     if (this.scrollPlan.length === 0)
@@ -6637,24 +7093,48 @@ ${row}`, { line: cursor.line, ch: line.length });
    * (every / odd / even / custom / route / shuffle) and tall-toggle chunking.
    */
   buildScrollPlan(container) {
-    const all = this.collectStops(container, this.settings.scrollFilter);
-    const kept = all.filter((s) => matchesFilter(s.color, this.settings.scrollFilter));
+    var _a;
+    const kept = this.collectStops(container, this.settings.scrollFilter);
     this.scrollTotalItems = kept.length;
+    this.scrollNoteTotal = noteToggleCount(container);
     const cfg = this.modeConfig();
-    const items = kept.map((s, i) => ({ ordinal: i + 1, top: s.top, height: s.height }));
-    const stops = buildModeStops(items, cfg, container.clientHeight, this.settings.scrollChunkTall);
-    const ordered = orderModeStops(stops, cfg, this.settings.scrollReverse);
-    return ordered.map((ms2) => {
-      const src = kept[ms2.ordinal - 1];
-      return {
+    const byOrdinal = new Map(kept.map((s) => [s.ordinal, s]));
+    const items = kept.map((s) => ({ ordinal: s.ordinal, top: s.top, height: s.height }));
+    const toggleStops = buildModeStops(items, cfg, container.clientHeight, this.settings.scrollChunkTall);
+    const advanceBy = (_a = this.settings.scrollAdvanceBy) != null ? _a : "toggles";
+    if (advanceBy === "screens") {
+      return screenStops(container.scrollHeight, container.clientHeight, this.settings.scrollScreenOverlap).map((top, part) => ({
+        index: -1,
+        top,
+        color: "other",
+        ordinal: 0,
+        part
+      }));
+    }
+    const ordered = orderModeStops(toggleStops, cfg, this.settings.scrollReverse);
+    const togglePlan = ordered.flatMap((ms2) => {
+      const src = byOrdinal.get(ms2.ordinal);
+      if (!src)
+        return [];
+      return [{
         index: src.index,
         top: ms2.top,
         color: src.color,
         el: src.el,
         ordinal: ms2.ordinal,
         part: ms2.part
-      };
+      }];
     });
+    if (advanceBy !== "both")
+      return togglePlan;
+    const screenPlan = screenStops(container.scrollHeight, container.clientHeight, this.settings.scrollScreenOverlap).map((top, part) => ({
+      index: -1,
+      top,
+      color: "other",
+      ordinal: 0,
+      part
+    }));
+    return [...togglePlan, ...screenPlan].sort((a, b) => a.top - b.top);
   }
   /** Rebuild the shuffle route from this note's FSRS memory. */
   async rebuildShuffleRoute(notify = true) {
@@ -6662,13 +7142,13 @@ ${row}`, { line: cursor.line, ch: line.length });
     const container = this.findViewContainer();
     const path = (_b = (_a = this.app.workspace.getActiveFile()) == null ? void 0 : _a.path) != null ? _b : "";
     if (!container || !path) {
-      new import_obsidian5.Notice("Open a note first \u2014 shuffle needs a note view.");
+      new import_obsidian7.Notice("Open a note first \u2014 shuffle needs a note view.");
       return;
     }
     this.measureScrollBoxes(container);
     const total = this.scrollTotalItems;
     if (total === 0) {
-      new import_obsidian5.Notice("No toggles found in this note.");
+      new import_obsidian7.Notice("No toggles found in this note.");
       return;
     }
     const order = buildShuffleOrder(this.scrollCards(path), total, {
@@ -6686,7 +7166,7 @@ ${row}`, { line: cursor.line, ch: line.length });
     this.settings.scrollRoute = order;
     await this.saveSettings();
     if (notify) {
-      new import_obsidian5.Notice(
+      new import_obsidian7.Notice(
         `\u{1F500} Shuffle ready \u2014 ${order.length} toggles.
 ${deckSummary(
           deckStats2(this.scrollCards(path), total, { retention: this.settings.scrollRetention })
@@ -6729,7 +7209,7 @@ ${deckSummary(
       return;
     this.settings.scrollMemory = resetDeck(this.settings.scrollMemory, path);
     await this.saveSettings();
-    new import_obsidian5.Notice("Revision memory reset \u2014 every toggle is new again.");
+    new import_obsidian7.Notice("Revision memory reset \u2014 every toggle is new again.");
   }
   /** Auto-grade the toggle we are leaving (shuffle mode only). */
   async gradeLeavingStop(ordinal, openedMs) {
@@ -6746,11 +7226,36 @@ ${deckSummary(
     this.scrollLastGrade = `toggle ${ordinal} \xB7 ${(openedMs / 1e3).toFixed(1)}s \u2192 ${names[grade]} (${grade})`;
     await this.saveScrollCards(path, cards);
   }
+  /** v1.5.1 — Reading View gives one stable DOM surface for mobile + desktop. */
+  ensureReadingMode() {
+    const next = ensureReadingView(this.app, {
+      forceReading: this.settings.scrollForceReading,
+      restoreMode: this.settings.scrollRestoreMode,
+      snapshot: this.scrollModeSnapshot,
+      leaf: this.scrollModeLeaf
+    });
+    this.scrollModeSnapshot = next.snapshot;
+    this.scrollModeLeaf = next.leaf;
+    return next.switched;
+  }
+  /** Restore only the view autoscroll changed, never a different active note. */
+  restoreReadingMode() {
+    restoreReadingView(this.scrollModeLeaf, this.scrollModeSnapshot);
+    this.scrollModeSnapshot = null;
+    this.scrollModeLeaf = null;
+  }
   startAutoScroll() {
     var _a, _b;
+    if (this.ensureReadingMode()) {
+      window.setTimeout(() => {
+        if (!this.scrollRunning && this.scrollPlan.length === 0)
+          this.startAutoScroll();
+      }, 180);
+      return;
+    }
     const container = this.findScrollContainer();
     if (!container) {
-      new import_obsidian5.Notice(this.findViewContainer() ? MSG_NO_SCROLLER : "Open a note first.", 8e3);
+      new import_obsidian7.Notice(this.findViewContainer() ? MSG_NO_SCROLLER : "Open a note first.", 8e3);
       return;
     }
     this.scrollStuckSince = 0;
@@ -6771,7 +7276,7 @@ ${deckSummary(
         return;
       }
       if (anyToggle || this.sourceHasToggles()) {
-        new import_obsidian5.Notice(
+        new import_obsidian7.Notice(
           `No toggles match this selection (${filterLabel(this.settings.scrollFilter)} \xB7 ${modeLabel(
             this.modeConfig()
           )}) \u2014 filter ya pause-at mode badlo.`,
@@ -6882,6 +7387,7 @@ ${deckSummary(
     var _a, _b;
     this.scrollRunning = false;
     this.closeScrollVisit();
+    this.restoreReadingMode();
     if (this.scrollOpenEl && this.settings.scrollAutoClose) {
       this.setToggleOpen(this.scrollOpenEl, false);
     }
@@ -7082,6 +7588,8 @@ ${deckSummary(
       ...toDwellSettings(
         this.modeConfig(),
         clampHold(this.settings.scrollHold),
+        // Tall answers must be paged in every advance mode. “Screens” adds
+        // note-level stops; “Both” must still finish each selected toggle.
         this.settings.scrollChunkTall
       ),
       loopRoute: this.settings.scrollLoopRoute
@@ -7090,13 +7598,13 @@ ${deckSummary(
   /** Measure the colour-filtered toggles as page boxes in content space. */
   measureScrollBoxes(container) {
     const t0 = nowMs();
-    const all = this.collectStops(container, this.settings.scrollFilter);
-    const kept = all.filter((st) => matchesFilter(st.color, this.settings.scrollFilter));
+    const kept = this.collectStops(container, this.settings.scrollFilter);
     this.scrollTotalItems = kept.length;
+    this.scrollNoteTotal = noteToggleCount(container);
     this.scrollElByOrdinal = /* @__PURE__ */ new Map();
-    this.scrollBoxes = kept.map((st, i) => {
-      this.scrollElByOrdinal.set(i + 1, st.el);
-      return { page: i + 1, top: st.top, height: st.height };
+    this.scrollBoxes = kept.map((st) => {
+      this.scrollElByOrdinal.set(st.ordinal, st.el);
+      return { page: st.ordinal, top: st.top, height: st.height };
     }).sort((a, b) => a.top - b.top);
     this.scrollTargetsKey = "";
     this.perf.filter.add(nowMs() - t0);
@@ -7108,15 +7616,27 @@ ${deckSummary(
   }
   /** Cached dwell targets — rebuilt only when the inputs change. */
   currentTargets(container, cfg) {
+    var _a, _b, _c;
     const anchor = this.settings.scrollStopAnchor;
-    const key = targetsKey(container, cfg, anchor, this.scrollBoxes);
+    const key = `${targetsKey(container, cfg, anchor, this.scrollBoxes)}|${(_a = this.settings.scrollAdvanceBy) != null ? _a : "toggles"}|${(_b = this.settings.scrollScreenOverlap) != null ? _b : 0.1}|${container.scrollHeight}`;
     if (key !== this.scrollTargetsKey) {
       this.scrollTargetsKey = key;
-      this.scrollTargets = anchoredTargets(this.scrollBoxes, cfg, container, anchor);
-      this.scrollPlan = this.scrollTargets.map((t) => ({
-        index: t.page - 1,
+      const toggleTargets = anchoredTargets(this.scrollBoxes, cfg, container, anchor);
+      const advanceBy = (_c = this.settings.scrollAdvanceBy) != null ? _c : "toggles";
+      const screenTargets = screenStops(container.scrollHeight, container.clientHeight, this.settings.scrollScreenOverlap).map((top, index) => ({
+        page: -(index + 1),
+        top,
+        height: container.clientHeight,
+        index: 0,
+        key: `screen:${index}`
+      }));
+      const targets = advanceBy === "screens" ? screenTargets : advanceBy === "both" ? mergeStops(screenTargets, toggleTargets) : toggleTargets;
+      this.scrollTargets = targets;
+      this.scrollPlan = targets.map((t) => ({
+        index: t.page > 0 ? t.page - 1 : -1,
         top: t.top,
-        color: "other"
+        color: t.page > 0 ? "other" : "other",
+        ordinal: t.page > 0 ? t.page : 0
       }));
     }
     return this.scrollTargets;
@@ -7225,7 +7745,7 @@ ${deckSummary(
     if (!isScrollStuck(this.scrollStuckSince, ts))
       return false;
     this.scrollLastEvent = `stopped: ${why}`;
-    new import_obsidian5.Notice(MSG_NO_SCROLLER, 8e3);
+    new import_obsidian7.Notice(MSG_NO_SCROLLER, 8e3);
     this.stopAutoScroll(false);
     return true;
   }
@@ -7306,7 +7826,7 @@ ${deckSummary(
           this.scrollRouteStop = 0;
           const last = this.scrollRouteIdx >= cfg.route.length - 1;
           if (last && !cfg.loopRoute) {
-            new import_obsidian5.Notice(
+            new import_obsidian7.Notice(
               this.settings.scrollMode === "shuffle" ? "Shuffle finished \u2014 every scheduled toggle revised." : "Route finished \u2014 every waypoint visited."
             );
             this.scrollRunning = false;
@@ -7408,7 +7928,7 @@ ${deckSummary(
       this.refreshScrollPlan();
     this.renderScrollBar();
     if (!this.settings.scrollQuiet)
-      new import_obsidian5.Notice(`Quiz filter: ${filterLabel(this.settings.quizFilter)}`);
+      new import_obsidian7.Notice(`Quiz filter: ${filterLabel(this.settings.quizFilter)}`);
   }
   /** Primary command: start, pause or resume the quiz. */
   toggleQuiz() {
@@ -7422,7 +7942,7 @@ ${deckSummary(
     var _a;
     const container = this.findViewContainer();
     if (!container) {
-      new import_obsidian5.Notice("Open a note first \u2014 quiz mode needs a note view.");
+      new import_obsidian7.Notice("Open a note first \u2014 quiz mode needs a note view.");
       return;
     }
     const filter = this.quizFilterColors();
@@ -7441,7 +7961,7 @@ ${deckSummary(
         }, 700);
         return;
       }
-      new import_obsidian5.Notice(`No toggles match the filter (${filterLabel(filter)}).`);
+      new import_obsidian7.Notice(`No toggles match the filter (${filterLabel(filter)}).`);
       return;
     }
     this.quizContainer = container;
@@ -7473,7 +7993,7 @@ ${deckSummary(
     const first = (_a = this.quizTitles[0]) != null ? _a : "";
     this.perf.timer.start(1, first, "question", questionMs(first, this.settings), Date.now());
     if (!this.settings.scrollQuiet)
-      new import_obsidian5.Notice(quizStartLabel(stops.length, this.settings));
+      new import_obsidian7.Notice(quizStartLabel(stops.length, this.settings));
     this.renderQuizHud();
     this.startQuizLoop();
   }
@@ -7499,7 +8019,7 @@ ${deckSummary(
     (_b = this.quizBar) == null ? void 0 : _b.destroy();
     this.quizBar = null;
     if (notify)
-      new import_obsidian5.Notice(summary || "Quiz stopped.");
+      new import_obsidian7.Notice(summary || "Quiz stopped.");
   }
   toggleQuizPause() {
     if (!this.quizState) {
@@ -7513,7 +8033,7 @@ ${deckSummary(
     this.quizLastFrame = Date.now();
     this.renderQuizHud();
     if (!this.settings.scrollQuiet) {
-      new import_obsidian5.Notice(this.quizState.running ? "Quiz resumed." : "Quiz paused.");
+      new import_obsidian7.Notice(this.quizState.running ? "Quiz resumed." : "Quiz paused.");
     }
   }
   quizRevealNow() {
@@ -7565,7 +8085,7 @@ ${deckSummary(
       this.applyQuizVisibility(this.quizState.at, true);
       this.forceQuizOpen((_a = this.quizStops[this.quizState.at]) == null ? void 0 : _a.el);
       if (this.settings.quizBeepOnTimeUp && !this.settings.scrollQuiet) {
-        new import_obsidian5.Notice("\u23F0 Time up \u2014 answer revealed.");
+        new import_obsidian7.Notice("\u23F0 Time up \u2014 answer revealed.");
       }
     } else if (event === "next") {
       this.ensureQuizEls();
@@ -7573,7 +8093,7 @@ ${deckSummary(
     } else if (event === "done") {
       const summary = quizSummary(this.quizState);
       this.stopQuiz(false);
-      new import_obsidian5.Notice(`${summary}
+      new import_obsidian7.Notice(`${summary}
 ${perfVerdict(this.perf.report())}`, 9e3);
       return;
     }
@@ -7707,7 +8227,7 @@ ${perfVerdict(this.perf.report())}`, 9e3);
       this.renderTimer();
     }
     if (!silent) {
-      new import_obsidian5.Notice(
+      new import_obsidian7.Notice(
         removed.length ? `Removed ${removed.length} schedule${removed.length === 1 ? "" : "s"} for missing notes.` : "Recall schedule is already clean."
       );
     }
@@ -7728,30 +8248,5 @@ ${perfVerdict(this.perf.report())}`, 9e3);
   }
   async saveSettings() {
     await this.saveData(this.settings);
-  }
-};
-var DueNotesModal = class extends import_obsidian5.Modal {
-  constructor(app, due, onPick) {
-    super(app);
-    this.due = due;
-    this.onPick = onPick;
-  }
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.empty();
-    this.setTitle(`Due for recall (${this.due.length})`);
-    for (const { path, card } of this.due) {
-      const row = contentEl.createDiv({ cls: "ntt-due-row" });
-      const btn = row.createEl("button", { text: path.replace(/\.md$/, "") });
-      btn.addClass("ntt-due-btn");
-      row.createSpan({ text: ` ${nextDueLabel(card, Date.now())} \xB7 ease ${card.ease}` });
-      btn.addEventListener("click", () => {
-        this.close();
-        this.onPick(path);
-      });
-    }
-  }
-  onClose() {
-    this.contentEl.empty();
   }
 };

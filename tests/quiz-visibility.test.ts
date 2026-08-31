@@ -51,6 +51,16 @@ describe("class-based reveal (no Obsidian fold events)", () => {
     expect(els[0].classList.contains(QUIZ_HIDDEN_CLASS)).toBe(false);
   });
 
+  it("records the answer height for a full, animated reveal", () => {
+    const { els } = mount(callout("recall-red"));
+    const content = els[0].querySelector(".callout-content") as HTMLElement;
+    Object.defineProperty(content, "scrollHeight", { configurable: true, value: 2400 });
+    setQuizVisible(els[0], true);
+    expect(content.style.getPropertyValue("--ntt-reveal-height")).toBe("2400px");
+    setQuizVisible(els[0], false);
+    expect(content.style.getPropertyValue("--ntt-reveal-height")).toBe("");
+  });
+
   it("leaves Obsidian's own is-collapsed class untouched", () => {
     const { els } = mount(callout("recall-red", true) + callout("note", false));
     setQuizVisible(els[0], true);

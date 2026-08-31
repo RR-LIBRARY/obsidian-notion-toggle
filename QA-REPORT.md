@@ -1,12 +1,12 @@
-# Deep QA report — Notion Toggle v1.5.1
+# Deep QA report — Notion Toggle v1.5.2
 
-Date: 2026-08-29 · Repository: `RR-LIBRARY/obsidian-notion-toggle`
+Date: 2026-08-31 · Repository: `RR-LIBRARY/obsidian-notion-toggle`
 
 ## Release verdict
 
 **Candidate: ready for release after the final full-suite, typecheck, build, and GitHub asset checks.**
 
-The core claim is verified by the repository's deterministic tests: autoscroll uses the active rendered view, filters preserve note-wide ordinals, quiz reveal heals after re-render, and the Reading View switch restores only the leaf it changed.
+The core claim is verified by the repository's deterministic tests: autoscroll uses the active rendered view, filters preserve note-wide ordinals, tall answers are chunked and top-anchored, quiz reveal heals after re-render, and the Reading View switch restores only the leaf it changed.
 
 ## End-to-end verification matrix
 
@@ -23,6 +23,8 @@ The core claim is verified by the repository's deterministic tests: autoscroll u
 | Quiz sequence | One question, timed reveal, next, skip, loop | PASS — quiz timing/DOM/E2E tests |
 | Obsidian re-render | Heal detached question/toggle references | PASS — `quiz-heal`, scroll self-heal tests |
 | Collapsed callout | Force-open before reveal, no skipped question | PASS — `quiz-force-open`, visibility tests |
+| Tall answer | Every screen slice is reached; question stays visible on small screens | PASS — `tall-answer.test.ts`, anchor tests |
+| Screen mode | Viewport-aware stops, overlap, and last partial screen | PASS — `screen-mode.test.ts` |
 | Stop and restore | Fold state and mode return to the pre-run state | PASS — quiz DOM and reader-mode tests |
 | Mobile controls | FAB / quick sheet remain usable with accessible targets | PASS — FAB and UI contract tests |
 | No movement | Stop with a clear message instead of a silent loop | PASS — scroll-container / loop tests |
