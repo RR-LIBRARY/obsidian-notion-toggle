@@ -747,7 +747,8 @@ body.is-mobile .ntt-quiz-dock-btn {
 /* v1.1.1 — extra autoscroll bar buttons (mode / dwell / go-to-top) */
 .ntt-scroll-btn.is-mode,
 .ntt-scroll-btn.is-dwell,
-.ntt-scroll-btn.is-top {
+.ntt-scroll-btn.is-top,
+.ntt-scroll-btn.is-stop {
   font-size: 0.85em;
   min-width: 44px;
 }
