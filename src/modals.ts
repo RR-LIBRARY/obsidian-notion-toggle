@@ -150,7 +150,13 @@ export class ScrollFilterModal extends Modal {
       { label: "🟢 Green only", filter: ["green"] },
       { label: "🔴🟡 Red + Yellow (weak spots)", filter: ["red", "yellow"] },
       { label: "🔴🟡🟢 All graded toggles", filter: ["red", "yellow", "green"] },
+      { label: "⚪ Notes only (!note / !tip — ungraded)", filter: ["other"] },
+      {
+        label: "🔴🟡🟢⚪ Everything, graded + notes",
+        filter: ["red", "yellow", "green", "other"],
+      },
     ];
+
     const active = this.plugin.settings.scrollFilter;
     for (const opt of options) {
       const btn = list.createEl("button", {
@@ -178,7 +184,13 @@ export const QUIZ_FILTER_OPTIONS: { label: string; filter: RecallColor[] }[] = [
   { label: "🟢 Green only", filter: ["green"] },
   { label: "🔴🟡 Red + Yellow (weak spots)", filter: ["red", "yellow"] },
   { label: "🔴🟡🟢 All graded toggles", filter: ["red", "yellow", "green"] },
+  { label: "⚪ Notes only (!note / !tip — ungraded)", filter: ["other"] },
+  {
+    label: "🔴🟡🟢⚪ Everything, graded + notes",
+    filter: ["red", "yellow", "green", "other"],
+  },
 ];
+
 
 export class QuizFilterModal extends Modal {
   constructor(app: App, private plugin: NotionTogglePlugin) {

@@ -247,3 +247,55 @@ describe("real note — a quiz run over a filtered deck", () => {
     h.stop();
   });
 });
+
+describe("real note — v1.4.11 notes-only filter (!note / !tip / ungraded)", () => {
+  it("selects exactly the ungraded toggles, in document order", () => {
+    const got = titlesFor(["other"]);
+    expect(got).toEqual(EXPECTED.other);
+    expect(got.length).toBe(2);
+  });
+
+  it("never contains a graded question", () => {
+    const got = titlesFor(["other"]);
+    for (const c of GRADED) for (const title of EXPECTED[c]) expect(got).not.toContain(title);
+  });
+
+  it("graded + notes covers the whole note with no duplicates", () => {
+    const got = titlesFor(["red", "yellow", "green", "other"]);
+    expect(got.length).toBe(73);
+    expect(new Set(got).size).toBe(new Set(PARSED.map((t) => t.title)).size);
+    expect(got).toEqual(titlesFor([]));
+  });
+
+  it("notes-only and graded are complementary halves", () => {
+    expect(titlesFor(["other"]).length + titlesFor(GRADED).length).toBe(73);
+    expect(sameFilter(["other"], GRADED)).toBe(false);
+  });
+
+  it("has a readable label of its own", () => {
+    expect(filterLabel(["other"])).toContain("!note");
+    expect(filterLabel(["red", "yellow", "green", "other"])).toBe("🔴 🟡 🟢 ⚪");
+  });
+
+  it("round-trips through every deep-link alias", () => {
+    for (const alias of ["notes", "note", "ungraded", "plain", "other", "NOTES", " Notes "])
+      expect(parseFilterParam(alias)).toEqual(["other"]);
+    expect(parseFilterParam("everything")).toEqual(COLOR_ORDER);
+    expect(parseFilterParam("graded")).toEqual(GRADED);
+    const link = parseDeepLink({ action: "quiz", filter: "notes" });
+    expect(link?.filter).toEqual(["other"]);
+  });
+
+  it("keeps normalization canonical when notes are mixed in", () => {
+    expect(normalizeFilter(["other", "green", "red"])).toEqual(["red", "green", "other"]);
+  });
+
+  it("runs a quiz over the notes-only deck", () => {
+    const h = new QuizHarness(note, { quizSeconds: 2, quizRevealSeconds: 1 }, ["other"]);
+    expect(h.titles).toEqual(EXPECTED.other);
+    h.revealNow();
+    expect(h.visibleTitles()).toEqual([EXPECTED.other[0]!]);
+    h.run();
+    expect(h.state.phase).toBe("done");
+  });
+});

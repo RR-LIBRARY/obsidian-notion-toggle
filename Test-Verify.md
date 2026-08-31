@@ -404,3 +404,47 @@ karna pada; sirf tests + fixture + docs add hue.
 | `bun test` | **701 pass / 0 fail**, 2727 assertions, 39 files |
 | `tsc --noEmit` | Clean |
 | `bun run build` | OK — `main.js` 267.3 kb |
+
+## v1.4.11 — notes / ungraded filter (`!note`, `!tip`, …)
+
+Naya filter add hua: **⚪ Notes only (!note / !tip — ungraded)** aur
+**🔴🟡🟢⚪ Everything, graded + notes** — dono Autoscroll aur Quiz picker me,
+plus deep-link aliases `notes` / `note` / `ungraded` / `plain` / `other` aur
+`everything`. Engine me `RecallColor` pehle se `"other"` rakhta tha, isliye
+matching logic nahi badla — sirf UI options + deep-link parser add hue.
+
+### Filter states (real note `zoology_Recall_1.md` — 14 🔴 / 37 🟡 / 20 🟢 / 2 plain)
+
+| # | Filter | Stops |
+|---|--------|-------|
+| 1 | 🔴 Red only | 14 |
+| 2 | 🟡 Yellow only | 37 |
+| 3 | 🟢 Green only | 20 |
+| 4 | 🔴🟡 Red + Yellow | 51 |
+| 5 | 🔴🟢 Red + Green | 34 |
+| 6 | 🟡🟢 Yellow + Green | 57 |
+| 7 | 🔴🟡🟢 All graded | 71 |
+| 8 | ⚪ **Notes only (new)** | 2 |
+| 9 | 🔴🟡🟢⚪ **Everything, graded + notes (new)** | 73 |
+| 10 | ⚪ All toggles (no filter) | 73 |
+
+### Verified
+
+- Notes-only deck = exactly the 2 ungraded toggles, document order me, aur usme
+  koi graded question nahi aata.
+- Notes-only + all graded = 73 = poora note, bina duplicate — dono exact
+  complementary halves hain.
+- `filterLabel(["other"])` apna readable label deta hai (`⚪ notes (!note / !tip)`),
+  taaki settings/sheet me "all toggles" se confuse na ho.
+- Deep-link round trip: saare aliases (case / space ke saath bhi) → `["other"]`,
+  `everything` → `["red","yellow","green","other"]`, `graded` / `all` pehle jaise.
+- `normalizeFilter` canonical order rakhta hai jab notes mix hote hain.
+- Notes-only quiz chal ke `done` tak pahunchta hai, reveal ek-ek karke land karta hai.
+
+### Gates
+
+| Gate | Result |
+|---|---|
+| `bun test` | **709 pass / 0 fail**, 39 files |
+| Typecheck | Clean |
+| `bun run build` | OK |

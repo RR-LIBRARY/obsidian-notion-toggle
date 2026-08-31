@@ -269,9 +269,9 @@ export function filterLabel(filter: RecallColor[]): string {
     green: "🟢",
     other: "⚪",
   };
-  return normalizeFilter(filter)
-    .map((c) => icon[c])
-    .join(" ");
+  const norm = normalizeFilter(filter);
+  if (norm.length === 1 && norm[0] === "other") return "⚪ notes (!note / !tip)";
+  return norm.map((c) => icon[c]).join(" ");
 }
 
 

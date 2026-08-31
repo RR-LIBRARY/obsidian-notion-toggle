@@ -303,9 +303,19 @@ Sabse zaroori command sirf ek hai — **Autoscroll (start / pause revision)**; b
 #### Colour filter → "Choose colours"
 - **Kya hai:** autoscroll sirf chuni hui colour wale toggles par rukega.
 - **Options:** ⚪ All toggles · 🔴 Red only · 🟡 Yellow only · 🟢 Green only ·
-  🔴🟡 Red + Yellow (weak spots) · 🔴🟡🟢 All graded toggles.
+  🔴🟡 Red + Yellow (weak spots) · 🔴🟡🟢 All graded toggles ·
+  **⚪ Notes only (!note / !tip — ungraded)** (v1.4.11) ·
+  **🔴🟡🟢⚪ Everything, graded + notes** (v1.4.11).
+- **Notes only (v1.4.11):** wo saare toggles jinke header par koi recall colour nahi hai —
+  `!note`, `!tip`, `!info`, `!abstract`, `!warning`, `!success`, aur plain toggles.
+  Legend / preface / summary blocks yahin aate hain, isliye "sirf notes padhna hai"
+  wali revision ke liye yeh filter use karo. Ye "All graded" ka exact ulta hai:
+  notes-only + all graded = poora note.
 - **Kaise use karo:** exam se pehle **Red + Yellow** — sirf weak spots revise honge.
 - **Default:** All toggles
+- **Deep link:** `filter=notes` (aliases: `note`, `ungraded`, `plain`, `other`),
+  `filter=everything` = graded + notes, `filter=graded`, `filter=all` —
+  e.g. `obsidian://notion-toggle?action=quiz&filter=notes`.
 
 #### Open the toggle automatically
 - **Kya hai:** toggle par pahunchte hi wo khud khul jata hai (answer dikh jata hai).
@@ -583,7 +593,9 @@ auto-close → agla question auto-scroll ke saath.
 
 ### Use the colour filter
 - **Kya hai:** quiz sirf autoscroll ke chune hue colours par chalega (🔴/🟡/🟢).
-- **Kaise use karo:** ON + filter Red+Yellow = weak-spot quiz.
+- **Kaise use karo:** ON + filter Red+Yellow = weak-spot quiz. v1.4.11 se yahi picker me
+  **⚪ Notes only (!note / !tip — ungraded)** aur **🔴🟡🟢⚪ Everything, graded + notes** bhi hain —
+  notes-only se sirf legend / preface / summary blocks ka quiz banega.
 - **Default:** ON
 
 ### Loop the quiz
@@ -686,7 +698,7 @@ Lambe questions ke titles me `⏱60` laga do.
 ## 13. Dev / release notes
 
 - Build: `bun install && bun run build` → `main.js`
-- Tests: `bun test` (701 tests) · Typecheck: `bun run typecheck`
+- Tests: `bun test` (709 tests) · Typecheck: `bun run typecheck`
 - Real-vault checklist: `SMOKE-TEST.md` (18 steps)
 - Release me `manifest.json`, `main.js`, `styles.css` attach hone chahiye —
   `Package Obsidian plugin release` GitHub Action tag push / manual dispatch par ye karta hai

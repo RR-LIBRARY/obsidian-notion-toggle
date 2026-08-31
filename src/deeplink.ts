@@ -22,12 +22,17 @@ export interface DeepLink {
 
 const COLORS: RecallColor[] = ["red", "yellow", "green", "other"];
 
-/** `red,yellow` / `all` / `graded` → a canonical filter, or undefined. */
+/** `red,yellow` / `all` / `graded` / `notes` → a canonical filter, or undefined. */
 export function parseFilterParam(raw: string | undefined): RecallColor[] | undefined {
   if (raw == null) return undefined;
   const text = raw.trim().toLowerCase();
   if (!text || text === "all" || text === "default" || text === "any") return [];
   if (text === "graded") return normalizeFilter(["red", "yellow", "green"]);
+  if (text === "notes" || text === "note" || text === "ungraded" || text === "plain")
+    return normalizeFilter(["other"]);
+  if (text === "everything" || text === "graded+notes")
+    return normalizeFilter(["red", "yellow", "green", "other"]);
+
   const picked = text
     .split(/[,+ ]+/)
     .map((p) => p.trim())
