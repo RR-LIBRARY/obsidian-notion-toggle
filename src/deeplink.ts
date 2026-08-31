@@ -32,6 +32,14 @@ const KIND_ALIASES: Record<string, RecallColor> = {
   caution: "warning",
   done: "success",
   check: "success",
+  tldr: "abstract",
+  faq: "question",
+  help: "question",
+  attention: "warning",
+  fail: "failure",
+  missing: "failure",
+  error: "danger",
+  cite: "quote",
 };
 
 /** `red,yellow` / `all` / `graded` / `notes` → a canonical filter, or undefined. */

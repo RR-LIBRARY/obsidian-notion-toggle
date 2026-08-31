@@ -11,7 +11,13 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 
 import {
+  CALLOUT_KINDS,
+  COLOR_ICON,
   COLOR_ORDER,
+  KIND_ORDER,
+  UNGRADED_COLORS,
+  isUngraded,
+  kindOf,
   colorCounts,
   colorOf,
   filterLabel,
@@ -23,6 +29,7 @@ import {
 } from "../src/autoscroll";
 import { collectToggleEls, collectToggleElsFiltered, toggleTitleOf, toggleTypeOf } from "../src/toggle-dom";
 import { parseDeepLink, parseFilterParam } from "../src/deeplink";
+import { QUIZ_FILTER_OPTIONS } from "../src/modals";
 import { calloutTypeOfLine, nextTrafficColor, recolorHeaderLine } from "../src/recolor";
 import { QuizHarness, ensureDom } from "./e2e/harness";
 import { parseNoteToggles, readFixture, renderNoteMarkdown } from "./fixtures/note-parser";
@@ -299,5 +306,97 @@ describe("real note — v1.4.11 notes-only filter (!note / !tip / ungraded)", ()
     expect(h.visibleTitles()).toEqual([EXPECTED.other[0]!]);
     h.run();
     expect(h.state.phase).toBe("done");
+  });
+});
+
+/**
+ * v1.4.13 — every remaining Obsidian built-in callout gets its own filter kind,
+ * with the documented alias words resolving to it.
+ */
+describe("v1.4.13 — all built-in callout kinds", () => {
+  const NEW_KINDS: RecallColor[] = [
+    "todo",
+    "important",
+    "failure",
+    "danger",
+    "bug",
+    "example",
+    "quote",
+  ];
+
+  it("resolves each new callout type to its own kind", () => {
+    for (const kind of NEW_KINDS) {
+      expect(kindOf(`callout callout-${kind}`)).toBe(kind);
+      expect(kindOf(kind)).toBe(kind);
+    }
+  });
+
+  it("keeps every new kind ungraded and out of graded runs", () => {
+    for (const kind of NEW_KINDS) {
+      expect(isUngraded(kind)).toBe(true);
+      expect(colorOf(`callout-${kind}`)).toBe("other");
+      expect(matchesFilter(kind, ["red", "yellow", "green"])).toBe(false);
+      expect(matchesFilter(kind, ["other"])).toBe(true);
+      expect(matchesFilter(kind, [kind])).toBe(true);
+      expect(matchesFilter(kind, [])).toBe(true);
+    }
+  });
+
+  it("resolves Obsidian alias words to the canonical kind", () => {
+    const aliases: Record<string, RecallColor> = {
+      hint: "tip",
+      summary: "abstract",
+      tldr: "abstract",
+      faq: "question",
+      help: "question",
+      check: "success",
+      done: "success",
+      caution: "warning",
+      attention: "warning",
+      fail: "failure",
+      missing: "failure",
+      error: "danger",
+      cite: "quote",
+    };
+    for (const [word, kind] of Object.entries(aliases)) {
+      expect(kindOf(`callout callout-${word}`)).toBe(kind);
+      expect(parseFilterParam(word)).toEqual([kind]);
+    }
+  });
+
+  it("exposes every new kind in CALLOUT_KINDS, order, and icons", () => {
+    for (const kind of NEW_KINDS) {
+      expect(CALLOUT_KINDS).toContain(kind);
+      expect(KIND_ORDER).toContain(kind);
+      expect(UNGRADED_COLORS).toContain(kind);
+      expect(COLOR_ICON[kind].length).toBeGreaterThan(0);
+    }
+    expect(normalizeFilter(["quote", "red", "todo"])).toEqual(["red", "todo", "quote"]);
+  });
+
+  it("parses the new kinds from deep links, alone and combined", () => {
+    expect(parseFilterParam("important")).toEqual(["important"]);
+    expect(parseFilterParam("quote,bug")).toEqual(["bug", "quote"]);
+    expect(parseFilterParam("callouts")).toEqual(UNGRADED_COLORS);
+    expect(parseDeepLink({ action: "autoscroll", filter: "important" })?.filter).toEqual([
+      "important",
+    ]);
+  });
+
+  it("leaves the real note's counts untouched", () => {
+    expect(titlesFor(["other"]).length).toBe(2);
+    expect(titlesFor(GRADED).length).toBe(71);
+    expect(titlesFor([]).length).toBe(73);
+    for (const kind of NEW_KINDS) expect(titlesFor([kind]).length).toBe(0);
+  });
+
+  it("offers every new kind in both pickers", () => {
+    for (const kind of NEW_KINDS) {
+      expect(
+        QUIZ_FILTER_OPTIONS.some((o) => o.filter.length === 1 && o.filter[0] === kind)
+      ).toBe(true);
+    }
+    const all = QUIZ_FILTER_OPTIONS.find((o) => o.label.includes("All built-in callouts"));
+    expect(all?.filter).toEqual(CALLOUT_KINDS);
   });
 });

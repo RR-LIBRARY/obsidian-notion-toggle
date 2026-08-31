@@ -333,6 +333,23 @@ Sabse zaroori command sirf ek hai — **Autoscroll (start / pause revision)**; b
 - **Note:** `filter=notes` / `ungraded` ab bhi wildcard hai — kisi bhi non-graded
   toggle ko pakadta hai, chahe uska type kuch bhi ho.
 
+#### Baaki sab built-in callouts (v1.4.13)
+- **Naye filters (dono pickers me):** ☑️ Todo (`!todo`) · ❗ Important (`!important`) ·
+  ❌ Failure (`!failure`) · 🚨 Danger (`!danger`) · 🐞 Bug (`!bug`) ·
+  🧩 Example (`!example`) · ❝ Quote (`!quote`).
+  Ab **❓💡📝 All built-in callouts** in sab ko bhi cover karta hai.
+- **Alias words** jo apne aap sahi kind me chale jaate hain:
+  `hint`→tip, `summary`/`tldr`→abstract, `faq`/`help`→question,
+  `check`/`done`→success, `caution`/`attention`→warning,
+  `fail`/`missing`→failure, `error`→danger, `cite`→quote.
+- **Deep links:** `filter=important`, `filter=todo`, `filter=quote,bug`,
+  `filter=tldr`, `filter=error` … aur combos —
+  e.g. `obsidian://notion-toggle?action=autoscroll&filter=important,danger`.
+- **Backward compatible:** purane saved filters aur `filter=notes` / `ungraded` /
+  `plain` / `other` wildcard exactly pehle jaisa behave karte hain.
+
+
+
 #### Open the toggle automatically
 - **Kya hai:** toggle par pahunchte hi wo khud khul jata hai (answer dikh jata hai).
 - **Kaise use karo:** ON = hands-free reading. OFF karo agar pehle khud soch kar phir kholna ho.

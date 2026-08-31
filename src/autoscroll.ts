@@ -13,8 +13,9 @@ import type { FsrsCard } from "./fsrs";
 import { DWELL_MAX, type ScrollMode } from "./scrollmode";
 
 /**
- * v1.4.12 — a toggle kind: traffic-light grades, Obsidian's built-in
- * callouts (!question / !tip / !info …), and `other` as the ungraded wildcard.
+ * v1.4.13 — a toggle kind: traffic-light grades, every Obsidian built-in
+ * callout (!question / !tip / !important / !quote …), and `other` as the
+ * ungraded wildcard.
  */
 export type RecallColor =
   | "red"
@@ -27,6 +28,13 @@ export type RecallColor =
   | "tip"
   | "warning"
   | "success"
+  | "todo"
+  | "important"
+  | "failure"
+  | "danger"
+  | "bug"
+  | "example"
+  | "quote"
   | "other";
 
 export interface AutoScrollSettings {
@@ -136,7 +144,31 @@ export const CALLOUT_KINDS: RecallColor[] = [
   "tip",
   "warning",
   "success",
+  "todo",
+  "important",
+  "failure",
+  "danger",
+  "bug",
+  "example",
+  "quote",
 ];
+
+/** Obsidian alias words that mean an existing kind. */
+export const KIND_WORD_ALIASES: Record<string, RecallColor> = {
+  hint: "tip",
+  summary: "abstract",
+  tldr: "abstract",
+  faq: "question",
+  help: "question",
+  check: "success",
+  done: "success",
+  caution: "warning",
+  attention: "warning",
+  fail: "failure",
+  missing: "failure",
+  error: "danger",
+  cite: "quote",
+};
 
 /** The three graded (traffic-light) kinds. */
 export const GRADED_COLORS: RecallColor[] = ["red", "yellow", "green"];
@@ -149,6 +181,10 @@ export function kindOf(calloutType: string | null | undefined): RecallColor {
   if (t.includes("recall-green")) return "green";
   const words = t.split(/[^a-z]+/).filter(Boolean);
   for (const kind of CALLOUT_KINDS) if (words.includes(kind)) return kind;
+  for (const word of words) {
+    const alias = KIND_WORD_ALIASES[word];
+    if (alias) return alias;
+  }
   return "other";
 }
 
@@ -289,7 +325,8 @@ export const COLOR_ORDER: RecallColor[] = ["red", "yellow", "green", "other"];
 
 /** Full canonical order for the expanded per-callout-kind filter. */
 export const KIND_ORDER: RecallColor[] = [
-  "red", "yellow", "green", "question", "info", "note", "abstract", "tip", "warning", "success", "other",
+  "red", "yellow", "green", "question", "info", "note", "abstract", "tip", "warning", "success",
+  "todo", "important", "failure", "danger", "bug", "example", "quote", "other",
 ];
 
 /** Every kind that is not a traffic-light grade, in canonical order. */
@@ -332,6 +369,13 @@ export const COLOR_ICON: Record<RecallColor, string> = {
   tip: "💡",
   warning: "⚠️",
   success: "✅",
+  todo: "☑️",
+  important: "❗",
+  failure: "❌",
+  danger: "🚨",
+  bug: "🐞",
+  example: "🧩",
+  quote: "❝",
   other: "⚪",
 };
 

@@ -1058,7 +1058,39 @@ function clampHold(seconds) {
     return DEFAULT_AUTOSCROLL.scrollHold;
   return Math.min(DWELL_MAX, Math.max(0, Math.round(seconds)));
 }
-function colorOf(calloutType) {
+var CALLOUT_KINDS = [
+  "question",
+  "info",
+  "note",
+  "abstract",
+  "tip",
+  "warning",
+  "success",
+  "todo",
+  "important",
+  "failure",
+  "danger",
+  "bug",
+  "example",
+  "quote"
+];
+var KIND_WORD_ALIASES = {
+  hint: "tip",
+  summary: "abstract",
+  tldr: "abstract",
+  faq: "question",
+  help: "question",
+  check: "success",
+  done: "success",
+  caution: "warning",
+  attention: "warning",
+  fail: "failure",
+  missing: "failure",
+  error: "danger",
+  cite: "quote"
+};
+var GRADED_COLORS = ["red", "yellow", "green"];
+function kindOf(calloutType) {
   const t = (calloutType != null ? calloutType : "").toLowerCase();
   if (t.includes("recall-red"))
     return "red";
@@ -1066,12 +1098,26 @@ function colorOf(calloutType) {
     return "yellow";
   if (t.includes("recall-green"))
     return "green";
+  const words = t.split(/[^a-z]+/).filter(Boolean);
+  for (const kind of CALLOUT_KINDS)
+    if (words.includes(kind))
+      return kind;
+  for (const word of words) {
+    const alias = KIND_WORD_ALIASES[word];
+    if (alias)
+      return alias;
+  }
   return "other";
+}
+function isUngraded(color) {
+  return !GRADED_COLORS.includes(color);
 }
 function matchesFilter(color, filter) {
   if (!filter || filter.length === 0)
     return true;
-  return filter.includes(color);
+  if (filter.includes(color))
+    return true;
+  return filter.includes("other") && isUngraded(color);
 }
 function planStops(stops, filter, reverse) {
   const kept = stops.filter((s) => matchesFilter(s.color, filter));
@@ -1107,11 +1153,31 @@ function anchorOffset(stopTop, stopHeight, viewportHeight, anchor = DEFAULT_STOP
   const ceiling = Number.isFinite(max) ? Math.max(0, max) : Number.POSITIVE_INFINITY;
   return Math.round(Math.min(ceiling, Math.max(0, stopTop - desiredScreenTop)));
 }
-var COLOR_ORDER = ["red", "yellow", "green", "other"];
+var KIND_ORDER = [
+  "red",
+  "yellow",
+  "green",
+  "question",
+  "info",
+  "note",
+  "abstract",
+  "tip",
+  "warning",
+  "success",
+  "todo",
+  "important",
+  "failure",
+  "danger",
+  "bug",
+  "example",
+  "quote",
+  "other"
+];
+var UNGRADED_COLORS = KIND_ORDER.filter(isUngraded);
 function normalizeFilter(filter) {
   if (!filter || filter.length === 0)
     return [];
-  return COLOR_ORDER.filter((c) => filter.includes(c));
+  return KIND_ORDER.filter((c) => filter.includes(c));
 }
 function sameFilter(a, b) {
   const na = normalizeFilter(a);
@@ -1120,20 +1186,41 @@ function sameFilter(a, b) {
 }
 function colorCounts(colors) {
   const out = { red: 0, yellow: 0, green: 0, other: 0 };
-  for (const c of colors)
-    out[c] += 1;
+  for (const c of colors) {
+    if (c === "red" || c === "yellow" || c === "green")
+      out[c] += 1;
+    else
+      out.other += 1;
+  }
   return out;
 }
+var COLOR_ICON = {
+  red: "\u{1F534}",
+  yellow: "\u{1F7E1}",
+  green: "\u{1F7E2}",
+  question: "\u2753",
+  info: "\u2139\uFE0F",
+  note: "\u{1F4DD}",
+  abstract: "\u{1F4CB}",
+  tip: "\u{1F4A1}",
+  warning: "\u26A0\uFE0F",
+  success: "\u2705",
+  todo: "\u2611\uFE0F",
+  important: "\u2757",
+  failure: "\u274C",
+  danger: "\u{1F6A8}",
+  bug: "\u{1F41E}",
+  example: "\u{1F9E9}",
+  quote: "\u275D",
+  other: "\u26AA"
+};
 function filterLabel(filter) {
   if (!filter || filter.length === 0)
     return "all toggles";
-  const icon = {
-    red: "\u{1F534}",
-    yellow: "\u{1F7E1}",
-    green: "\u{1F7E2}",
-    other: "\u26AA"
-  };
-  return normalizeFilter(filter).map((c) => icon[c]).join(" ");
+  const norm = normalizeFilter(filter);
+  if (norm.length === 1 && norm[0] === "other")
+    return "\u26AA notes (!note / !tip)";
+  return norm.map((c) => COLOR_ICON[c]).join(" ");
 }
 function sessionLabel(s, stops) {
   const dir = s.scrollReverse ? "reverse \u2191" : "forward \u2193";
@@ -2754,7 +2841,25 @@ function revealLanded(el) {
 }
 
 // src/deeplink.ts
-var COLORS = ["red", "yellow", "green", "other"];
+var COLORS = KIND_ORDER;
+var KIND_ALIASES = {
+  quest: "question",
+  q: "question",
+  hint: "tip",
+  summary: "abstract",
+  warn: "warning",
+  caution: "warning",
+  done: "success",
+  check: "success",
+  tldr: "abstract",
+  faq: "question",
+  help: "question",
+  attention: "warning",
+  fail: "failure",
+  missing: "failure",
+  error: "danger",
+  cite: "quote"
+};
 function parseFilterParam(raw) {
   if (raw == null)
     return void 0;
@@ -2763,7 +2868,16 @@ function parseFilterParam(raw) {
     return [];
   if (text === "graded")
     return normalizeFilter(["red", "yellow", "green"]);
-  const picked = text.split(/[,+ ]+/).map((p) => p.trim()).filter((p) => COLORS.includes(p));
+  if (text === "notes" || text === "ungraded" || text === "plain" || text === "other")
+    return normalizeFilter(["other"]);
+  if (text === "callouts" || text === "types")
+    return normalizeFilter(UNGRADED_COLORS);
+  if (text === "everything" || text === "graded+notes")
+    return normalizeFilter(["red", "yellow", "green", "other"]);
+  const picked = text.split(/[,+ ]+/).map((p) => p.trim()).map((p) => {
+    var _a;
+    return (_a = KIND_ALIASES[p]) != null ? _a : p;
+  }).filter((p) => COLORS.includes(p));
   return picked.length ? normalizeFilter(picked) : void 0;
 }
 function parseDeepLink(params) {
@@ -3482,7 +3596,24 @@ var ScrollFilterModal = class extends import_obsidian2.Modal {
       { label: "\u{1F7E1} Yellow only", filter: ["yellow"] },
       { label: "\u{1F7E2} Green only", filter: ["green"] },
       { label: "\u{1F534}\u{1F7E1} Red + Yellow (weak spots)", filter: ["red", "yellow"] },
-      { label: "\u{1F534}\u{1F7E1}\u{1F7E2} All graded toggles", filter: ["red", "yellow", "green"] }
+      { label: "\u{1F534}\u{1F7E1}\u{1F7E2} All graded toggles", filter: ["red", "yellow", "green"] },
+      { label: "\u26AA All ungraded notes / callouts", filter: ["other"] },
+      { label: "\u2753 Question callouts (!question)", filter: ["question"] },
+      { label: "\u{1F4A1} Tip callouts (!tip)", filter: ["tip"] },
+      { label: "\u{1F4DD} Note callouts (!note)", filter: ["note"] },
+      { label: "\u2139\uFE0F Info callouts (!info)", filter: ["info"] },
+      { label: "\u{1F4CB} Abstract callouts (!abstract)", filter: ["abstract"] },
+      { label: "\u26A0\uFE0F Warning callouts (!warning)", filter: ["warning"] },
+      { label: "\u2705 Success callouts (!success)", filter: ["success"] },
+      { label: "\u2611\uFE0F Todo callouts (!todo)", filter: ["todo"] },
+      { label: "\u2757 Important callouts (!important)", filter: ["important"] },
+      { label: "\u274C Failure callouts (!failure / !fail / !missing)", filter: ["failure"] },
+      { label: "\u{1F6A8} Danger callouts (!danger / !error)", filter: ["danger"] },
+      { label: "\u{1F41E} Bug callouts (!bug)", filter: ["bug"] },
+      { label: "\u{1F9E9} Example callouts (!example)", filter: ["example"] },
+      { label: "\u275D Quote callouts (!quote / !cite)", filter: ["quote"] },
+      { label: "\u2753\u{1F4A1}\u{1F4DD} All built-in callouts", filter: CALLOUT_KINDS },
+      { label: "\u{1F534}\u{1F7E1}\u{1F7E2}\u26AA Everything, graded + notes", filter: ["red", "yellow", "green", "other"] }
     ];
     const active = this.plugin.settings.scrollFilter;
     for (const opt of options) {
@@ -3508,7 +3639,24 @@ var QUIZ_FILTER_OPTIONS = [
   { label: "\u{1F7E1} Yellow only", filter: ["yellow"] },
   { label: "\u{1F7E2} Green only", filter: ["green"] },
   { label: "\u{1F534}\u{1F7E1} Red + Yellow (weak spots)", filter: ["red", "yellow"] },
-  { label: "\u{1F534}\u{1F7E1}\u{1F7E2} All graded toggles", filter: ["red", "yellow", "green"] }
+  { label: "\u{1F534}\u{1F7E1}\u{1F7E2} All graded toggles", filter: ["red", "yellow", "green"] },
+  { label: "\u26AA All ungraded notes / callouts", filter: ["other"] },
+  { label: "\u2753 Question callouts (!question)", filter: ["question"] },
+  { label: "\u{1F4A1} Tip callouts (!tip)", filter: ["tip"] },
+  { label: "\u{1F4DD} Note callouts (!note)", filter: ["note"] },
+  { label: "\u2139\uFE0F Info callouts (!info)", filter: ["info"] },
+  { label: "\u{1F4CB} Abstract callouts (!abstract)", filter: ["abstract"] },
+  { label: "\u26A0\uFE0F Warning callouts (!warning)", filter: ["warning"] },
+  { label: "\u2705 Success callouts (!success)", filter: ["success"] },
+  { label: "\u2611\uFE0F Todo callouts (!todo)", filter: ["todo"] },
+  { label: "\u2757 Important callouts (!important)", filter: ["important"] },
+  { label: "\u274C Failure callouts (!failure / !fail / !missing)", filter: ["failure"] },
+  { label: "\u{1F6A8} Danger callouts (!danger / !error)", filter: ["danger"] },
+  { label: "\u{1F41E} Bug callouts (!bug)", filter: ["bug"] },
+  { label: "\u{1F9E9} Example callouts (!example)", filter: ["example"] },
+  { label: "\u275D Quote callouts (!quote / !cite)", filter: ["quote"] },
+  { label: "\u2753\u{1F4A1}\u{1F4DD} All built-in callouts", filter: CALLOUT_KINDS },
+  { label: "\u{1F534}\u{1F7E1}\u{1F7E2}\u26AA Everything, graded + notes", filter: ["red", "yellow", "green", "other"] }
 ];
 var QuizFilterModal = class extends import_obsidian2.Modal {
   constructor(app, plugin) {
@@ -6318,7 +6466,7 @@ ${row}`, { line: cursor.line, ch: line.length });
   collectStopsNow(container, filter = []) {
     const nodes = filter.length === 0 ? collectToggleEls(container) : collectToggleElsFiltered(
       container,
-      (el) => matchesFilter(colorOf(toggleTypeOf(el)), filter)
+      (el) => matchesFilter(kindOf(toggleTypeOf(el)), filter)
     );
     const base = container.getBoundingClientRect().top - container.scrollTop;
     return nodes.map((el, index) => {
@@ -6327,7 +6475,7 @@ ${row}`, { line: cursor.line, ch: line.length });
         index,
         top: Math.max(0, Math.round(rect.top - base)),
         height: Math.round(rect.height),
-        color: colorOf(toggleTypeOf(el)),
+        color: kindOf(toggleTypeOf(el)),
         el
       };
     });
