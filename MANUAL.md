@@ -678,6 +678,7 @@ Lambe questions ke titles me `⏱60` laga do.
 | **Autoscroll "running" dikhta hai par note hilta nahi** | v1.4.10 me ye theek hua. Agar phir bhi ho: note ko **reading view** me kholo, aur note ek screen se lamba ho. Jab view me scroll karne layak kuch nahi hota, run 3 second baad khud ruk kar saaf message deta hai. |
 | Quiz me answer khula hi nahi, timer aage badh gaya | v1.4.10 me theek — reveal ab class ke bharose nahi hai, zaroorat padhe to toggle ko sach me kholta hai. Purani version par ho to update karo. |
 | Timer promise se dheema lagta hai | Debug overlay ON karo → **timer accuracy** line promised vs wall-clock dikhati hai (section 7). 3x se zyada late tick ko freeze detector report karta hai — matlab phone throttle kar raha hai, plugin ka bug nahi. |
+| **Filter se galat questions aa rahe lagte hain** | v1.4.11 me poora filter ek real 73-toggle note par verify hua (14 🔴 / 37 🟡 / 20 🟢 + 2 plain) — saari 7 colour combinations, deep links aur quiz deck sahi nikle. Agar count galat lage to check karo ki header exactly `> [!recall-red]-` jaisa ho (typo/extra space se toggle "plain" ban jata hai) — plain toggles jaan-bujh ke "All graded" me nahi aate. Details: `Test-Verify.md`. |
 | Kuch stops chhoot rahe hain | Overlay ki **stop / skip** line dekho: `recovered` count batata hai ki layout shift ne kitne stops peeche chhode aur loop ne kitne wapas liye (section 7). Speed kam karo ya *Tall toggles screen-by-screen* ON karo. |
 
 ---
@@ -685,7 +686,7 @@ Lambe questions ke titles me `⏱60` laga do.
 ## 13. Dev / release notes
 
 - Build: `bun install && bun run build` → `main.js`
-- Tests: `bun test` (664 tests) · Typecheck: `bun run typecheck`
+- Tests: `bun test` (701 tests) · Typecheck: `bun run typecheck`
 - Real-vault checklist: `SMOKE-TEST.md` (18 steps)
 - Release me `manifest.json`, `main.js`, `styles.css` attach hone chahiye —
   `Package Obsidian plugin release` GitHub Action tag push / manual dispatch par ye karta hai

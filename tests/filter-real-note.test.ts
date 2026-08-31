@@ -1,0 +1,249 @@
+/**
+ * v1.4.11 — deep verification of the red / yellow / green filter and of a quiz
+ * run over a *filtered* deck, using a real 71-question NEET recall note
+ * (`tests/fixtures/zoology-recall.md`) instead of synthetic strings.
+ *
+ * Covers: per-colour counts, every filter permutation, document order,
+ * plain (`!note` / `!tip`) toggles staying out of graded runs, deep-link round
+ * trips, colour cycling over the note's own header lines, and a quiz that
+ * visits only matching questions and reveals each answer exactly once.
+ */
+import { beforeEach, describe, expect, it } from "bun:test";
+
+import {
+  COLOR_ORDER,
+  colorCounts,
+  colorOf,
+  filterLabel,
+  matchesFilter,
+  normalizeFilter,
+  planStops,
+  sameFilter,
+  type RecallColor,
+} from "../src/autoscroll";
+import { collectToggleEls, collectToggleElsFiltered, toggleTitleOf, toggleTypeOf } from "../src/toggle-dom";
+import { parseDeepLink, parseFilterParam } from "../src/deeplink";
+import { calloutTypeOfLine, nextTrafficColor, recolorHeaderLine } from "../src/recolor";
+import { QuizHarness, ensureDom } from "./e2e/harness";
+import { parseNoteToggles, readFixture, renderNoteMarkdown } from "./fixtures/note-parser";
+
+ensureDom();
+
+const MARKDOWN = readFixture("zoology-recall.md");
+const PARSED = parseNoteToggles(MARKDOWN);
+
+/** Expected, straight from the markdown source — not from the DOM path. */
+const EXPECTED: Record<RecallColor, string[]> = {
+  red: [],
+  yellow: [],
+  green: [],
+  other: [],
+};
+for (const t of PARSED) EXPECTED[colorOf(t.type)].push(t.title);
+
+const GRADED: RecallColor[] = ["red", "yellow", "green"];
+const COMBOS: RecallColor[][] = [
+  ["red"],
+  ["yellow"],
+  ["green"],
+  ["red", "yellow"],
+  ["red", "green"],
+  ["yellow", "green"],
+  ["red", "yellow", "green"],
+];
+
+let note: HTMLElement;
+beforeEach(() => {
+  const { html } = renderNoteMarkdown(MARKDOWN);
+  document.body.innerHTML = `<div class="markdown-preview-view" id="note">${html}</div>`;
+  note = document.getElementById("note") as HTMLElement;
+});
+
+const keepFor = (filter: RecallColor[]) => (el: HTMLElement) =>
+  matchesFilter(colorOf(toggleTypeOf(el)), filter);
+
+const titlesFor = (filter: RecallColor[]) =>
+  (filter.length ? collectToggleElsFiltered(note, keepFor(filter)) : collectToggleEls(note)).map((el) =>
+    toggleTitleOf(el)
+  );
+
+describe("real note — the fixture itself is what the note claims", () => {
+  it("parses every toggle, graded and plain", () => {
+    expect(PARSED.length).toBe(73);
+    expect(EXPECTED.red.length).toBe(14);
+    expect(EXPECTED.yellow.length).toBe(37);
+    expect(EXPECTED.green.length).toBe(20);
+    expect(EXPECTED.other.length).toBe(2); // the !tip legend + the !note preface
+  });
+
+  it("renders collapsed callouts, the way Obsidian folds `]-` toggles", () => {
+    const graded = [...note.querySelectorAll('[data-callout^="recall-"]')] as HTMLElement[];
+    expect(graded.length).toBe(71);
+    expect(graded.every((el) => el.classList.contains("is-collapsed"))).toBe(true);
+  });
+});
+
+describe("real note — colour read through the DOM path matches the source", () => {
+  it("counts each colour exactly once, nothing dropped or doubled", () => {
+    const colors = collectToggleEls(note).map((el) => colorOf(toggleTypeOf(el)));
+    expect(colors.length).toBe(73);
+    expect(colorCounts(colors)).toEqual({ red: 14, yellow: 37, green: 20, other: 2 });
+  });
+
+  it("keeps document order for an unfiltered collect", () => {
+    expect(titlesFor([])).toEqual(PARSED.map((t) => t.title));
+  });
+});
+
+describe("real note — every filter permutation", () => {
+  for (const filter of COMBOS) {
+    it(`${filterLabel(filter)} returns exactly the matching questions, in order`, () => {
+      const expected = PARSED.filter((t) => filter.includes(colorOf(t.type))).map((t) => t.title);
+      const got = titlesFor(filter);
+      expect(got).toEqual(expected);
+      expect(got.length).toBe(filter.reduce((n, c) => n + EXPECTED[c].length, 0));
+    });
+  }
+
+  it("an empty filter means all — graded plus plain", () => {
+    expect(titlesFor([]).length).toBe(73);
+  });
+
+  it("all graded (red+yellow+green) leaves the plain !note / !tip toggles out", () => {
+    const got = titlesFor(GRADED);
+    expect(got.length).toBe(71);
+    for (const title of EXPECTED.other) expect(got).not.toContain(title);
+  });
+
+  it("each permutation is a distinct selection", () => {
+    for (let i = 0; i < COMBOS.length; i++)
+      for (let j = i + 1; j < COMBOS.length; j++)
+        expect(sameFilter(COMBOS[i]!, COMBOS[j]!)).toBe(false);
+  });
+
+  it("a colour with no questions yields an empty plan, never a silent full run", () => {
+    const only = renderNoteMarkdown(
+      PARSED.filter((t) => colorOf(t.type) === "green")
+        .map((t) => `> [!${t.type}]- ${t.title}`)
+        .join("\n\n")
+    );
+    document.body.innerHTML = `<div class="markdown-preview-view" id="only">${only.html}</div>`;
+    const root = document.getElementById("only") as HTMLElement;
+    expect(collectToggleElsFiltered(root, keepFor(["red"]))).toEqual([]);
+    expect(planStops([], ["red"], false)).toEqual([]);
+  });
+});
+
+describe("real note — filtered stops travel in order", () => {
+  for (const filter of COMBOS) {
+    it(`plans ${filterLabel(filter)} stops top-to-bottom`, () => {
+      const els = collectToggleElsFiltered(note, keepFor(filter));
+      const stops = els.map((el, index) => ({
+        index,
+        top: index * 120,
+        color: colorOf(toggleTypeOf(el)),
+      }));
+      const planned = planStops(stops, filter, false);
+      expect(planned.map((s) => s.top)).toEqual(stops.map((s) => s.top));
+      expect(new Set(planned.map((s) => s.color)).size).toBeLessThanOrEqual(filter.length);
+      for (const s of planned) expect(filter).toContain(s.color);
+    });
+  }
+});
+
+describe("real note — filters round-trip through deep links and the picker", () => {
+  for (const filter of COMBOS) {
+    it(`filter=${filter.join(",")} survives the URL`, () => {
+      const link = parseDeepLink({ action: "quiz", file: "Zoology/Recall.md", filter: filter.join(",") });
+      expect(sameFilter(link?.filter ?? [], filter)).toBe(true);
+      expect(sameFilter(normalizeFilter([...filter].reverse()), filter)).toBe(true);
+    });
+  }
+
+  it("`graded` and `all` mean all three colours / everything", () => {
+    expect(parseFilterParam("graded")?.sort()).toEqual(["green", "red", "yellow"]);
+    expect(parseFilterParam("all") ?? []).toEqual([]);
+  });
+
+  it("labels are order-independent and non-empty for every permutation", () => {
+    for (const filter of COMBOS) {
+      expect(filterLabel(filter)).toBe(filterLabel([...filter].reverse()));
+      expect(filterLabel(filter).length).toBeGreaterThan(0);
+    }
+    expect(COLOR_ORDER).toEqual(["red", "yellow", "green", "other"]);
+  });
+});
+
+describe("real note — colour cycling over the note's own header lines", () => {
+  it("red → yellow → green → red without corrupting titles", () => {
+    const headers = MARKDOWN.split(/\r?\n/).filter((l) => /^>\s*\[!recall-/.test(l));
+    expect(headers.length).toBe(71);
+    for (const line of headers) {
+      const title = line.replace(/^>\s*\[![^\]]+\][+-]?\s*/, "");
+      let cur = line;
+      for (let i = 0; i < 3; i++)
+        cur = recolorHeaderLine(cur, nextTrafficColor(calloutTypeOfLine(cur)));
+      expect(cur.replace(/^>\s*\[![^\]]+\][+-]?\s*/, "")).toBe(title);
+      expect(calloutTypeOfLine(cur)).toBe(calloutTypeOfLine(line));
+      expect(cur.includes("]-")).toBe(line.includes("]-"));
+    }
+  });
+});
+
+describe("real note — a quiz run over a filtered deck", () => {
+  const run = (filter: RecallColor[]) => {
+    const h = new QuizHarness(note, { quizSeconds: 2, quizRevealSeconds: 1 }, filter);
+    return h;
+  };
+
+  it("red-only quiz captures the 14 red questions, in order", () => {
+    const h = run(["red"]);
+    expect(h.titles).toEqual(EXPECTED.red);
+    h.stop();
+  });
+
+  it("yellow+green quiz captures 57 questions and skips every red one", () => {
+    const h = run(["yellow", "green"]);
+    expect(h.titles.length).toBe(57);
+    for (const title of EXPECTED.red) expect(h.titles).not.toContain(title);
+    h.stop();
+  });
+
+  it("reveals land on natively collapsed callouts, one answer at a time", () => {
+    const h = run(["red"]);
+    h.revealNow();
+    expect(h.visibleTitles()).toEqual([EXPECTED.red[0]!]);
+    h.next();
+    expect(h.visibleTitles()).toEqual([]);
+    h.revealNow();
+    expect(h.visibleTitles()).toEqual([EXPECTED.red[1]!]);
+    h.stop();
+  });
+
+  it("walks the whole red deck and restores the note on teardown", () => {
+    const h = run(["red"]);
+    const before = h.els.map((el) => el!.className);
+    h.run();
+    expect(h.state.phase).toBe("done");
+    expect(h.state.at).toBe(EXPECTED.red.length - 1);
+    h.els.forEach((el, i) => {
+      expect(el!.className).toBe(before[i]!);
+      expect(el!.classList.contains("ntt-quiz-hidden")).toBe(false);
+      expect(el!.classList.contains("ntt-quiz-shown")).toBe(false);
+    });
+  });
+
+  it("heals after Obsidian re-renders the note mid-run, still on the filtered deck", () => {
+    const h = run(["yellow"]);
+    h.next();
+    const { html } = renderNoteMarkdown(MARKDOWN);
+    document.body.innerHTML = `<div class="markdown-preview-view" id="note">${html}</div>`;
+    const fresh = document.getElementById("note") as HTMLElement;
+    expect(h.els[1]!.isConnected).toBe(false);
+    (h as unknown as { container: HTMLElement }).container = fresh;
+    h.revealNow();
+    expect(h.els[1]!.isConnected).toBe(true);
+    expect(h.visibleTitles()).toEqual([EXPECTED.yellow[1]!]);
+    h.stop();
+  });
+});

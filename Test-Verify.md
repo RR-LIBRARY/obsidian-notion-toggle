@@ -349,3 +349,58 @@ shell. All ten architecture tests pass.
 
 A missing `MarkdownRenderer` / `Component` stub in `tests/setup.ts` surfaced as a
 module-load failure in an unrelated file; the stub was completed.
+
+---
+
+## v1.4.11 — deep verification: traffic-light filter + quiz over a filtered deck
+
+Ab tak ke filter tests choti hand-written markup par chalte the. Is round me ek
+**real note** ko fixture bana diya gaya: `tests/fixtures/zoology-recall.md`
+(RENEET 2026 NCERT Recall — 73 toggles: 14 🔴 / 37 🟡 / 20 🟢 + 2 plain
+`!tip`/`!note`). `tests/fixtures/note-parser.ts` markdown ko wahi reading-view
+markup me badalta hai jo Obsidian banata hai (`.callout.is-collapsed`,
+`.callout-title-inner`, `.callout-content`), aur `tests/filter-real-note.test.ts`
+usi DOM par plugin ke asli helpers chalata hai.
+
+### Kya verify hua (`tests/filter-real-note.test.ts` — 37 pass / 0 fail, 660 assertions)
+
+| Group | Tests | Result |
+|---|---|---|
+| Fixture sanity (parse count, per-colour count, `]-` = collapsed render) | 2 | Pass |
+| DOM colour path (`collectToggleEls` → `toggleTypeOf` → `colorOf`, counts + document order) | 2 | Pass |
+| Har filter permutation (7 combos + all + all-graded + empty result) | 11 | Pass |
+| Filtered stop planning (`planStops` travel order, sirf selected colours) | 7 | Pass |
+| Deep-link round trip (`filter=` for all 7 combos, `graded`, `all`, labels) | 10 | Pass |
+| Colour cycling note ke asli 71 header lines par (red→yellow→green→red) | 1 | Pass |
+| Quiz over a filtered deck (red-only deck, yellow+green deck, reveal, full walk + restore, mid-run heal) | 5 | Pass |
+
+### Concrete results
+
+- **Counts match the note's own legend exactly:** DOM se pada gaya
+  `{ red: 14, yellow: 37, green: 20, other: 2 }` — koi toggle drop nahi hua
+  (v1.2.4 ka nested-drop bug real data par bhi wapas nahi aaya) aur koi double
+  count nahi hua.
+- **Har permutation ka deck bit-for-bit expected titles ke barabar hai**, aur
+  document order me — 🔴 = 14, 🟡 = 37, 🟢 = 20, 🔴🟡 = 51, 🔴🟢 = 34,
+  🟡🟢 = 57, all-graded = 71, empty filter = 73.
+- **Plain toggles graded run me kabhi nahi aate:** `!tip` legend aur `!note`
+  preface all-graded deck se bahar rehte hain, lekin "All toggles" me shaamil.
+- **Jo colour note me nahi hai wo chup-chaap full run nahi banta:** khaali deck
+  → khaali plan.
+- **Quiz sequence filtered deck par sahi chalta hai:** red-only run 14 red
+  questions ko order me visit karta hai, ek time par ek hi answer visible hota
+  hai, natively collapsed callout par bhi reveal land karta hai (v1.4.10
+  `forceQuizOpen`), run ke baad har toggle ka className bilkul pehle jaisa
+  restore hota hai, aur mid-run poora section re-render hone par heal question
+  ko title se dobara pakad leta hai — skip nahi hota.
+
+**Koi naya bug nahi mila** — production code me is round me koi change nahi
+karna pada; sirf tests + fixture + docs add hue.
+
+### Gates
+
+| Gate | Result |
+|---|---|
+| `bun test` | **701 pass / 0 fail**, 2727 assertions, 39 files |
+| `tsc --noEmit` | Clean |
+| `bun run build` | OK — `main.js` 267.3 kb |
