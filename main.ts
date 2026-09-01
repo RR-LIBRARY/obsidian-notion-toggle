@@ -403,6 +403,9 @@ export default class NotionTogglePlugin extends Plugin {
   readonly perf = new Telemetry();
   /** v1.4.7 — stops already visited on this leg (skip guard, per stop). */
   scrollVisited = new Set<string>();
+  /** v1.5.7 — toggle numbers already revised on this leg (no re-opening). */
+  scrollVisitedPages = new Set<number>();
+
   /** v1.4.9 — stops recovered after a layout shift, for the debug overlay. */
   scrollSkipCount = 0;
   scrollLastSkips: string[] = [];
@@ -417,6 +420,9 @@ export default class NotionTogglePlugin extends Plugin {
   quizInterval: number | null = null;
   /** v1.1.9: one-shot re-scan guard when the view is still rendering. */
   quizRetryPending = false;
+  /** v1.5.7 — how many times the quiz waited for the note to finish rendering. */
+  quizRenderRetries = 0;
+
   /** v1.3.0 — pre-quiz state of every toggle, restored on stop. */
   quizSnapshot: ToggleSnapshot[] = [];
   /**
@@ -2542,6 +2548,8 @@ export default class NotionTogglePlugin extends Plugin {
   private resetDwell() {
     this.scrollDwellKey = null;
     this.scrollVisited.clear();
+    this.scrollVisitedPages.clear();
+
     this.scrollSkipCount = 0;
     this.scrollLastSkips = [];
   }
@@ -2559,8 +2567,14 @@ export default class NotionTogglePlugin extends Plugin {
     if (el && this.settings.scrollAutoOpen) this.setToggleOpen(el, true);
     this.scrollOpenEl = el ?? null;
     this.scrollBoxesAt = 0; // v1.4.7 — the layout just changed: re-measure next frame.
+    // v1.5.7 — remember the *toggle*, not just the stop key: opening it changes
+    // its height, and the re-measure would otherwise hand it fresh keys that
+    // look unvisited and drag the run back onto the same toggle.
+    if (Number.isFinite(ordinal) && ordinal > 0) this.scrollVisitedPages.add(ordinal);
     this.noteScrollVisit(ordinal, now);
   }
+
+
   /** Reader parity: a visit opens here and is graded when the pause ends. */
   private noteScrollVisit(ordinal: number, now = Date.now()) {
     if (!Number.isFinite(ordinal) || ordinal <= 0) return;
@@ -2740,7 +2754,15 @@ export default class NotionTogglePlugin extends Plugin {
         const targets = this.currentTargets(container, cfg);
         // v1.4.7 — every stop crossed by this frame, plus any stop a re-measure
         // pushed behind the playhead: nothing is skipped, only deferred.
-        const pick = pickStops(targets, prevPos, this.scrollPos, this.scrollDir, this.scrollVisited);
+        const pick = pickStops(
+          targets,
+          prevPos,
+          this.scrollPos,
+          this.scrollDir,
+          this.scrollVisited,
+          this.scrollVisitedPages
+        );
+
         if (pick.missed.length) {
           this.perf.noteSkipped(pick.missed.length);
           this.scrollSkipCount += pick.missed.length;
@@ -2855,23 +2877,38 @@ export default class NotionTogglePlugin extends Plugin {
       this.settings.scrollReverse
     ) as (ToggleStop & { el?: HTMLElement })[];
     if (stops.length === 0) {
-      // v1.1.9 — same one-shot retry as autoscroll: the reading view may still
-      // be rendering on mobile, so don't claim "no toggles" too early.
+      // v1.5.7 — the quiz now uses the same source-truth check as autoscroll:
+      // the note's markdown, not the lazily rendered DOM, decides whether this
+      // filter really has no toggles. That is what produced the false
+      // "No toggles match the filter (🔴)" toast on long notes.
+      const inSource = this.sourceMatchCount(filter);
+      const stillRendering = inSource > 0 && !this.renderedFully();
+      const nothingRendered = this.collectStops(container).length === 0;
       if (
-        this.collectStops(container).length === 0 &&
+        (stillRendering || nothingRendered) &&
+        this.sourceHasToggles() &&
         !this.quizRetryPending &&
-        this.sourceHasToggles()
+        this.quizRenderRetries < 4
       ) {
         this.quizRetryPending = true;
+        this.quizRenderRetries += 1;
         window.setTimeout(() => {
           this.quizRetryPending = false;
           if (!this.quizState) this.startQuizRun();
-        }, 700);
+        }, 350);
         return;
       }
-      new Notice(`No toggles match the filter (${filterLabel(filter)}).`);
+      this.quizRenderRetries = 0;
+      new Notice(
+        inSource > 0
+          ? `Quiz could not read this filter yet (${filterLabel(filter)}) — note me is filter ke ${inSource} toggle hain, note ko poora scroll karke dobara try karo.`
+          : `No toggles match the filter (${filterLabel(filter)}).`,
+        6000
+      );
       return;
     }
+    this.quizRenderRetries = 0;
+
     this.quizContainer = container;
     this.quizStops = stops;
     this.quizTitles = stops.map((s) => (s.el ? this.quizTitleOf(s.el) : ""));
