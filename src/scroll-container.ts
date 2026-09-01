@@ -94,6 +94,11 @@ export function pickAnyContainer(candidates: (Element | null | undefined)[]): HT
   return (candidates.find(Boolean) as HTMLElement | undefined) ?? null;
 }
 
+/** A mobile Reading View can be temporarily non-scrollable while it rerenders. */
+export function shouldWaitForScrollable(hasView: boolean, sourceHasToggles: boolean, retries: number): boolean {
+  return hasView && sourceHasToggles && retries < 8;
+}
+
 function dedupe(list: (Element | null | undefined)[]): HTMLElement[] {
   const seen = new Set<Element>();
   const out: HTMLElement[] = [];

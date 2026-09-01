@@ -39,6 +39,20 @@ export interface ToggleScan {
   el: HTMLElement;
   /** 1-based note-wide toggle number. */
   ordinal: number;
+  /** Stable across Reading View section replacement and partial DOM windows. */
+  identity: string;
+}
+
+/**
+ * A rendered element's run identity. Unlike its DOM ordinal, this survives
+ * Obsidian replacing lazy Reading View sections or changing the visible
+ * window. The complete title is intentional: numbered recall questions are
+ * unique even when several share the same colour.
+ */
+export function toggleIdentity(el: HTMLElement): string {
+  const kind = toggleTypeOf(el).trim().toLowerCase();
+  const title = toggleTitleOf(el).replace(/\s+/g, " ").trim().toLowerCase();
+  return `${kind}\u0000${title}`;
 }
 
 export function scanToggleEls(root: ParentNode, keep: (el: HTMLElement) => boolean): ToggleScan[] {
@@ -48,6 +62,7 @@ export function scanToggleEls(root: ParentNode, keep: (el: HTMLElement) => boole
   return collectToggleElsFiltered(root, keep).map((el) => ({
     el,
     ordinal: numberOf.get(el) ?? 0,
+    identity: toggleIdentity(el),
   }));
 }
 

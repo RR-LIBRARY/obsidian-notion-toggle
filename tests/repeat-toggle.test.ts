@@ -18,6 +18,14 @@ const target = (page: number, top: number, index = 0): DwellTarget => ({
   key: `${page}:${index}`,
 });
 
+const stableTarget = (page: number, identity: string, top: number, index = 0): DwellTarget => ({
+  page,
+  identity,
+  top,
+  index,
+  key: `${identity}:${index}`,
+});
+
 describe("v1.5.7 — a finished toggle is never re-opened", () => {
   it("new chunk keys of the just-opened toggle do not drag the run backwards", () => {
     // Toggle 2 was parked on at 1200 and opened; the re-measure now reports it
@@ -58,5 +66,36 @@ describe("v1.5.7 — a finished toggle is never re-opened", () => {
     const targets = [target(1, 1000), target(2, 1200), target(3, 1400)];
     const pick = pickStops(targets, 1100, 1090, -1, new Set(["1:0"]), new Set([1]));
     expect(pick.queue.map((t) => t.key)).toEqual(["3:0", "2:0"]);
+  });
+
+  it("does not reopen Q5 when a lazy DOM replacement changes its ordinal", () => {
+    const firstWindow = stableTarget(4, "recall-red\u0000q5", 1200);
+    const firstPick = pickStops([firstWindow], 1100, 1250, 1, new Set(), new Set());
+    expect(firstPick.stop?.identity).toBe("recall-red\u0000q5");
+
+    // Q5 was ordinal 4 in one rendered window and ordinal 2 after Obsidian
+    // replaced the section. Its physical identity remains the same.
+    const rerendered = [
+      stableTarget(2, "recall-red\u0000q5", 1180),
+      stableTarget(4, "recall-red\u0000q7", 1500),
+    ];
+    const pick = pickStops(
+      rerendered,
+      1450,
+      1550,
+      1,
+      new Set([firstWindow.key]),
+      new Set(["recall-red\u0000q5"]),
+    );
+    expect(pick.queue.map((t) => t.identity)).toEqual(["recall-red\u0000q7"]);
+  });
+
+  it("keeps continuation slices eligible for a tall completed identity", () => {
+    const parts = [
+      stableTarget(2, "recall-red\u0000q5", 1200),
+      stableTarget(2, "recall-red\u0000q5", 1900, 1),
+    ];
+    const pick = pickStops(parts, 1800, 1950, 1, new Set([parts[0]!.key]), new Set([parts[0]!.identity!]));
+    expect(pick.stop?.index).toBe(1);
   });
 });

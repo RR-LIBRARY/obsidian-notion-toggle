@@ -796,16 +796,18 @@ function pageStops(pageTop, pageHeight, viewportHeight) {
   return out;
 }
 function dwellTargets(boxes, cfg, viewportHeight) {
+  var _a;
   const out = [];
   for (const box of boxes) {
     if (!matchesParity(cfg, box.page))
       continue;
+    const identity = (_a = box.identity) != null ? _a : String(box.page);
     if (!cfg.a4) {
-      out.push({ page: box.page, top: box.top, index: 0, key: `${box.page}:0` });
+      out.push({ page: box.page, top: box.top, index: 0, key: `${identity}:0`, identity });
       continue;
     }
     pageStops(box.top, box.height, viewportHeight).forEach((top, index) => {
-      out.push({ page: box.page, top, index, key: `${box.page}:${index}` });
+      out.push({ page: box.page, top, index, key: `${identity}:${index}`, identity });
     });
   }
   return out.sort((a, b) => a.top - b.top);
@@ -1914,6 +1916,9 @@ function pickAnyContainer(candidates) {
       return el;
   return (_a = candidates.find(Boolean)) != null ? _a : null;
 }
+function shouldWaitForScrollable(hasView, sourceHasToggles, retries) {
+  return hasView && sourceHasToggles && retries < 8;
+}
 function dedupe(list) {
   const seen = /* @__PURE__ */ new Set();
   const out = [];
@@ -2707,6 +2712,11 @@ function collectToggleElsFiltered(root, keep) {
 function collectToggleEls(root) {
   return collectToggleElsFiltered(root, () => true);
 }
+function toggleIdentity(el) {
+  const kind = toggleTypeOf(el).trim().toLowerCase();
+  const title = toggleTitleOf(el).replace(/\s+/g, " ").trim().toLowerCase();
+  return `${kind}\0${title}`;
+}
 function scanToggleEls(root, keep) {
   const all = Array.from(root.querySelectorAll(TOGGLE_SELECTOR));
   const numberOf = /* @__PURE__ */ new Map();
@@ -2715,7 +2725,8 @@ function scanToggleEls(root, keep) {
     var _a;
     return {
       el,
-      ordinal: (_a = numberOf.get(el)) != null ? _a : 0
+      ordinal: (_a = numberOf.get(el)) != null ? _a : 0,
+      identity: toggleIdentity(el)
     };
   });
 }
@@ -3530,12 +3541,16 @@ function anchorScrollTop(container, top, height, anchor) {
     Math.max(0, container.scrollHeight - container.clientHeight)
   );
 }
-function pickStops(targets, prevPos, pos, dir, visited, donePages = /* @__PURE__ */ new Set()) {
+function pickStops(targets, prevPos, pos, dir, visited, doneIdentities = /* @__PURE__ */ new Set()) {
   const unvisited = (t) => !visited.has(t.key);
-  const reopens = (t) => donePages.has(t.page) && t.index === 0;
+  const identityOf = (t) => {
+    var _a;
+    return (_a = t.identity) != null ? _a : t.page;
+  };
+  const reopens = (t) => doneIdentities.has(identityOf(t)) && t.index === 0;
   const crossed = crossedTargets(targets, prevPos, pos, dir).filter((t) => unvisited(t) && !reopens(t));
   const missed = targets.filter(
-    (t) => unvisited(t) && !donePages.has(t.page) && !crossed.some((c) => c.key === t.key) && (dir < 0 ? t.top > pos + 1 : t.top < pos - 1)
+    (t) => unvisited(t) && !doneIdentities.has(identityOf(t)) && !crossed.some((c) => c.key === t.key) && (dir < 0 ? t.top > pos + 1 : t.top < pos - 1)
   );
   const queue = [...missed, ...crossed].sort((a, b) => dir < 0 ? b.top - a.top : a.top - b.top);
   return { stop: queue[0], missed, queue };
@@ -5775,10 +5790,9 @@ var NotionTogglePlugin = class extends import_obsidian7.Plugin {
     /* v1.1.0 quiz mode state */
     /** v1.3.3 — lightweight perf telemetry (quiz paint cadence, re-measure latency). */
     this.perf = new Telemetry();
-    /** v1.4.7 — stops already visited on this leg (skip guard, per stop). */
     this.scrollVisited = /* @__PURE__ */ new Set();
-    /** v1.5.7 — toggle numbers already revised on this leg (no re-opening). */
-    this.scrollVisitedPages = /* @__PURE__ */ new Set();
+    // Per-stop skip guard.
+    this.scrollVisitedToggles = /* @__PURE__ */ new Set();
     /** v1.4.9 — stops recovered after a layout shift, for the debug overlay. */
     this.scrollSkipCount = 0;
     this.scrollLastSkips = [];
@@ -7164,6 +7178,7 @@ ${row}`, { line: cursor.line, ch: line.length });
       return {
         index,
         ordinal: s.ordinal,
+        identity: s.identity,
         top: Math.max(0, Math.round(rect.top - base)),
         height: Math.round(rect.height),
         color: kindOf(toggleTypeOf(s.el)),
@@ -7389,6 +7404,7 @@ ${row}`, { line: cursor.line, ch: line.length });
         top: ms2.top,
         color: src.color,
         el: src.el,
+        identity: src.identity,
         ordinal: ms2.ordinal,
         part: ms2.part
       }];
@@ -7530,6 +7546,18 @@ ${deckSummary(
     }
     const container = this.findScrollContainer();
     if (!container) {
+      if (shouldWaitForScrollable(!!this.findViewContainer(), this.sourceHasToggles(), this.scrollRenderRetries)) {
+        if (!this.scrollRetryPending) {
+          this.scrollRetryPending = true;
+          this.scrollRenderRetries += 1;
+          window.setTimeout(() => {
+            this.scrollRetryPending = false;
+            if (!this.scrollRunning && this.scrollPlan.length === 0)
+              this.startAutoScroll();
+          }, 350);
+        }
+        return;
+      }
       new import_obsidian7.Notice(this.findViewContainer() ? MSG_NO_SCROLLER : "Open a note first.", 8e3);
       this.endFullRender();
       return;
@@ -7893,7 +7921,7 @@ ${deckSummary(
     this.scrollElByOrdinal = /* @__PURE__ */ new Map();
     this.scrollBoxes = kept.map((st) => {
       this.scrollElByOrdinal.set(st.ordinal, st.el);
-      return { page: st.ordinal, top: st.top, height: st.height };
+      return { page: st.ordinal, top: st.top, height: st.height, identity: st.identity };
     }).sort((a, b) => a.top - b.top);
     this.scrollTargetsKey = "";
     if (grew && this.scrollRunning) {
@@ -7922,7 +7950,8 @@ ${deckSummary(
         top,
         height: screenVh,
         index: 0,
-        key: `screen:${index}`
+        key: `screen:${index}`,
+        identity: `screen:${index}`
       }));
       const targets = advanceBy === "screens" ? screenTargets : advanceBy === "both" ? mergeStops(screenTargets, toggleTargets, screenMergeTolerance(screenVh)) : toggleTargets;
       this.scrollTargets = targets;
@@ -7935,22 +7964,19 @@ ${deckSummary(
     }
     return this.scrollTargets;
   }
-  /** v1.4.7 — a fresh leg: no stop is "already used" any more. */
   resetDwell() {
     this.scrollDwellKey = null;
     this.scrollVisited.clear();
-    this.scrollVisitedPages.clear();
+    this.scrollVisitedToggles.clear();
     this.scrollSkipCount = 0;
     this.scrollLastSkips = [];
   }
-  /** Repaint the debug overlay (when on) and queue the next frame. */
   endScrollFrame(ts) {
     if (this.scrollDebugOverlay)
       this.paintScrollDebug({}, ts);
     this.scheduleScrollFrame();
   }
-  /** Open the toggle we just parked on and start its visit clock. */
-  parkOnToggle(ordinal, now) {
+  parkOnToggle(ordinal, now, identity) {
     const el = this.scrollElByOrdinal.get(ordinal);
     if (this.scrollOpenEl && this.scrollOpenEl !== el && this.settings.scrollAutoClose) {
       this.setToggleOpen(this.scrollOpenEl, false);
@@ -7959,8 +7985,8 @@ ${deckSummary(
       this.setToggleOpen(el, true);
     this.scrollOpenEl = el != null ? el : null;
     this.scrollBoxesAt = 0;
-    if (Number.isFinite(ordinal) && ordinal > 0)
-      this.scrollVisitedPages.add(ordinal);
+    if (identity)
+      this.scrollVisitedToggles.add(identity);
     this.noteScrollVisit(ordinal, now);
   }
   /** Reader parity: a visit opens here and is graded when the pause ends. */
@@ -8047,6 +8073,7 @@ ${deckSummary(
     return true;
   }
   autoScrollFrame(ts) {
+    var _a;
     this.scrollRaf = null;
     if (!this.scrollRunning || this.scrollHoldPaused)
       return;
@@ -8115,7 +8142,7 @@ ${deckSummary(
           this.scrollDwellUntil = ts + (routeTarget != null && this.scrollRouteStop < routeStops.length ? clampScreenDwellMs(this.settings.scrollScreenDwellMs) : cfg.seconds * 1e3);
           const ordinal = cfg.route[this.scrollRouteIdx % cfg.route.length];
           this.scrollLastEvent = `waypointReached toggle ${ordinal} @ ${Math.round(routeTarget)}`;
-          this.parkOnToggle(ordinal, ts);
+          this.parkOnToggle(ordinal, ts, (_a = this.scrollBoxes.find((box) => box.page === ordinal)) == null ? void 0 : _a.identity);
           if (this.scrollRouteStop < routeStops.length - 1) {
             this.scrollRouteStop += 1;
             this.endScrollFrame(ts);
@@ -8149,7 +8176,7 @@ ${deckSummary(
           this.scrollPos,
           this.scrollDir,
           this.scrollVisited,
-          this.scrollVisitedPages
+          this.scrollVisitedToggles
         );
         if (pick.missed.length) {
           this.perf.noteSkipped(pick.missed.length);
@@ -8166,7 +8193,7 @@ ${deckSummary(
           container.scrollTop = Math.floor(stop.top);
           this.scrollAt = targets.findIndex((t) => t.key === stop.key);
           this.scrollLastEvent = `crossedTarget ${stop.key} @ ${Math.round(stop.top)}`;
-          this.parkOnToggle(stop.page, ts);
+          this.parkOnToggle(stop.page, ts, stop.identity);
           this.renderScrollBar();
           this.endScrollFrame(ts);
           return;

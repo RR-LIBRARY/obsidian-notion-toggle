@@ -16,6 +16,7 @@ import {
   isScrollStuck,
   pickAnyContainer,
   pickScrollContainer,
+  shouldWaitForScrollable,
   viewScrollCandidates,
 } from "../src/scroll-container";
 
@@ -156,5 +157,18 @@ describe("stuck detection", () => {
   it("has a message that tells the reader what to do", () => {
     expect(MSG_NO_SCROLLER).toContain("reading view");
     expect(MSG_NO_SCROLLER.length).toBeGreaterThan(30);
+  });
+});
+
+describe("delayed mobile scrollability", () => {
+  it("waits while a note with source toggles is still becoming scrollable", () => {
+    expect(shouldWaitForScrollable(true, true, 0)).toBe(true);
+    expect(shouldWaitForScrollable(true, true, 7)).toBe(true);
+  });
+
+  it("eventually reports a real non-scrollable view", () => {
+    expect(shouldWaitForScrollable(true, true, 8)).toBe(false);
+    expect(shouldWaitForScrollable(true, false, 0)).toBe(false);
+    expect(shouldWaitForScrollable(false, true, 0)).toBe(false);
   });
 });

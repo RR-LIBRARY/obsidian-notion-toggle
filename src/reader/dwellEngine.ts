@@ -240,6 +240,8 @@ export interface PageBox {
   top: number;
   /** Rendered page height in px. 0 / unknown falls back to a single stop. */
   height: number;
+  /** Stable physical identity when a virtualized DOM changes page ordinals. */
+  identity?: string;
 }
 
 /** One place the engine parks on: a page, plus which slice of it. */
@@ -250,6 +252,8 @@ export interface DwellTarget {
   index: number;
   /** Stable identity used as the "already paused here" guard. */
   key: string;
+  /** Stable physical page/toggle identity, independent of a rendered ordinal. */
+  identity?: string;
 }
 
 /**
@@ -285,12 +289,13 @@ export function dwellTargets(
   const out: DwellTarget[] = [];
   for (const box of boxes) {
     if (!matchesParity(cfg, box.page)) continue;
+    const identity = box.identity ?? String(box.page);
     if (!cfg.a4) {
-      out.push({ page: box.page, top: box.top, index: 0, key: `${box.page}:0` });
+      out.push({ page: box.page, top: box.top, index: 0, key: `${identity}:0`, identity });
       continue;
     }
     pageStops(box.top, box.height, viewportHeight).forEach((top, index) => {
-      out.push({ page: box.page, top, index, key: `${box.page}:${index}` });
+      out.push({ page: box.page, top, index, key: `${identity}:${index}`, identity });
     });
   }
   return out.sort((a, b) => a.top - b.top);

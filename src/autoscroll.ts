@@ -75,6 +75,10 @@ export interface AutoScrollSettings {
   scrollAdvanceBy: "toggles" | "screens" | "both";
   /** v1.5.2 — fraction of the previous screen retained in screen mode. */
   scrollScreenOverlap: number;
+  /** v1.5.2 — fraction of the client height treated as one screenful. */
+  scrollViewportPct: number;
+  /** v1.5.2 — how long a plain screen stop is held, in ms. */
+  scrollScreenDwellMs: number;
   scrollShuffleFrom: number;
   scrollShuffleTo: number;
   /** Target recall for shuffle scheduling (0.7 … 0.97). */
@@ -114,6 +118,8 @@ export const DEFAULT_AUTOSCROLL: AutoScrollSettings = {
   scrollChunkTall: true,
   scrollAdvanceBy: "toggles",
   scrollScreenOverlap: 0.1,
+  scrollViewportPct: 0.9,
+  scrollScreenDwellMs: 4000,
   scrollShuffleFrom: 0,
   scrollShuffleTo: 0,
   scrollRetention: 0.9,
@@ -227,6 +233,8 @@ export interface ToggleStop {
   /** Distance from the top of the scroll container, in px. */
   top: number;
   color: RecallColor;
+  /** Stable rendered-toggle identity used across lazy DOM replacement. */
+  identity?: string;
 }
 
 /** Toggles the session should visit, in travel order. */

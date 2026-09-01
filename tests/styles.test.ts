@@ -44,4 +44,16 @@ describe("v1.5.6 bottom strip", () => {
       /\.is-mobile \.markdown-preview-view,[\s\S]*?\{\s*padding-bottom: env\(safe-area-inset-bottom, 0px\);\s*\}/,
     );
   });
+
+  it("has no fixed mobile bottom reservation outside quiz-active selectors", () => {
+    const declarations = [...css.matchAll(/([^{}]*)\{([^}]*(?:padding-bottom|margin-bottom|min-height)[^}]*)\}/g)];
+    for (const [, selectors, body] of declarations) {
+      if (!/88px|calc\(88px/.test(body)) continue;
+      for (const selector of selectors.split(",")) {
+        if (/markdown-preview-view|markdown-reading-view|view-content/.test(selector)) {
+          expect(selector).toContain("ntt-quiz-active");
+        }
+      }
+    }
+  });
 });

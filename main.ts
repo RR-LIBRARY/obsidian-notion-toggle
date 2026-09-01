@@ -87,6 +87,7 @@ import {
   isScrollStuck,
   pickAnyContainer,
   pickScrollContainer,
+  shouldWaitForScrollable,
   viewScrollCandidates,
 } from "./src/scroll-container";
 import {
@@ -401,11 +402,8 @@ export default class NotionTogglePlugin extends Plugin {
   /* v1.1.0 quiz mode state */
   /** v1.3.3 — lightweight perf telemetry (quiz paint cadence, re-measure latency). */
   readonly perf = new Telemetry();
-  /** v1.4.7 — stops already visited on this leg (skip guard, per stop). */
-  scrollVisited = new Set<string>();
-  /** v1.5.7 — toggle numbers already revised on this leg (no re-opening). */
-  scrollVisitedPages = new Set<number>();
-
+  scrollVisited = new Set<string>(); // Per-stop skip guard.
+  scrollVisitedToggles = new Set<string>();
   /** v1.4.9 — stops recovered after a layout shift, for the debug overlay. */
   scrollSkipCount = 0;
   scrollLastSkips: string[] = [];
@@ -1788,6 +1786,7 @@ export default class NotionTogglePlugin extends Plugin {
       return {
         index,
         ordinal: s.ordinal,
+        identity: s.identity,
         top: Math.max(0, Math.round(rect.top - base)),
         height: Math.round(rect.height),
         color: kindOf(toggleTypeOf(s.el)),
@@ -1971,6 +1970,7 @@ export default class NotionTogglePlugin extends Plugin {
       el: HTMLElement;
       height: number;
       ordinal: number;
+      identity: string;
     })[];
     this.scrollTotalItems = kept.length;
     this.scrollNoteTotal = noteToggleCount(container);
@@ -1998,8 +1998,7 @@ export default class NotionTogglePlugin extends Plugin {
       return [{
         index: src.index,
         top: ms.top,
-        color: src.color,
-        el: src.el,
+        color: src.color, el: src.el, identity: src.identity,
         ordinal: ms.ordinal,
         part: ms.part,
       } as ToggleStop & { el: HTMLElement; ordinal: number; part: number }];
@@ -2130,7 +2129,17 @@ export default class NotionTogglePlugin extends Plugin {
     }
     const container = this.findScrollContainer();
     if (!container) {
-      // v1.4.10 — "nothing here can scroll" is not "no note open".
+      if (shouldWaitForScrollable(!!this.findViewContainer(), this.sourceHasToggles(), this.scrollRenderRetries)) {
+        if (!this.scrollRetryPending) {
+          this.scrollRetryPending = true;
+          this.scrollRenderRetries += 1;
+          window.setTimeout(() => {
+            this.scrollRetryPending = false;
+            if (!this.scrollRunning && this.scrollPlan.length === 0) this.startAutoScroll();
+          }, 350);
+        }
+        return;
+      }
       new Notice(this.findViewContainer() ? MSG_NO_SCROLLER : "Open a note first.", 8000);
       this.endFullRender();
       return;
@@ -2487,6 +2496,7 @@ export default class NotionTogglePlugin extends Plugin {
       el: HTMLElement;
       height: number;
       ordinal: number;
+      identity: string;
     })[];
     const grew = kept.length > this.scrollTotalItems;
     this.scrollTotalItems = kept.length;
@@ -2497,7 +2507,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollBoxes = kept
       .map((st) => {
         this.scrollElByOrdinal.set(st.ordinal, st.el);
-        return { page: st.ordinal, top: st.top, height: st.height };
+        return { page: st.ordinal, top: st.top, height: st.height, identity: st.identity };
       })
       .sort((a, b) => a.top - b.top);
     this.scrollTargetsKey = "";
@@ -2525,7 +2535,7 @@ export default class NotionTogglePlugin extends Plugin {
       const derived = this.screenPlanFor(container);
       const screenVh = derived.screenPx;
       const screenTargets = this.screenPlanTops(container, this.scrollBoxes.map((b) => b.top)).map((top, index) => ({
-        page: -(index + 1), top, height: screenVh, index: 0, key: `screen:${index}`,
+        page: -(index + 1), top, height: screenVh, index: 0, key: `screen:${index}`, identity: `screen:${index}`,
       }));
       const targets = advanceBy === "screens"
         ? screenTargets
@@ -2544,22 +2554,18 @@ export default class NotionTogglePlugin extends Plugin {
     }
     return this.scrollTargets;
   }
-  /** v1.4.7 — a fresh leg: no stop is "already used" any more. */
   private resetDwell() {
     this.scrollDwellKey = null;
     this.scrollVisited.clear();
-    this.scrollVisitedPages.clear();
-
+    this.scrollVisitedToggles.clear();
     this.scrollSkipCount = 0;
     this.scrollLastSkips = [];
   }
-  /** Repaint the debug overlay (when on) and queue the next frame. */
   private endScrollFrame(ts: number) {
     if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
     this.scheduleScrollFrame();
   }
-  /** Open the toggle we just parked on and start its visit clock. */
-  private parkOnToggle(ordinal: number, now: number) {
+  private parkOnToggle(ordinal: number, now: number, identity?: string) {
     const el = this.scrollElByOrdinal.get(ordinal);
     if (this.scrollOpenEl && this.scrollOpenEl !== el && this.settings.scrollAutoClose) {
       this.setToggleOpen(this.scrollOpenEl, false);
@@ -2567,14 +2573,9 @@ export default class NotionTogglePlugin extends Plugin {
     if (el && this.settings.scrollAutoOpen) this.setToggleOpen(el, true);
     this.scrollOpenEl = el ?? null;
     this.scrollBoxesAt = 0; // v1.4.7 — the layout just changed: re-measure next frame.
-    // v1.5.7 — remember the *toggle*, not just the stop key: opening it changes
-    // its height, and the re-measure would otherwise hand it fresh keys that
-    // look unvisited and drag the run back onto the same toggle.
-    if (Number.isFinite(ordinal) && ordinal > 0) this.scrollVisitedPages.add(ordinal);
+    if (identity) this.scrollVisitedToggles.add(identity);
     this.noteScrollVisit(ordinal, now);
   }
-
-
   /** Reader parity: a visit opens here and is graded when the pause ends. */
   private noteScrollVisit(ordinal: number, now = Date.now()) {
     if (!Number.isFinite(ordinal) || ordinal <= 0) return;
@@ -2719,7 +2720,7 @@ export default class NotionTogglePlugin extends Plugin {
             : cfg.seconds * 1000);
           const ordinal = cfg.route[this.scrollRouteIdx % cfg.route.length];
           this.scrollLastEvent = `waypointReached toggle ${ordinal} @ ${Math.round(routeTarget)}`;
-          this.parkOnToggle(ordinal, ts);
+          this.parkOnToggle(ordinal, ts, this.scrollBoxes.find((box) => box.page === ordinal)?.identity);
           // More screenfuls left on this toggle → stay on this waypoint.
           if (this.scrollRouteStop < routeStops.length - 1) {
             this.scrollRouteStop += 1;
@@ -2760,7 +2761,7 @@ export default class NotionTogglePlugin extends Plugin {
           this.scrollPos,
           this.scrollDir,
           this.scrollVisited,
-          this.scrollVisitedPages
+          this.scrollVisitedToggles
         );
 
         if (pick.missed.length) {
@@ -2778,7 +2779,7 @@ export default class NotionTogglePlugin extends Plugin {
           container.scrollTop = Math.floor(stop.top);
           this.scrollAt = targets.findIndex((t) => t.key === stop.key);
           this.scrollLastEvent = `crossedTarget ${stop.key} @ ${Math.round(stop.top)}`;
-          this.parkOnToggle(stop.page, ts);
+          this.parkOnToggle(stop.page, ts, stop.identity);
           this.renderScrollBar();
           this.endScrollFrame(ts);
           return;

@@ -54,12 +54,14 @@ export interface StopPick {
  *     opened or closed) — still unvisited, so it is picked up as "missed";
  *  3. two stops sharing a dwell key — the guard is a per-stop visited set.
  *
- * v1.5.7 — `donePages` closes the "one toggle keeps re-opening" loop. Opening a
+ * v1.5.8 — `doneIdentities` closes the remaining mobile re-open loop. Opening a
  * toggle makes it taller, so the forced re-measure can hand the *same* toggle a
  * larger set of chunk keys (`7:1`, `7:2` …) that were never visited. Those new
  * keys sit behind the playhead, so the "missed" rescue used to jump straight
  * back onto the toggle the run had just finished. A toggle already recorded as
- * visited can therefore never be rescued backwards again; chunk reading still
+ * visited can therefore never be rescued backwards again. Identity, rather
+ * than the rendered ordinal, is used because Obsidian can replace a lazy
+ * section and renumber the visible DOM between measurements; chunk reading still
  * works, because those stops are reached *forwards* as `crossed`.
  */
 export function pickStops(
@@ -68,19 +70,20 @@ export function pickStops(
   pos: number,
   dir: number,
   visited: ReadonlySet<string>,
-  donePages: ReadonlySet<number> = new Set()
+  doneIdentities: ReadonlySet<string | number> = new Set()
 ): StopPick {
   const unvisited = (t: DwellTarget) => !visited.has(t.key);
+  const identityOf = (t: DwellTarget): string | number => t.identity ?? t.page;
   // A finished toggle's *first* stop can also drift forward when the toggle
   // grows, so it must not be crossed a second time either. Its continuation
   // chunks (index > 0) stay eligible: that is how a tall answer is read on.
-  const reopens = (t: DwellTarget) => donePages.has(t.page) && t.index === 0;
+  const reopens = (t: DwellTarget) => doneIdentities.has(identityOf(t)) && t.index === 0;
   const crossed = crossedTargets(targets, prevPos, pos, dir).filter((t) => unvisited(t) && !reopens(t));
 
   const missed = targets.filter(
     (t) =>
       unvisited(t) &&
-      !donePages.has(t.page) &&
+      !doneIdentities.has(identityOf(t)) &&
       !crossed.some((c) => c.key === t.key) &&
       (dir < 0 ? t.top > pos + 1 : t.top < pos - 1)
   );
