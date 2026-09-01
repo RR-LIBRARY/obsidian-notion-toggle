@@ -1,4 +1,4 @@
-# Feature status — v1.5.4
+# Feature status — v1.5.5
 
 **Verification rule:** Working means covered by a passing automated test, a deterministic source audit, or an explicitly named end-to-end fixture. Remaining means the capability is not broken; it still needs the validation gate listed below.
 
@@ -6,13 +6,15 @@
 
 | Status | Count | Meaning |
 |---|---:|---|
-| Working | 34 | Implemented and verified in the current suite / audit |
+| Working | 36 | Implemented and verified in the current suite / audit |
 | Remaining validation | 4 | Needs real-device, long-note, or accessibility proof |
-| **Total tracked** | **38** | Full product surface |
+| **Total tracked** | **40** | Full product surface |
 
 ## Working features
 
-1. Full-note render before a run (lazy-render fix, v1.5.4)
+1. Source-truth filter counts in every picker (v1.5.5)
+2. Smooth reveal *and* revert animation (v1.5.5)
+3. Full-note render before a run (lazy-render fix, v1.5.4)
 2. Source-truth toggle counts per filter (v1.5.4)
 3. Mid-run plan healing for late-rendered toggles (v1.5.4)
 4. Toggle create, wrap, convert, and native callout output

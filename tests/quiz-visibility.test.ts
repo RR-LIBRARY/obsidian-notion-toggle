@@ -57,7 +57,11 @@ describe("class-based reveal (no Obsidian fold events)", () => {
     Object.defineProperty(content, "scrollHeight", { configurable: true, value: 2400 });
     setQuizVisible(els[0], true);
     expect(content.style.getPropertyValue("--ntt-reveal-height")).toBe("2400px");
+    // v1.5.5 — the height is kept on hide so the collapse animates from it;
+    // `clearQuizVisibility` is what hands the element back clean.
     setQuizVisible(els[0], false);
+    expect(content.style.getPropertyValue("--ntt-reveal-height")).toBe("2400px");
+    clearQuizVisibility([els[0]]);
     expect(content.style.getPropertyValue("--ntt-reveal-height")).toBe("");
   });
 
@@ -122,5 +126,37 @@ describe("stop gives the note back untouched", () => {
     setQuizVisible(els[0], false);
     clearQuizVisibility(els);
     expect(els[0].className).not.toContain("ntt-quiz");
+  });
+});
+
+/* v1.5.5 — the revert must animate too: the measured height stays on the
+   element while hiding, so CSS can ease it shut from its real height. */
+describe("v1.5.5 smooth revert", () => {
+  it("keeps the measured reveal height when the answer is hidden again", () => {
+    const { els } = mount(callout("recall-red"));
+    const el = els[0];
+    const content = el.querySelector(".callout-content") as HTMLElement;
+    Object.defineProperty(content, "scrollHeight", { value: 420, configurable: true });
+
+    setQuizVisible(el, true);
+    expect(content.style.getPropertyValue("--ntt-reveal-height")).toBe("420px");
+
+    setQuizVisible(el, false);
+    // Height survives the flip so the collapse animation has a start value.
+    expect(content.style.getPropertyValue("--ntt-reveal-height")).toBe("420px");
+    expect(el.classList.contains(QUIZ_HIDDEN_CLASS)).toBe(true);
+    expect(el.classList.contains(QUIZ_SHOWN_CLASS)).toBe(false);
+  });
+
+  it("clearing quiz visibility removes the height again", () => {
+    const { els } = mount(callout("recall-green"));
+    const el = els[0];
+    const content = el.querySelector(".callout-content") as HTMLElement;
+    Object.defineProperty(content, "scrollHeight", { value: 200, configurable: true });
+    setQuizVisible(el, true);
+    setQuizVisible(el, false);
+    clearQuizVisibility([el], snapshotToggles([el]));
+    expect(content.style.getPropertyValue("--ntt-reveal-height")).toBe("");
+    expect(el.classList.contains(QUIZ_HIDDEN_CLASS)).toBe(false);
   });
 });

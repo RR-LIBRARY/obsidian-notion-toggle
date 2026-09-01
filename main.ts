@@ -1789,8 +1789,17 @@ export default class NotionTogglePlugin extends Plugin {
       } as ToggleStop & { el: HTMLElement; height: number; ordinal: number };
     });
   }
-  /** v1.5.0 — per-kind counts + percentages for the active note. */
+  /**
+   * v1.5.0 — per-kind counts + percentages for the active note.
+   *
+   * v1.5.5 — counted from the note *source*, not the rendered DOM. Reading View
+   * only renders the screenful around the reader, so the DOM scan reported
+   * "12 toggles" on a 71-toggle note and greyed out filters that really do have
+   * matches. The DOM is only a fallback for the no-active-file case.
+   */
   calloutBreakdown(): KindCount[] {
+    const source = scanSourceToggles(this.noteSource());
+    if (source.total > 0) return countKinds(source.kinds);
     const container = this.findViewContainer();
     if (!container) return countKinds([]);
     return countKinds((this.collectStops(container) as ToggleStop[]).map((s) => s.color));

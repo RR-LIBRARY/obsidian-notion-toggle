@@ -1,4 +1,6 @@
-# Notion Toggle — Poora Manual (v1.5.4)
+# Notion Toggle — Poora Manual (v1.5.5)
+
+> **v1.5.5 (fix release)** — filter picker ke counts ab note ke **source** se aate hain, live DOM se nahi. Pehle Reading View ki lazy rendering ki wajah se 71-toggle note par "12 toggles · 🟢 6 · 🟡 5 · 🔴 1" dikhta tha aur baaki filters khali (grey) lagte the. Ab poora breakdown (14🔴 / 37🟡 / 20🟢 + note/tip/question…) har scroll position par sahi hai, koi filter toggle miss nahi hota. Saath hi answer band hone (revert) par bhi 140ms smooth collapse — pehle sirf khulna smooth tha, band hona snap karta tha (wahi blink lagta tha).
 
 > **v1.5.4 (fix release)** — Obsidian long note ka sirf visible hissa render karta hai (lazy rendering). Isi wajah se do bug the: (1) galat toast "No toggles match this selection (🔴 · every toggle)" jabki note me red toggles the, aur (2) shuru ke kuchh toggles khulne ke baad run sirf scroll karta reh jata tha. Ab autoscroll aur quiz run se pehle poora note render hota hai, plan note ke **source** (markdown) se verify hota hai, aur naye render hue toggles run ke beech plan me **heal** ho jate hain (progress lose nahi hoti). Settings me "Screen calculation (live)" ab exact px maths dikhata hai.
 

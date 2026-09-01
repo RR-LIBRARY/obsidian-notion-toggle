@@ -3042,17 +3042,14 @@ function setQuizVisible(el, visible) {
     el.classList.toggle(QUIZ_HIDDEN_CLASS, !visible);
     return;
   }
+  const content = el.querySelector(".callout-content");
+  if (content) {
+    const height = Math.max(content.scrollHeight, content.getBoundingClientRect().height);
+    if (height > 0)
+      content.style.setProperty("--ntt-reveal-height", `${height}px`);
+  }
   el.classList.toggle(QUIZ_SHOWN_CLASS, visible);
   el.classList.toggle(QUIZ_HIDDEN_CLASS, !visible);
-  const content = el.querySelector(".callout-content");
-  if (!content)
-    return;
-  if (visible) {
-    const height = Math.max(content.scrollHeight, content.getBoundingClientRect().height);
-    content.style.setProperty("--ntt-reveal-height", `${height}px`);
-  } else {
-    content.style.removeProperty("--ntt-reveal-height");
-  }
 }
 function applyQuizVisibilityClasses(els, index, revealed, closeOthers) {
   els.forEach((el, i) => {
@@ -7176,8 +7173,18 @@ ${row}`, { line: cursor.line, ch: line.length });
       };
     });
   }
-  /** v1.5.0 — per-kind counts + percentages for the active note. */
+  /**
+   * v1.5.0 — per-kind counts + percentages for the active note.
+   *
+   * v1.5.5 — counted from the note *source*, not the rendered DOM. Reading View
+   * only renders the screenful around the reader, so the DOM scan reported
+   * "12 toggles" on a 71-toggle note and greyed out filters that really do have
+   * matches. The DOM is only a fallback for the no-active-file case.
+   */
   calloutBreakdown() {
+    const source = scanSourceToggles(this.noteSource());
+    if (source.total > 0)
+      return countKinds(source.kinds);
     const container = this.findViewContainer();
     if (!container)
       return countKinds([]);

@@ -42,18 +42,16 @@ export function setQuizVisible(el: HTMLElement, visible: boolean): void {
     el.classList.toggle(QUIZ_HIDDEN_CLASS, !visible);
     return;
   }
+  const content = el.querySelector<HTMLElement>(".callout-content");
+  // v1.5.5 — measure *before* the class flip so both directions have a real
+  // start height: revealing grows from 0 to the answer height, hiding shrinks
+  // from that same height back to 0 instead of snapping shut.
+  if (content) {
+    const height = Math.max(content.scrollHeight, content.getBoundingClientRect().height);
+    if (height > 0) content.style.setProperty("--ntt-reveal-height", `${height}px`);
+  }
   el.classList.toggle(QUIZ_SHOWN_CLASS, visible);
   el.classList.toggle(QUIZ_HIDDEN_CLASS, !visible);
-  const content = el.querySelector<HTMLElement>(".callout-content");
-  if (!content) return;
-  if (visible) {
-    // The measured height lets CSS reveal the full answer without a fixed
-    // max-height, which is important for long mobile answers.
-    const height = Math.max(content.scrollHeight, content.getBoundingClientRect().height);
-    content.style.setProperty("--ntt-reveal-height", `${height}px`);
-  } else {
-    content.style.removeProperty("--ntt-reveal-height");
-  }
 }
 
 /** Is this toggle currently revealed by the quiz? */

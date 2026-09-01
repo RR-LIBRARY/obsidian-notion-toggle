@@ -671,6 +671,29 @@ body.ntt-quiz-active details > *:not(summary) {
 body.ntt-quiz-active .callout.ntt-quiz-shown > .callout-content {
   animation: ntt-reveal 160ms ease-out both;
 }
+/* v1.5.5 — the revert is animated too: the measured height stays on the element
+   after hiding, so the answer eases shut from its real height instead of
+   snapping to zero (that snap was the "blink" on mobile). */
+@keyframes ntt-collapse {
+  from {
+    max-height: var(--ntt-reveal-height, 0px);
+    opacity: 1;
+  }
+  to {
+    max-height: 0;
+    opacity: 0;
+  }
+}
+body.ntt-quiz-active .callout.ntt-quiz-hidden > .callout-content,
+body.ntt-quiz-active details.ntt-quiz-hidden > *:not(summary) {
+  animation: ntt-collapse 140ms ease-in both;
+}
+@media (prefers-reduced-motion: reduce) {
+  body.ntt-quiz-active .callout.ntt-quiz-hidden > .callout-content,
+  body.ntt-quiz-active details.ntt-quiz-hidden > *:not(summary) {
+    animation: none;
+  }
+}
 
 /* Slim control strip (hidden in minimal quiz UI mode). */
 .ntt-quiz-dock {
