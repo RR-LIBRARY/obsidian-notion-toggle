@@ -15,6 +15,7 @@ import {
   clampQuizSeconds,
   clampRevealSeconds,
 } from "./quiz";
+import { renderThinkSettings } from "./think-settings";
 import {
   MobileToolbarGuideModal,
   QuizFilterModal,
@@ -55,6 +56,8 @@ export class ScrollSheetModal extends Modal {
           tg.setValue(this.plugin.autoScrollActive() && this.plugin.scrollRunning);
         })
       );
+
+    renderThinkSettings(this.contentEl, this.plugin);
 
     // v1.1.9 — quiz mode is reachable from the same sheet (no toolbar needed).
     new Setting(this.contentEl)

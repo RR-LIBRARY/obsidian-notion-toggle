@@ -1,6 +1,6 @@
 {
   "name": "obsidian-notion-toggle",
-  "version": "1.5.8",
+  "version": "1.5.9",
   "description": "Notion-style toggle plugin for Obsidian",
   "private": true,
   "scripts": {

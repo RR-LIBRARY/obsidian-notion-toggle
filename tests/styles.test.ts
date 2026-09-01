@@ -57,3 +57,34 @@ describe("v1.5.6 bottom strip", () => {
     }
   });
 });
+
+describe("v1.5.9 think gate + distraction-free run", () => {
+  const css = readFileSync("styles.css", "utf8");
+
+  it("hides the answer body while the reader is thinking", () => {
+    expect(css).toMatch(/ntt-think-hidden[^{]*\{[^}]*display:\s*none/s);
+  });
+
+  it("animates the release instead of snapping it open", () => {
+    expect(css).toMatch(/ntt-think-shown[^{]*\{[^}]*animation: ntt-think-in 140ms/s);
+    const block = css.slice(css.indexOf("@keyframes ntt-think-in"));
+    expect(block).toMatch(/prefers-reduced-motion[\s\S]*animation: none/);
+  });
+
+  it("hides Obsidian chrome only while a focus run is active", () => {
+    const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+    const hidden = [...bare.matchAll(/([^{}]*)\{[^}]*display:\s*none\s*!important[^}]*\}/g)];
+    const chrome = hidden.filter(([, sel]) => /status-bar|view-header|mobile-navbar|mobile-toolbar/.test(sel));
+    expect(chrome.length).toBeGreaterThan(0);
+    for (const [, sel] of chrome) {
+      for (const one of sel.split(",")) {
+        if (one.trim()) expect(one).toContain("ntt-focus-run");
+      }
+    }
+  });
+
+  it("keeps the safe-area inset so text never sits under the gesture bar", () => {
+    const focus = css.slice(css.indexOf("body.ntt-focus-run.is-mobile"));
+    expect(focus).toContain("env(safe-area-inset-bottom)");
+  });
+});

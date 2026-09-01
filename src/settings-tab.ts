@@ -20,6 +20,7 @@ import {
 } from "./autoscroll";
 import { formatDwell, modeLabel, multiplierFromSpeed } from "./scrollmode";
 import { clampScreenOverlap, normalizeAdvanceBy, clampScreenDwellMs, clampViewportPct } from "./screen-stops";
+import { renderThinkSettings } from "./think-settings";
 import { scheduleStoreSummary } from "./maintenance";
 import { hotkeyLabel } from "./guide";
 import { QUIZ_SECONDS_MAX, QUIZ_SECONDS_MIN, REVEAL_SECONDS_MAX, clampQuizSeconds, clampRevealSeconds } from "./quiz";
@@ -534,6 +535,8 @@ export class NotionToggleSettingTab extends PluginSettingTab {
           new ScrollDwellModal(this.app, this.plugin).open();
         })
       );
+
+    renderThinkSettings(containerEl, this.plugin);
 
     new Setting(containerEl)
       .setName("Speed presets")

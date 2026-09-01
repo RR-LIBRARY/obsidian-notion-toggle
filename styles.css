@@ -1109,3 +1109,63 @@ body.is-mobile .ntt-fab.is-pressed,
   margin-top: 12px;
   flex-wrap: wrap;
 }
+
+/* ---------- v1.5.9 — think time gate + distraction-free run ---------- */
+
+/* The answer is held back while the question is being thought about. Classes
+   only: Obsidian's fold handler is never invoked, so no blink and no rewritten
+   fold state in the note. */
+body.ntt-think-run .callout.ntt-think-hidden > .callout-content,
+body.ntt-think-run details.ntt-think-hidden > *:not(summary) {
+  display: none !important;
+}
+/* Released answer: same 140ms feel as the quiz reveal, no flash. */
+body.ntt-think-run .callout.ntt-think-shown > .callout-content,
+body.ntt-think-run details.ntt-think-shown > *:not(summary) {
+  animation: ntt-think-in 140ms ease-out;
+}
+@keyframes ntt-think-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.ntt-think-run .callout.ntt-think-shown > .callout-content,
+  body.ntt-think-run details.ntt-think-shown > *:not(summary) {
+    animation: none;
+  }
+}
+/* Countdown chip on the question title. */
+.ntt-think-badge {
+  margin-inline-start: 0.5em;
+  padding: 0 0.45em;
+  border-radius: 10px;
+  font-size: 0.8em;
+  font-variant-numeric: tabular-nums;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+/* Distraction-free run: Obsidian's own chrome steps aside so nothing relayouts
+   (and blinks) every time an answer opens. Safe-area padding stays, so the note
+   text is never under the phone's gesture bar. */
+body.ntt-focus-run .status-bar,
+body.ntt-focus-run .view-header,
+body.ntt-focus-run .workspace-drawer,
+body.ntt-focus-run .mobile-navbar,
+body.ntt-focus-run .mobile-toolbar {
+  display: none !important;
+}
+body.ntt-focus-run .callout,
+body.ntt-focus-run .callout-title,
+body.ntt-focus-run .callout-fold,
+body.ntt-focus-run .callout-content {
+  transition: none !important;
+}
+body.ntt-focus-run.is-mobile .markdown-preview-view,
+body.ntt-focus-run.is-mobile .markdown-reading-view {
+  padding-bottom: env(safe-area-inset-bottom) !important;
+}
