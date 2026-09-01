@@ -133,7 +133,9 @@ import {
   type PageBox,
   type ScrollMode,
 } from "./src/scrollmode";
-import { screenStops, mergeStops as mergeScreenStops } from "./src/screen-stops";
+import { screenStops, mergeStops as mergeScreenStops, filterScreenStops, usableViewport, clampScreenDwellMs, clampViewportPct, isScreenStop, screenPlan as deriveScreenPlan, describeScreenPlan, screenMergeTolerance, type ScreenPlan } from "./src/screen-stops";
+import { ensureFullRender, restoreFullRender, type FullRenderHandle } from "./src/full-render";
+import { isFullyRendered, sourceKindCounts, sourceMatchCount, scanSourceToggles } from "./src/source-toggles";
 import {
   buildShuffleOrder,
   deckStats,
@@ -373,6 +375,12 @@ export default class NotionTogglePlugin extends Plugin {
   /** v1.2.1 — the quick-controls sheet is open (FAB stays pinned). */
   scrollSheetOpen = false;
   scrollElByOrdinal: Map<number, HTMLElement> = new Map();
+  /** v1.5.4 — the lazy-render override held for the length of a run. */
+  scrollFullRender: FullRenderHandle | null = null;
+  /** v1.5.4 — how many toggles the *note source* has (DOM-independent truth). */
+  scrollSourceTotal = 0;
+  /** v1.5.4 — retries spent waiting for Obsidian to finish rendering. */
+  scrollRenderRetries = 0;
   scrollTargets: DwellTarget[] = [];
   scrollTargetsKey = "";
   scrollOpenEl: HTMLElement | null = null;
@@ -1702,14 +1710,59 @@ export default class NotionTogglePlugin extends Plugin {
     return pickAnyContainer(this.scrollCandidates());
   }
   /**
+   * v1.5.4 — the raw markdown of the active note.
+   *
+   * In Reading View `editor.getValue()` can lag, so `view.data` (what Obsidian
+   * last loaded from disk) is preferred: the source is the only DOM-independent
+   * truth about how many toggles the note really has.
+   */
+  private noteSource(): string {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView) as
+      | (MarkdownView & { data?: string })
+      | null;
+    return view?.data ?? view?.editor?.getValue?.() ?? "";
+  }
+  /**
    * v1.1.7 — does the active note's *source* contain toggles? Used when the
    * DOM scan finds nothing: if the source has toggles the view is probably
    * still rendering (or showing a stale container), so we retry once.
    */
   private sourceHasToggles(): boolean {
+    return scanSourceToggles(this.noteSource()).total > 0;
+  }
+  /**
+   * v1.5.4 — how many toggles the *source* has for the current filter.
+   *
+   * This is what makes "No toggles match this selection (🔴 …)" honest: before
+   * v1.5.4 the check ran against a lazily rendered DOM, so a red toggle below
+   * the fold looked like "no red toggles at all".
+   */
+  private sourceMatchCount(filter: RecallColor[] = []): number {
+    return sourceMatchCount(this.noteSource(), filter);
+  }
+  /** Per-kind counts straight from the note text, for read-outs and stats. */
+  sourceKindBreakdown(): Partial<Record<RecallColor, number>> {
+    return sourceKindCounts(this.noteSource());
+  }
+  /** Has Obsidian rendered every toggle the source has? */
+  private renderedFully(): boolean {
+    return isFullyRendered(this.scrollNoteTotal, this.scrollSourceTotal);
+  }
+  /**
+   * v1.5.4 — turn Obsidian's lazy preview rendering off for the run, so the
+   * stop planner sees the *whole* note instead of the first screenful.
+   */
+  private beginFullRender(): boolean {
+    if (this.scrollFullRender?.forced) return false;
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    const text = view?.editor?.getValue?.() ?? "";
-    return /^>\s*\[![^\]]+\][+-]?/m.test(text) || /<details[\s>]/i.test(text);
+    const handle = ensureFullRender(view as never);
+    this.scrollFullRender = handle;
+    return handle.forced;
+  }
+  /** Give lazy rendering back once the run is over. */
+  private endFullRender(): void {
+    restoreFullRender(this.scrollFullRender);
+    this.scrollFullRender = null;
   }
   /** Every rendered toggle in the active note, with its offset and colour. */
   private collectStops(container: HTMLElement, filter: RecallColor[] = []): ToggleStop[] {
@@ -1861,6 +1914,40 @@ export default class NotionTogglePlugin extends Plugin {
     await this.saveSettings();
   }
   /**
+   * v1.5.4 — the exact screen derivation for the live container, shared with the
+   * settings tab / quick sheet read-out so the numbers can never disagree.
+   */
+  screenPlanFor(container: HTMLElement | null = this.scrollContainer ?? this.findViewContainer()): ScreenPlan {
+    const el = container;
+    return deriveScreenPlan(
+      el?.scrollHeight ?? 0,
+      el?.clientHeight ?? 0,
+      this.settings.scrollViewportPct,
+      this.settings.scrollScreenOverlap
+    );
+  }
+  /** "745 px × 90% = 670 px · overlap 10% = 67 px · step 603 px · 12 screens" */
+  screenPlanSummary(): string {
+    const container = this.scrollContainer ?? this.findViewContainer();
+    if (!container) return "Open a note to see the live screen calculation.";
+    return describeScreenPlan(this.screenPlanFor(container));
+  }
+  /**
+   * v1.5.3 — screen stops use one percentage of the live viewport on every device.
+   * v1.5.4 — filter pruning waits until the DOM has caught up with the source,
+   * so a half-rendered note can no longer drop screens that do hold a match.
+   */
+  private screenPlanTops(container: HTMLElement, keptTops: number[]): number[] {
+    const plan = this.screenPlanFor(container);
+    const selected = (this.settings.scrollFilter ?? []).length > 0
+      ? filterScreenStops(plan.stops, keptTops, plan.screenPx, this.renderedFully())
+      : plan.stops;
+    // The logical screen can be shorter than the physical viewport, but the
+    // browser can never scroll beyond its real max position.
+    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+    return [...new Set(selected.map((top) => Math.min(top, maxScroll)))];
+  }
+  /**
    * v1.1.1 — build the plan: colour filter first, then the pause-at mode
    * (every / odd / even / custom / route / shuffle) and tall-toggle chunking.
    */
@@ -1872,14 +1959,16 @@ export default class NotionTogglePlugin extends Plugin {
     })[];
     this.scrollTotalItems = kept.length;
     this.scrollNoteTotal = noteToggleCount(container);
+    this.scrollSourceTotal = scanSourceToggles(this.noteSource()).total;
     const cfg = this.modeConfig();
     // v1.5.0 — plan on note-wide numbers: "odd" means note toggle 1, 3, 5 …
     const byOrdinal = new Map(kept.map((s) => [s.ordinal, s]));
     const items = kept.map((s) => ({ ordinal: s.ordinal, top: s.top, height: s.height }));
     const toggleStops = buildModeStops(items, cfg, container.clientHeight, this.settings.scrollChunkTall);
     const advanceBy = this.settings.scrollAdvanceBy ?? "toggles";
+    const keptTops = kept.map((s) => s.top);
     if (advanceBy === "screens") {
-      return screenStops(container.scrollHeight, container.clientHeight, this.settings.scrollScreenOverlap).map((top, part) => ({
+      return this.screenPlanTops(container, keptTops).map((top, part) => ({
         index: -1,
         top,
         color: "other",
@@ -1901,7 +1990,7 @@ export default class NotionTogglePlugin extends Plugin {
       } as ToggleStop & { el: HTMLElement; ordinal: number; part: number }];
     });
     if (advanceBy !== "both") return togglePlan;
-    const screenPlan = screenStops(container.scrollHeight, container.clientHeight, this.settings.scrollScreenOverlap).map((top, part) => ({
+    const screenPlan = this.screenPlanTops(container, keptTops).map((top, part) => ({
       index: -1,
       top,
       color: "other",
@@ -2016,10 +2105,19 @@ export default class NotionTogglePlugin extends Plugin {
       }, 180);
       return;
     }
+    // v1.5.4 — and the *whole* note must be rendered, not just the screenful
+    // Obsidian keeps alive: otherwise the plan is built from a partial DOM.
+    if (this.beginFullRender()) {
+      window.setTimeout(() => {
+        if (!this.scrollRunning && this.scrollPlan.length === 0) this.startAutoScroll();
+      }, 220);
+      return;
+    }
     const container = this.findScrollContainer();
     if (!container) {
       // v1.4.10 — "nothing here can scroll" is not "no note open".
       new Notice(this.findViewContainer() ? MSG_NO_SCROLLER : "Open a note first.", 8000);
+      this.endFullRender();
       return;
     }
     this.scrollStuckSince = 0;
@@ -2030,32 +2128,41 @@ export default class NotionTogglePlugin extends Plugin {
     const plan = this.buildScrollPlan(container);
     if (plan.length === 0) {
       const anyToggle = this.collectStops(container).length > 0;
-      // v1.1.7 — the view may still be rendering (or we scanned a stale
-      // container). If the source clearly has toggles, retry once after a
-      // short delay instead of wrongly claiming the note has none.
-      if (!anyToggle && !this.scrollRetryPending && this.sourceHasToggles()) {
-        this.scrollRetryPending = true;
-        window.setTimeout(() => {
-          this.scrollRetryPending = false;
-          if (!this.scrollRunning && this.scrollPlan.length === 0) this.startAutoScroll();
-        }, 700);
+      // v1.5.4 — the source is the truth. A filter whose toggles exist in the
+      // markdown but are not rendered yet gets a few more chances instead of
+      // the old, wrong "No toggles match this selection" toast.
+      const inSource = this.sourceMatchCount(this.settings.scrollFilter);
+      const stillRendering = inSource > 0 && !this.renderedFully();
+      if ((stillRendering || !anyToggle) && this.sourceHasToggles() && this.scrollRenderRetries < 4) {
+        if (!this.scrollRetryPending) {
+          this.scrollRetryPending = true;
+          this.scrollRenderRetries += 1;
+          window.setTimeout(() => {
+            this.scrollRetryPending = false;
+            if (!this.scrollRunning && this.scrollPlan.length === 0) this.startAutoScroll();
+          }, 350);
+        }
         return;
       }
+      this.scrollRenderRetries = 0;
       if (anyToggle || this.sourceHasToggles()) {
         // Toggles exist, but the current filter / pause-at mode hides them all.
+        // With source counts in hand the toast can now say *why*.
         new Notice(
           `No toggles match this selection (${filterLabel(this.settings.scrollFilter)} · ${modeLabel(
             this.modeConfig()
-          )}) — filter ya pause-at mode badlo.`,
+          )}) — note me is filter ke ${inSource} toggle hain — filter ya pause-at mode badlo.`,
           6000
         );
         this.syncScrollFab();
+        this.endFullRender();
         return;
       }
       // v1.2.0 — plain note (no toggles at all): still scroll it end to end
       // instead of refusing to start. No stops, no dwell, just smooth reading.
       this.say(MSG_PLAIN_SCROLL, 4000);
     }
+    this.scrollRenderRetries = 0;
     this.scrollPlan = plan;
     const routed = this.settings.scrollMode === "route" || this.settings.scrollMode === "shuffle";
     this.scrollAt = routed
@@ -2100,6 +2207,7 @@ export default class NotionTogglePlugin extends Plugin {
         onDwell: () => new ScrollDwellModal(this.app, this).open(),
         onSpeedPresets: () => new ScrollSpeedModal(this.app, this).open(),
         onTop: () => this.scrollToStart(),
+        onStop: () => this.stopAutoScroll(true),
         onClose: () => this.stopAutoScroll(true),
       });
     }
@@ -2153,6 +2261,8 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollRunning = false;
     this.closeScrollVisit();
     this.restoreReadingMode();
+    this.endFullRender();
+    this.scrollRenderRetries = 0;
     if (this.scrollOpenEl && this.settings.scrollAutoClose) {
       this.setToggleOpen(this.scrollOpenEl, false);
     }
@@ -2363,8 +2473,10 @@ export default class NotionTogglePlugin extends Plugin {
       height: number;
       ordinal: number;
     })[];
+    const grew = kept.length > this.scrollTotalItems;
     this.scrollTotalItems = kept.length;
     this.scrollNoteTotal = noteToggleCount(container);
+    this.scrollSourceTotal = scanSourceToggles(this.noteSource()).total;
     this.scrollElByOrdinal = new Map();
     // v1.5.0 — page numbers are the note's own toggle numbers.
     this.scrollBoxes = kept
@@ -2374,6 +2486,11 @@ export default class NotionTogglePlugin extends Plugin {
       })
       .sort((a, b) => a.top - b.top);
     this.scrollTargetsKey = "";
+    // v1.5.4 — heal, don't restart: lazily rendered toggles are merged into the
+    // live plan while `scrollVisited` keeps the stops we already revised.
+    if (grew && this.scrollRunning) {
+      this.scrollLastEvent = `plan healed → ${kept.length}/${this.scrollSourceTotal || kept.length} toggles`;
+    }
     this.perf.filter.add(nowMs() - t0);
   }
   /** v1.4.7 — drop the cache so the next frame re-anchors for the new viewport. */
@@ -2385,18 +2502,22 @@ export default class NotionTogglePlugin extends Plugin {
   private currentTargets(container: HTMLElement, cfg: DwellSettings): DwellTarget[] {
     // v1.4.7 — keyed on stop *positions* and the anchor, not just the count.
     const anchor = this.settings.scrollStopAnchor;
-    const key = `${targetsKey(container, cfg, anchor, this.scrollBoxes)}|${this.settings.scrollAdvanceBy ?? "toggles"}|${this.settings.scrollScreenOverlap ?? 0.1}|${container.scrollHeight}`;
+    const key = `${targetsKey(container, cfg, anchor, this.scrollBoxes)}|${this.settings.scrollAdvanceBy ?? "toggles"}|${this.settings.scrollScreenOverlap ?? 0.1}|${clampViewportPct(this.settings.scrollViewportPct)}|${container.scrollHeight}`;
     if (key !== this.scrollTargetsKey) {
       this.scrollTargetsKey = key;
       const toggleTargets = anchoredTargets(this.scrollBoxes, cfg, container, anchor);
       const advanceBy = this.settings.scrollAdvanceBy ?? "toggles";
-      const screenTargets = screenStops(container.scrollHeight, container.clientHeight, this.settings.scrollScreenOverlap).map((top, index) => ({
-        page: -(index + 1), top, height: container.clientHeight, index: 0, key: `screen:${index}`,
+      const derived = this.screenPlanFor(container);
+      const screenVh = derived.screenPx;
+      const screenTargets = this.screenPlanTops(container, this.scrollBoxes.map((b) => b.top)).map((top, index) => ({
+        page: -(index + 1), top, height: screenVh, index: 0, key: `screen:${index}`,
       }));
       const targets = advanceBy === "screens"
         ? screenTargets
         : advanceBy === "both"
-          ? mergeScreenStops(screenTargets, toggleTargets)
+          // v1.5.4 — a screen stop within a quarter screen of a toggle stop is
+          // the same view; drop it so "both" never double-pauses.
+          ? mergeScreenStops(screenTargets, toggleTargets, screenMergeTolerance(screenVh))
           : toggleTargets;
       this.scrollTargets = targets;
       this.scrollPlan = targets.map((t) => ({
@@ -2537,7 +2658,11 @@ export default class NotionTogglePlugin extends Plugin {
       if (Math.abs(container.scrollTop - this.scrollPos) > 2) this.scrollPos = container.scrollTop;
       const cfg = this.dwellCfg();
       const routeMode = isRouteMode(cfg);
-      if (ts - this.scrollBoxesAt > 500 || this.scrollBoxes.length === 0) {
+      // v1.5.4 — while Obsidian is still filling in sections, re-measure four
+      // times a second so newly rendered toggles join the plan mid-run. That is
+      // the fix for "first few toggles open, after that it only scrolls".
+      const remeasureMs = this.renderedFully() ? 500 : 200;
+      if (ts - this.scrollBoxesAt > remeasureMs || this.scrollBoxes.length === 0) {
         this.scrollBoxesAt = ts;
         this.measureScrollBoxes(container);
       }
@@ -2566,7 +2691,9 @@ export default class NotionTogglePlugin extends Plugin {
         if (routeTarget != null && waypointReached(prevPos, this.scrollPos, routeTarget)) {
           this.scrollPos = routeTarget;
           container.scrollTop = Math.floor(routeTarget);
-          this.scrollDwellUntil = ts + cfg.seconds * 1000;
+          this.scrollDwellUntil = ts + (routeTarget != null && this.scrollRouteStop < routeStops.length
+            ? clampScreenDwellMs(this.settings.scrollScreenDwellMs)
+            : cfg.seconds * 1000);
           const ordinal = cfg.route[this.scrollRouteIdx % cfg.route.length];
           this.scrollLastEvent = `waypointReached toggle ${ordinal} @ ${Math.round(routeTarget)}`;
           this.parkOnToggle(ordinal, ts);
@@ -2698,9 +2825,18 @@ export default class NotionTogglePlugin extends Plugin {
     this.startQuizRun();
   }
   startQuizRun() {
+    // v1.5.4 — the quiz deck has the same lazy-render problem as autoscroll:
+    // render the whole note first, then plan.
+    if (this.beginFullRender()) {
+      window.setTimeout(() => {
+        if (!this.quizState) this.startQuizRun();
+      }, 220);
+      return;
+    }
     const container = this.findViewContainer();
     if (!container) {
       new Notice("Open a note first — quiz mode needs a note view.");
+      this.endFullRender();
       return;
     }
     const filter = this.quizFilterColors();
@@ -2771,6 +2907,8 @@ export default class NotionTogglePlugin extends Plugin {
       this.quizSnapshot
     );
     document.body.classList.remove(QUIZ_ACTIVE_CLASS);
+    // v1.5.4 — hand lazy rendering back, unless an autoscroll run still needs it.
+    if (!this.scrollRunning) this.endFullRender();
     this.quizState = null;
     this.quizSnapshot = [];
     this.quizStops = [];

@@ -2104,13 +2104,117 @@ function usableViewport(clientHeight, pct2 = DEFAULT_VIEWPORT_PCT) {
   const vh = Number.isFinite(h) && h > 0 ? h : 1;
   return Math.max(1, Math.floor(vh * clampViewportPct(pct2)));
 }
-function filterScreenStops(stops, toggleTops, viewport) {
+function filterScreenStops(stops, toggleTops, viewport, prune = true) {
+  if (!prune)
+    return stops;
   const tops = toggleTops.filter((t) => Number.isFinite(t));
   if (tops.length === 0)
     return stops;
   const vh = Math.max(1, Math.floor(viewport));
   const kept = stops.filter((top) => tops.some((t) => t >= top && t < top + vh));
   return kept;
+}
+function screenPlan(contentHeight, clientHeight, pct2 = DEFAULT_VIEWPORT_PCT, overlap = DEFAULT_SCREEN_OVERLAP) {
+  const viewportPx = Math.max(1, Math.floor(Number(clientHeight) > 0 ? Number(clientHeight) : 1));
+  const usedPct = clampViewportPct(pct2);
+  const screenPx = usableViewport(viewportPx, usedPct);
+  const usedOverlap = clampScreenOverlap(overlap);
+  const stepPx = Math.max(1, Math.round(screenPx * (1 - usedOverlap)));
+  const stops = screenStops(contentHeight, screenPx, usedOverlap);
+  return {
+    viewportPx,
+    pct: usedPct,
+    screenPx,
+    overlap: usedOverlap,
+    overlapPx: screenPx - stepPx,
+    stepPx,
+    stops,
+    count: stops.length,
+    lastTop: stops.length ? stops[stops.length - 1] : 0
+  };
+}
+function describeScreenPlan(plan) {
+  return [
+    `${plan.viewportPx} px \xD7 ${Math.round(plan.pct * 100)}% = ${plan.screenPx} px`,
+    `overlap ${Math.round(plan.overlap * 100)}% = ${plan.overlapPx} px`,
+    `step ${plan.stepPx} px`,
+    `${plan.count} screen${plan.count === 1 ? "" : "s"}`
+  ].join(" \xB7 ");
+}
+function screenMergeTolerance(screenPx) {
+  return Math.max(1, Math.round(Math.max(1, screenPx) * 0.25));
+}
+
+// src/full-render.ts
+var NO_FULL_RENDER = { renderer: null, previous: false, forced: false };
+function rendererOf(view) {
+  var _a;
+  const renderer = (_a = view == null ? void 0 : view.previewMode) == null ? void 0 : _a.renderer;
+  return renderer && typeof renderer === "object" ? renderer : null;
+}
+function ensureFullRender(view) {
+  var _a;
+  const renderer = rendererOf(view);
+  if (!renderer || typeof renderer.showAll !== "boolean")
+    return NO_FULL_RENDER;
+  const previous = renderer.showAll;
+  if (previous)
+    return { renderer, previous, forced: false };
+  try {
+    renderer.showAll = true;
+    (_a = renderer.rerender) == null ? void 0 : _a.call(renderer, true);
+  } catch (e) {
+    return NO_FULL_RENDER;
+  }
+  return { renderer, previous, forced: true };
+}
+function restoreFullRender(handle) {
+  var _a, _b;
+  if (!(handle == null ? void 0 : handle.forced) || !handle.renderer)
+    return false;
+  try {
+    handle.renderer.showAll = handle.previous;
+    (_b = (_a = handle.renderer).rerender) == null ? void 0 : _b.call(_a, true);
+  } catch (e) {
+    return false;
+  }
+  return true;
+}
+
+// src/source-toggles.ts
+var CALLOUT_RE = /^[ \t]*(?:>[ \t]*)+\[!([^\]\n]+)\][+-]?/gm;
+var DETAILS_RE = /<details[\s>]/gi;
+function withoutFences(text) {
+  return text.replace(/^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[ \t]*$/gm, "");
+}
+function scanSourceToggles(text) {
+  var _a, _b;
+  const src = withoutFences(String(text != null ? text : ""));
+  const kinds = [];
+  for (const m of src.matchAll(CALLOUT_RE))
+    kinds.push(kindOf(m[1]));
+  const details = (_b = (_a = src.match(DETAILS_RE)) == null ? void 0 : _a.length) != null ? _b : 0;
+  for (let i = 0; i < details; i++)
+    kinds.push("other");
+  return { kinds, total: kinds.length };
+}
+function sourceMatchCount(text, filter = []) {
+  const { kinds } = scanSourceToggles(text);
+  if (!filter || filter.length === 0)
+    return kinds.length;
+  return kinds.filter((k) => matchesFilter(k, filter)).length;
+}
+function sourceKindCounts(text) {
+  var _a;
+  const out = {};
+  for (const kind of scanSourceToggles(text).kinds)
+    out[kind] = ((_a = out[kind]) != null ? _a : 0) + 1;
+  return out;
+}
+function isFullyRendered(domCount, sourceTotal) {
+  if (!Number.isFinite(sourceTotal) || sourceTotal <= 0)
+    return true;
+  return Number(domCount) >= sourceTotal;
 }
 
 // src/reader/fsrsScheduler.ts
@@ -4857,11 +4961,14 @@ var NotionToggleSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
+    const mathSetting = new import_obsidian5.Setting(containerEl).setName("Screen calculation (live)").setDesc(this.plugin.screenPlanSummary());
+    const refreshMath = () => mathSetting.setDesc(this.plugin.screenPlanSummary());
     new import_obsidian5.Setting(containerEl).setName("Screen overlap").setDesc("Keep this percentage of the previous screen visible while advancing.").addSlider(
       (sl) => sl.setLimits(0, 0.5, 0.05).setValue(clampScreenOverlap(this.plugin.settings.scrollScreenOverlap)).setDynamicTooltip().onChange(async (v) => {
         this.plugin.settings.scrollScreenOverlap = clampScreenOverlap(v);
         this.plugin.reanchorAfterResize();
         await this.plugin.saveSettings();
+        refreshMath();
       })
     );
     new import_obsidian5.Setting(containerEl).setName("Screen pause duration").setDesc("How long each screenful stays still before the next screen (seconds).").addSlider(
@@ -4876,6 +4983,7 @@ var NotionToggleSettingTab = class extends import_obsidian5.PluginSettingTab {
         this.plugin.settings.scrollViewportPct = clampViewportPct(v);
         await this.plugin.saveSettings();
         this.plugin.reanchorAfterResize();
+        refreshMath();
       })
     );
     new import_obsidian5.Setting(containerEl).setName("Stop position on screen").setDesc(
@@ -5196,11 +5304,14 @@ var ScrollSheetModal = class extends import_obsidian6.Modal {
         this.plugin.refreshScrollPlan();
       })
     );
+    const mathSetting = new import_obsidian6.Setting(this.contentEl).setName("Screen calculation (live)").setDesc(this.plugin.screenPlanSummary());
+    const refreshMath = () => mathSetting.setDesc(this.plugin.screenPlanSummary());
     new import_obsidian6.Setting(this.contentEl).setName("Screen overlap").setDesc("Keep part of the previous screen visible between stops.").addSlider(
       (sl) => sl.setLimits(0, 0.5, 0.05).setValue(clampScreenOverlap(s.scrollScreenOverlap)).setDynamicTooltip().onChange(async (v) => {
         this.plugin.settings.scrollScreenOverlap = clampScreenOverlap(v);
         await this.plugin.saveSettings();
         this.plugin.refreshScrollPlan();
+        refreshMath();
       })
     );
     new import_obsidian6.Setting(this.contentEl).setName("Screen pause duration").setDesc("Pause on each screenful (seconds).").addSlider((sl) => sl.setLimits(0.25, 30, 0.25).setValue(clampScreenDwellMs(s.scrollScreenDwellMs) / 1e3).setDynamicTooltip().onChange(async (v) => {
@@ -5212,6 +5323,7 @@ var ScrollSheetModal = class extends import_obsidian6.Modal {
       this.plugin.settings.scrollViewportPct = clampViewportPct(v);
       await this.plugin.saveSettings();
       this.plugin.refreshScrollPlan();
+      refreshMath();
     }));
     new import_obsidian6.Setting(this.contentEl).setName("Debug overlay").addToggle(
       (tg) => tg.setValue(s.scrollDebug).onChange(async (v) => {
@@ -5646,6 +5758,12 @@ var NotionTogglePlugin = class extends import_obsidian7.Plugin {
     /** v1.2.1 — the quick-controls sheet is open (FAB stays pinned). */
     this.scrollSheetOpen = false;
     this.scrollElByOrdinal = /* @__PURE__ */ new Map();
+    /** v1.5.4 — the lazy-render override held for the length of a run. */
+    this.scrollFullRender = null;
+    /** v1.5.4 — how many toggles the *note source* has (DOM-independent truth). */
+    this.scrollSourceTotal = 0;
+    /** v1.5.4 — retries spent waiting for Obsidian to finish rendering. */
+    this.scrollRenderRetries = 0;
     this.scrollTargets = [];
     this.scrollTargetsKey = "";
     this.scrollOpenEl = null;
@@ -6981,15 +7099,60 @@ ${row}`, { line: cursor.line, ch: line.length });
     return pickAnyContainer(this.scrollCandidates());
   }
   /**
+   * v1.5.4 — the raw markdown of the active note.
+   *
+   * In Reading View `editor.getValue()` can lag, so `view.data` (what Obsidian
+   * last loaded from disk) is preferred: the source is the only DOM-independent
+   * truth about how many toggles the note really has.
+   */
+  noteSource() {
+    var _a, _b, _c, _d;
+    const view = this.app.workspace.getActiveViewOfType(import_obsidian7.MarkdownView);
+    return (_d = (_c = view == null ? void 0 : view.data) != null ? _c : (_b = (_a = view == null ? void 0 : view.editor) == null ? void 0 : _a.getValue) == null ? void 0 : _b.call(_a)) != null ? _d : "";
+  }
+  /**
    * v1.1.7 — does the active note's *source* contain toggles? Used when the
    * DOM scan finds nothing: if the source has toggles the view is probably
    * still rendering (or showing a stale container), so we retry once.
    */
   sourceHasToggles() {
-    var _a, _b, _c;
+    return scanSourceToggles(this.noteSource()).total > 0;
+  }
+  /**
+   * v1.5.4 — how many toggles the *source* has for the current filter.
+   *
+   * This is what makes "No toggles match this selection (🔴 …)" honest: before
+   * v1.5.4 the check ran against a lazily rendered DOM, so a red toggle below
+   * the fold looked like "no red toggles at all".
+   */
+  sourceMatchCount(filter = []) {
+    return sourceMatchCount(this.noteSource(), filter);
+  }
+  /** Per-kind counts straight from the note text, for read-outs and stats. */
+  sourceKindBreakdown() {
+    return sourceKindCounts(this.noteSource());
+  }
+  /** Has Obsidian rendered every toggle the source has? */
+  renderedFully() {
+    return isFullyRendered(this.scrollNoteTotal, this.scrollSourceTotal);
+  }
+  /**
+   * v1.5.4 — turn Obsidian's lazy preview rendering off for the run, so the
+   * stop planner sees the *whole* note instead of the first screenful.
+   */
+  beginFullRender() {
+    var _a;
+    if ((_a = this.scrollFullRender) == null ? void 0 : _a.forced)
+      return false;
     const view = this.app.workspace.getActiveViewOfType(import_obsidian7.MarkdownView);
-    const text = (_c = (_b = (_a = view == null ? void 0 : view.editor) == null ? void 0 : _a.getValue) == null ? void 0 : _b.call(_a)) != null ? _c : "";
-    return /^>\s*\[![^\]]+\][+-]?/m.test(text) || /<details[\s>]/i.test(text);
+    const handle = ensureFullRender(view);
+    this.scrollFullRender = handle;
+    return handle.forced;
+  }
+  /** Give lazy rendering back once the run is over. */
+  endFullRender() {
+    restoreFullRender(this.scrollFullRender);
+    this.scrollFullRender = null;
   }
   /** Every rendered toggle in the active note, with its offset and colour. */
   collectStops(container, filter = []) {
@@ -7153,13 +7316,36 @@ ${row}`, { line: cursor.line, ch: line.length });
     await this.saveSettings();
   }
   /**
+   * v1.5.4 — the exact screen derivation for the live container, shared with the
+   * settings tab / quick sheet read-out so the numbers can never disagree.
+   */
+  screenPlanFor(container = ((_d) => (_d = this.scrollContainer) != null ? _d : this.findViewContainer())()) {
+    var _a, _b;
+    const el = container;
+    return screenPlan(
+      (_a = el == null ? void 0 : el.scrollHeight) != null ? _a : 0,
+      (_b = el == null ? void 0 : el.clientHeight) != null ? _b : 0,
+      this.settings.scrollViewportPct,
+      this.settings.scrollScreenOverlap
+    );
+  }
+  /** "745 px × 90% = 670 px · overlap 10% = 67 px · step 603 px · 12 screens" */
+  screenPlanSummary() {
+    var _a;
+    const container = (_a = this.scrollContainer) != null ? _a : this.findViewContainer();
+    if (!container)
+      return "Open a note to see the live screen calculation.";
+    return describeScreenPlan(this.screenPlanFor(container));
+  }
+  /**
    * v1.5.3 — screen stops use one percentage of the live viewport on every device.
+   * v1.5.4 — filter pruning waits until the DOM has caught up with the source,
+   * so a half-rendered note can no longer drop screens that do hold a match.
    */
   screenPlanTops(container, keptTops) {
     var _a;
-    const vh = usableViewport(container.clientHeight, this.settings.scrollViewportPct);
-    const stops = screenStops(container.scrollHeight, vh, this.settings.scrollScreenOverlap);
-    const selected = ((_a = this.settings.scrollFilter) != null ? _a : []).length > 0 ? filterScreenStops(stops, keptTops, vh) : stops;
+    const plan = this.screenPlanFor(container);
+    const selected = ((_a = this.settings.scrollFilter) != null ? _a : []).length > 0 ? filterScreenStops(plan.stops, keptTops, plan.screenPx, this.renderedFully()) : plan.stops;
     const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
     return [...new Set(selected.map((top) => Math.min(top, maxScroll)))];
   }
@@ -7172,6 +7358,7 @@ ${row}`, { line: cursor.line, ch: line.length });
     const kept = this.collectStops(container, this.settings.scrollFilter);
     this.scrollTotalItems = kept.length;
     this.scrollNoteTotal = noteToggleCount(container);
+    this.scrollSourceTotal = scanSourceToggles(this.noteSource()).total;
     const cfg = this.modeConfig();
     const byOrdinal = new Map(kept.map((s) => [s.ordinal, s]));
     const items = kept.map((s) => ({ ordinal: s.ordinal, top: s.top, height: s.height }));
@@ -7203,14 +7390,14 @@ ${row}`, { line: cursor.line, ch: line.length });
     });
     if (advanceBy !== "both")
       return togglePlan;
-    const screenPlan = this.screenPlanTops(container, keptTops).map((top, part) => ({
+    const screenPlan2 = this.screenPlanTops(container, keptTops).map((top, part) => ({
       index: -1,
       top,
       color: "other",
       ordinal: 0,
       part
     }));
-    return [...togglePlan, ...screenPlan].sort((a, b) => a.top - b.top);
+    return [...togglePlan, ...screenPlan2].sort((a, b) => a.top - b.top);
   }
   /** Rebuild the shuffle route from this note's FSRS memory. */
   async rebuildShuffleRoute(notify = true) {
@@ -7329,9 +7516,17 @@ ${deckSummary(
       }, 180);
       return;
     }
+    if (this.beginFullRender()) {
+      window.setTimeout(() => {
+        if (!this.scrollRunning && this.scrollPlan.length === 0)
+          this.startAutoScroll();
+      }, 220);
+      return;
+    }
     const container = this.findScrollContainer();
     if (!container) {
       new import_obsidian7.Notice(this.findViewContainer() ? MSG_NO_SCROLLER : "Open a note first.", 8e3);
+      this.endFullRender();
       return;
     }
     this.scrollStuckSince = 0;
@@ -7342,27 +7537,35 @@ ${deckSummary(
     const plan = this.buildScrollPlan(container);
     if (plan.length === 0) {
       const anyToggle = this.collectStops(container).length > 0;
-      if (!anyToggle && !this.scrollRetryPending && this.sourceHasToggles()) {
-        this.scrollRetryPending = true;
-        window.setTimeout(() => {
-          this.scrollRetryPending = false;
-          if (!this.scrollRunning && this.scrollPlan.length === 0)
-            this.startAutoScroll();
-        }, 700);
+      const inSource = this.sourceMatchCount(this.settings.scrollFilter);
+      const stillRendering = inSource > 0 && !this.renderedFully();
+      if ((stillRendering || !anyToggle) && this.sourceHasToggles() && this.scrollRenderRetries < 4) {
+        if (!this.scrollRetryPending) {
+          this.scrollRetryPending = true;
+          this.scrollRenderRetries += 1;
+          window.setTimeout(() => {
+            this.scrollRetryPending = false;
+            if (!this.scrollRunning && this.scrollPlan.length === 0)
+              this.startAutoScroll();
+          }, 350);
+        }
         return;
       }
+      this.scrollRenderRetries = 0;
       if (anyToggle || this.sourceHasToggles()) {
         new import_obsidian7.Notice(
           `No toggles match this selection (${filterLabel(this.settings.scrollFilter)} \xB7 ${modeLabel(
             this.modeConfig()
-          )}) \u2014 filter ya pause-at mode badlo.`,
+          )}) \u2014 note me is filter ke ${inSource} toggle hain \u2014 filter ya pause-at mode badlo.`,
           6e3
         );
         this.syncScrollFab();
+        this.endFullRender();
         return;
       }
       this.say(MSG_PLAIN_SCROLL, 4e3);
     }
+    this.scrollRenderRetries = 0;
     this.scrollPlan = plan;
     const routed = this.settings.scrollMode === "route" || this.settings.scrollMode === "shuffle";
     this.scrollAt = routed ? 0 : firstStopFrom(plan, container.scrollTop, this.settings.scrollReverse);
@@ -7465,6 +7668,8 @@ ${deckSummary(
     this.scrollRunning = false;
     this.closeScrollVisit();
     this.restoreReadingMode();
+    this.endFullRender();
+    this.scrollRenderRetries = 0;
     if (this.scrollOpenEl && this.settings.scrollAutoClose) {
       this.setToggleOpen(this.scrollOpenEl, false);
     }
@@ -7676,14 +7881,19 @@ ${deckSummary(
   measureScrollBoxes(container) {
     const t0 = nowMs();
     const kept = this.collectStops(container, this.settings.scrollFilter);
+    const grew = kept.length > this.scrollTotalItems;
     this.scrollTotalItems = kept.length;
     this.scrollNoteTotal = noteToggleCount(container);
+    this.scrollSourceTotal = scanSourceToggles(this.noteSource()).total;
     this.scrollElByOrdinal = /* @__PURE__ */ new Map();
     this.scrollBoxes = kept.map((st) => {
       this.scrollElByOrdinal.set(st.ordinal, st.el);
       return { page: st.ordinal, top: st.top, height: st.height };
     }).sort((a, b) => a.top - b.top);
     this.scrollTargetsKey = "";
+    if (grew && this.scrollRunning) {
+      this.scrollLastEvent = `plan healed \u2192 ${kept.length}/${this.scrollSourceTotal || kept.length} toggles`;
+    }
     this.perf.filter.add(nowMs() - t0);
   }
   /** v1.4.7 — drop the cache so the next frame re-anchors for the new viewport. */
@@ -7700,7 +7910,8 @@ ${deckSummary(
       this.scrollTargetsKey = key;
       const toggleTargets = anchoredTargets(this.scrollBoxes, cfg, container, anchor);
       const advanceBy = (_c = this.settings.scrollAdvanceBy) != null ? _c : "toggles";
-      const screenVh = usableViewport(container.clientHeight, this.settings.scrollViewportPct);
+      const derived = this.screenPlanFor(container);
+      const screenVh = derived.screenPx;
       const screenTargets = this.screenPlanTops(container, this.scrollBoxes.map((b) => b.top)).map((top, index) => ({
         page: -(index + 1),
         top,
@@ -7708,7 +7919,7 @@ ${deckSummary(
         index: 0,
         key: `screen:${index}`
       }));
-      const targets = advanceBy === "screens" ? screenTargets : advanceBy === "both" ? mergeStops(screenTargets, toggleTargets) : toggleTargets;
+      const targets = advanceBy === "screens" ? screenTargets : advanceBy === "both" ? mergeStops(screenTargets, toggleTargets, screenMergeTolerance(screenVh)) : toggleTargets;
       this.scrollTargets = targets;
       this.scrollPlan = targets.map((t) => ({
         index: t.page > 0 ? t.page - 1 : -1,
@@ -7864,7 +8075,8 @@ ${deckSummary(
         this.scrollPos = container.scrollTop;
       const cfg = this.dwellCfg();
       const routeMode = isRouteMode(cfg);
-      if (ts - this.scrollBoxesAt > 500 || this.scrollBoxes.length === 0) {
+      const remeasureMs = this.renderedFully() ? 500 : 200;
+      if (ts - this.scrollBoxesAt > remeasureMs || this.scrollBoxes.length === 0) {
         this.scrollBoxesAt = ts;
         this.measureScrollBoxes(container);
       }
@@ -8018,9 +8230,17 @@ ${deckSummary(
   }
   startQuizRun() {
     var _a;
+    if (this.beginFullRender()) {
+      window.setTimeout(() => {
+        if (!this.quizState)
+          this.startQuizRun();
+      }, 220);
+      return;
+    }
     const container = this.findViewContainer();
     if (!container) {
       new import_obsidian7.Notice("Open a note first \u2014 quiz mode needs a note view.");
+      this.endFullRender();
       return;
     }
     const filter = this.quizFilterColors();
@@ -8087,6 +8307,8 @@ ${deckSummary(
       this.quizSnapshot
     );
     document.body.classList.remove(QUIZ_ACTIVE_CLASS);
+    if (!this.scrollRunning)
+      this.endFullRender();
     this.quizState = null;
     this.quizSnapshot = [];
     this.quizStops = [];

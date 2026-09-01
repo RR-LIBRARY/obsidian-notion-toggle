@@ -7,7 +7,7 @@ import { App, Modal, Notice, Setting } from "obsidian";
 import type NotionTogglePlugin from "../main";
 import { clampHold, filterLabel } from "./autoscroll";
 import { formatDwell, modeLabel, multiplierFromSpeed } from "./scrollmode";
-import { clampScreenOverlap, normalizeAdvanceBy } from "./screen-stops";
+import { clampScreenOverlap, normalizeAdvanceBy, clampScreenDwellMs, clampViewportPct } from "./screen-stops";
 import {
   QUIZ_SECONDS_MAX,
   QUIZ_SECONDS_MIN,
@@ -266,6 +266,12 @@ export class ScrollSheetModal extends Modal {
           })
       );
 
+    // v1.5.4 — same live derivation as the settings tab.
+    const mathSetting = new Setting(this.contentEl)
+      .setName("Screen calculation (live)")
+      .setDesc(this.plugin.screenPlanSummary());
+    const refreshMath = () => mathSetting.setDesc(this.plugin.screenPlanSummary());
+
     new Setting(this.contentEl)
       .setName("Screen overlap")
       .setDesc("Keep part of the previous screen visible between stops.")
@@ -274,8 +280,35 @@ export class ScrollSheetModal extends Modal {
           this.plugin.settings.scrollScreenOverlap = clampScreenOverlap(v);
           await this.plugin.saveSettings();
           this.plugin.refreshScrollPlan();
+          refreshMath();
         })
       );
+
+    new Setting(this.contentEl)
+      .setName("Screen pause duration")
+      .setDesc("Pause on each screenful (seconds).")
+      .addSlider((sl) => sl.setLimits(0.25, 30, 0.25)
+        .setValue(clampScreenDwellMs(s.scrollScreenDwellMs) / 1000)
+        .setDynamicTooltip()
+        .onChange(async (v) => {
+          this.plugin.settings.scrollScreenDwellMs = clampScreenDwellMs(v * 1000);
+          await this.plugin.saveSettings();
+          this.plugin.refreshScrollPlan();
+        }));
+
+    new Setting(this.contentEl)
+      .setName("Usable viewport")
+      .setDesc("Percentage of live screen height used for one screenful.")
+      .addSlider((sl) => sl.setLimits(0.5, 1, 0.05)
+        .setValue(clampViewportPct(s.scrollViewportPct))
+        .setDynamicTooltip()
+        .onChange(async (v) => {
+          this.plugin.settings.scrollViewportPct = clampViewportPct(v);
+          await this.plugin.saveSettings();
+          this.plugin.refreshScrollPlan();
+          refreshMath();
+        }));
+
 
     new Setting(this.contentEl).setName("Debug overlay").addToggle((tg) =>
       tg.setValue(s.scrollDebug).onChange(async (v) => {

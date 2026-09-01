@@ -1,4 +1,6 @@
-# Notion Toggle — Poora Manual (v1.5.2)
+# Notion Toggle — Poora Manual (v1.5.4)
+
+> **v1.5.4 (fix release)** — Obsidian long note ka sirf visible hissa render karta hai (lazy rendering). Isi wajah se do bug the: (1) galat toast "No toggles match this selection (🔴 · every toggle)" jabki note me red toggles the, aur (2) shuru ke kuchh toggles khulne ke baad run sirf scroll karta reh jata tha. Ab autoscroll aur quiz run se pehle poora note render hota hai, plan note ke **source** (markdown) se verify hota hai, aur naye render hue toggles run ke beech plan me **heal** ho jate hain (progress lose nahi hoti). Settings me "Screen calculation (live)" ab exact px maths dikhata hai.
 
 > **v1.5.2** — autoscroll ab Toggles, Screens, ya Toggles + screens mode me chal sakta hai. Reading View mobile aur desktop viewport ke hisaab se screen-by-screen advance karta hai, configurable overlap ke saath.
 

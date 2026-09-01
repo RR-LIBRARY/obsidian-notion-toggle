@@ -19,7 +19,7 @@ import {
   filterLabel,
 } from "./autoscroll";
 import { formatDwell, modeLabel, multiplierFromSpeed } from "./scrollmode";
-import { clampScreenOverlap, normalizeAdvanceBy } from "./screen-stops";
+import { clampScreenOverlap, normalizeAdvanceBy, clampScreenDwellMs, clampViewportPct } from "./screen-stops";
 import { scheduleStoreSummary } from "./maintenance";
 import { hotkeyLabel } from "./guide";
 import { QUIZ_SECONDS_MAX, QUIZ_SECONDS_MIN, REVEAL_SECONDS_MAX, clampQuizSeconds, clampRevealSeconds } from "./quiz";
@@ -568,6 +568,13 @@ export class NotionToggleSettingTab extends PluginSettingTab {
           })
       );
 
+    // v1.5.4 — one live read-out of the exact maths, so "Screens" and
+    // "Toggles + screens" are no longer a black box.
+    const mathSetting = new Setting(containerEl)
+      .setName("Screen calculation (live)")
+      .setDesc(this.plugin.screenPlanSummary());
+    const refreshMath = () => mathSetting.setDesc(this.plugin.screenPlanSummary());
+
     new Setting(containerEl)
       .setName("Screen overlap")
       .setDesc("Keep this percentage of the previous screen visible while advancing.")
@@ -576,8 +583,39 @@ export class NotionToggleSettingTab extends PluginSettingTab {
           this.plugin.settings.scrollScreenOverlap = clampScreenOverlap(v);
           this.plugin.reanchorAfterResize();
           await this.plugin.saveSettings();
+          refreshMath();
         })
       );
+
+    new Setting(containerEl)
+      .setName("Screen pause duration")
+      .setDesc("How long each screenful stays still before the next screen (seconds).")
+      .addSlider((sl) =>
+        sl.setLimits(0.25, 30, 0.25)
+          .setValue(clampScreenDwellMs(this.plugin.settings.scrollScreenDwellMs) / 1000)
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.scrollScreenDwellMs = clampScreenDwellMs(v * 1000);
+            await this.plugin.saveSettings();
+            this.plugin.reanchorAfterResize();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Usable viewport")
+      .setDesc("Percentage of the live screen height used for one screenful on mobile and desktop.")
+      .addSlider((sl) =>
+        sl.setLimits(0.5, 1, 0.05)
+          .setValue(clampViewportPct(this.plugin.settings.scrollViewportPct))
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.scrollViewportPct = clampViewportPct(v);
+            await this.plugin.saveSettings();
+            this.plugin.reanchorAfterResize();
+            refreshMath();
+          })
+      );
+
 
     new Setting(containerEl)
       .setName("Stop position on screen")
