@@ -1037,8 +1037,8 @@ var DEFAULT_AUTOSCROLL = {
   scrollChunkTall: true,
   scrollAdvanceBy: "toggles",
   scrollScreenOverlap: 0.1,
-  scrollScreenDwellMs: 4e3,
   scrollViewportPct: 0.9,
+  scrollScreenDwellMs: 4e3,
   scrollShuffleFrom: 0,
   scrollShuffleTo: 0,
   scrollRetention: 0.9,
@@ -1500,7 +1500,6 @@ var ScrollBar = class {
       return b;
     };
     this.runBtn = btn("\u23F8", "is-run", () => this.cb.onToggleRun());
-    this.runBtn.setAttribute("data-action", "pause-resume");
     btn("\u2212", "is-slower", () => this.cb.onSlower());
     btn("+", "is-faster", () => this.cb.onFaster());
     this.revBtn = btn("\u2193", "is-reverse", () => this.cb.onReverse());
@@ -1517,10 +1516,6 @@ var ScrollBar = class {
       var _a, _b;
       return (_b = (_a = this.cb).onTop) == null ? void 0 : _b.call(_a);
     });
-    btn("\u25A0", "is-stop", () => {
-      var _a, _b, _c;
-      return (_c = (_b = (_a = this.cb).onStop) == null ? void 0 : _b.call(_a)) != null ? _c : this.cb.onClose();
-    });
     btn("\u2715", "is-close", () => this.cb.onClose());
     this.runBtn.addEventListener("dblclick", () => {
       var _a, _b;
@@ -1534,8 +1529,6 @@ var ScrollBar = class {
   render(d) {
     var _a, _b, _c, _d, _e, _f;
     this.runBtn.textContent = d.running ? "\u23F8" : "\u25B6";
-    this.runBtn.setAttribute("aria-label", d.running ? "Pause autoscroll" : "Resume autoscroll");
-    this.runBtn.title = d.running ? "Pause autoscroll" : "Resume autoscroll";
     this.revBtn.textContent = d.reverse ? "\u2191" : "\u2193";
     this.revBtn.setAttribute("aria-label", d.reverse ? "Reverse (up)" : "Forward (down)");
     this.filterBtn.textContent = d.filterLabel === "all toggles" ? "\u26AA" : d.filterLabel;
@@ -3537,11 +3530,12 @@ function anchorScrollTop(container, top, height, anchor) {
     Math.max(0, container.scrollHeight - container.clientHeight)
   );
 }
-function pickStops(targets, prevPos, pos, dir, visited) {
+function pickStops(targets, prevPos, pos, dir, visited, donePages = /* @__PURE__ */ new Set()) {
   const unvisited = (t) => !visited.has(t.key);
-  const crossed = crossedTargets(targets, prevPos, pos, dir).filter(unvisited);
+  const reopens = (t) => donePages.has(t.page) && t.index === 0;
+  const crossed = crossedTargets(targets, prevPos, pos, dir).filter((t) => unvisited(t) && !reopens(t));
   const missed = targets.filter(
-    (t) => unvisited(t) && !crossed.some((c) => c.key === t.key) && (dir < 0 ? t.top > pos + 1 : t.top < pos - 1)
+    (t) => unvisited(t) && !donePages.has(t.page) && !crossed.some((c) => c.key === t.key) && (dir < 0 ? t.top > pos + 1 : t.top < pos - 1)
   );
   const queue = [...missed, ...crossed].sort((a, b) => dir < 0 ? b.top - a.top : a.top - b.top);
   return { stop: queue[0], missed, queue };
@@ -5783,6 +5777,8 @@ var NotionTogglePlugin = class extends import_obsidian7.Plugin {
     this.perf = new Telemetry();
     /** v1.4.7 — stops already visited on this leg (skip guard, per stop). */
     this.scrollVisited = /* @__PURE__ */ new Set();
+    /** v1.5.7 — toggle numbers already revised on this leg (no re-opening). */
+    this.scrollVisitedPages = /* @__PURE__ */ new Set();
     /** v1.4.9 — stops recovered after a layout shift, for the debug overlay. */
     this.scrollSkipCount = 0;
     this.scrollLastSkips = [];
@@ -5797,6 +5793,8 @@ var NotionTogglePlugin = class extends import_obsidian7.Plugin {
     this.quizInterval = null;
     /** v1.1.9: one-shot re-scan guard when the view is still rendering. */
     this.quizRetryPending = false;
+    /** v1.5.7 — how many times the quiz waited for the note to finish rendering. */
+    this.quizRenderRetries = 0;
     /** v1.3.0 — pre-quiz state of every toggle, restored on stop. */
     this.quizSnapshot = [];
   }
@@ -7941,6 +7939,7 @@ ${deckSummary(
   resetDwell() {
     this.scrollDwellKey = null;
     this.scrollVisited.clear();
+    this.scrollVisitedPages.clear();
     this.scrollSkipCount = 0;
     this.scrollLastSkips = [];
   }
@@ -7960,6 +7959,8 @@ ${deckSummary(
       this.setToggleOpen(el, true);
     this.scrollOpenEl = el != null ? el : null;
     this.scrollBoxesAt = 0;
+    if (Number.isFinite(ordinal) && ordinal > 0)
+      this.scrollVisitedPages.add(ordinal);
     this.noteScrollVisit(ordinal, now);
   }
   /** Reader parity: a visit opens here and is graded when the pause ends. */
@@ -8142,7 +8143,14 @@ ${deckSummary(
           this.resetDwell();
         }
         const targets = this.currentTargets(container, cfg);
-        const pick = pickStops(targets, prevPos, this.scrollPos, this.scrollDir, this.scrollVisited);
+        const pick = pickStops(
+          targets,
+          prevPos,
+          this.scrollPos,
+          this.scrollDir,
+          this.scrollVisited,
+          this.scrollVisitedPages
+        );
         if (pick.missed.length) {
           this.perf.noteSkipped(pick.missed.length);
           this.scrollSkipCount += pick.missed.length;
@@ -8257,18 +8265,27 @@ ${deckSummary(
       this.settings.scrollReverse
     );
     if (stops.length === 0) {
-      if (this.collectStops(container).length === 0 && !this.quizRetryPending && this.sourceHasToggles()) {
+      const inSource = this.sourceMatchCount(filter);
+      const stillRendering = inSource > 0 && !this.renderedFully();
+      const nothingRendered = this.collectStops(container).length === 0;
+      if ((stillRendering || nothingRendered) && this.sourceHasToggles() && !this.quizRetryPending && this.quizRenderRetries < 4) {
         this.quizRetryPending = true;
+        this.quizRenderRetries += 1;
         window.setTimeout(() => {
           this.quizRetryPending = false;
           if (!this.quizState)
             this.startQuizRun();
-        }, 700);
+        }, 350);
         return;
       }
-      new import_obsidian7.Notice(`No toggles match the filter (${filterLabel(filter)}).`);
+      this.quizRenderRetries = 0;
+      new import_obsidian7.Notice(
+        inSource > 0 ? `Quiz could not read this filter yet (${filterLabel(filter)}) \u2014 note me is filter ke ${inSource} toggle hain, note ko poora scroll karke dobara try karo.` : `No toggles match the filter (${filterLabel(filter)}).`,
+        6e3
+      );
       return;
     }
+    this.quizRenderRetries = 0;
     this.quizContainer = container;
     this.quizStops = stops;
     this.quizTitles = stops.map((s) => s.el ? this.quizTitleOf(s.el) : "");
