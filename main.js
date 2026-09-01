@@ -1053,6 +1053,7 @@ var DEFAULT_AUTOSCROLL = {
   scrollRestoreMode: true,
   scrollThinkEnabled: true,
   scrollThinkSeconds: 5,
+  scrollThinkIcon: "\u{1F914}",
   scrollFocusChrome: true
 };
 var SPEED_MIN = 1;
@@ -3130,8 +3131,19 @@ var THINK_SECONDS_MIN = 0;
 var THINK_SECONDS_MAX = 3600;
 var DEFAULT_THINK = {
   scrollThinkEnabled: true,
-  scrollThinkSeconds: 5
+  scrollThinkSeconds: 5,
+  scrollThinkIcon: "\u{1F914}"
 };
+function isIconImage(icon) {
+  const v = (icon != null ? icon : "").trim();
+  if (!v)
+    return false;
+  if (/^data:image\//i.test(v))
+    return true;
+  if (!/^(https?:|app:|file:|\/|\.{0,2}\/)/i.test(v) && !v.includes("/"))
+    return false;
+  return /\.(png|gif|svg|webp|jpe?g)(\?.*)?$/i.test(v);
+}
 function clampThinkSeconds(seconds) {
   if (!Number.isFinite(seconds))
     return DEFAULT_THINK.scrollThinkSeconds;
@@ -3163,13 +3175,15 @@ function thinkMsFor(title, s) {
     return 0;
   return parseThinkSeconds(title, s.scrollThinkSeconds) * 1e3;
 }
-function thinkCountdownLabel(msLeft) {
+function thinkCountdownLabel(msLeft, icon = "\u{1F914}") {
+  const face = isIconImage(icon) ? "" : (icon != null ? icon : "").trim() || "\u{1F914}";
+  const lead = face ? `${face} ` : "";
   const secs = Math.max(0, Math.ceil(msLeft / 1e3));
   if (secs < 60)
-    return `\u{1F914} ${secs}`;
+    return `${lead}${secs}`;
   const m = Math.floor(secs / 60);
   const rest = secs % 60;
-  return rest ? `\u{1F914} ${m}m ${rest}` : `\u{1F914} ${m}m`;
+  return rest ? `${lead}${m}m ${rest}` : `${lead}${m}m`;
 }
 function titleRowOf(el) {
   if (el.tagName.toLowerCase() === "details") {
@@ -3197,6 +3211,8 @@ var ThinkGate = class {
     this.badge = null;
     this.onTap = null;
     this.lastLabel = "";
+    this.icon = "\u{1F914}";
+    this.text = null;
   }
   /** Is an answer currently held back? */
   get thinking() {
@@ -3211,7 +3227,7 @@ var ThinkGate = class {
    * caller can extend the stop's dwell by exactly that much.
    */
   begin(el, s, now) {
-    var _a;
+    var _a, _b;
     this.release();
     if (!el)
       return 0;
@@ -3221,10 +3237,11 @@ var ThinkGate = class {
       return 0;
     }
     this.el = el;
+    this.icon = ((_a = s.scrollThinkIcon) != null ? _a : "\u{1F914}").trim() || "\u{1F914}";
     this.until = now + ms2;
     setThinkHidden(el, true);
     this.paint(ms2);
-    const row = (_a = titleRowOf(el)) != null ? _a : el;
+    const row = (_b = titleRowOf(el)) != null ? _b : el;
     this.onTap = () => this.revealNow();
     row.addEventListener("click", this.onTap, { capture: true });
     return ms2;
@@ -3278,7 +3295,7 @@ var ThinkGate = class {
     const el = this.el;
     if (!el)
       return;
-    const label = thinkCountdownLabel(msLeft);
+    const label = thinkCountdownLabel(msLeft, this.icon);
     if (label === this.lastLabel && ((_a = this.badge) == null ? void 0 : _a.isConnected))
       return;
     this.lastLabel = label;
@@ -3286,16 +3303,33 @@ var ThinkGate = class {
       const row = (_b = titleRowOf(el)) != null ? _b : el;
       const badge = el.ownerDocument.createElement("span");
       badge.className = THINK_BADGE_CLASS;
+      if (isIconImage(this.icon)) {
+        const img = el.ownerDocument.createElement("img");
+        img.className = `${THINK_BADGE_CLASS}-img`;
+        img.src = this.icon;
+        img.alt = "";
+        badge.appendChild(img);
+        const text = el.ownerDocument.createElement("span");
+        text.className = `${THINK_BADGE_CLASS}-text`;
+        badge.appendChild(text);
+        this.text = text;
+      } else {
+        this.text = null;
+      }
       row.appendChild(badge);
       this.badge = badge;
     }
-    this.badge.textContent = label;
+    if (this.text)
+      this.text.textContent = label;
+    else
+      this.badge.textContent = label;
   }
   detach() {
     var _a;
     if (this.badge) {
       this.badge.remove();
       this.badge = null;
+      this.text = null;
     }
     this.lastLabel = "";
     const el = this.el;
@@ -3731,13 +3765,13 @@ function anchorScrollTop(container, top, height, anchor) {
     Math.max(0, container.scrollHeight - container.clientHeight)
   );
 }
-function pickStops(targets, prevPos, pos, dir, visited, doneIdentities = /* @__PURE__ */ new Set()) {
+function pickStops(targets, prevPos, pos, dir, visited, doneIdentities = /* @__PURE__ */ new Set(), activeIdentity = null) {
   const unvisited = (t) => !visited.has(t.key);
   const identityOf = (t) => {
     var _a;
     return (_a = t.identity) != null ? _a : t.page;
   };
-  const reopens = (t) => doneIdentities.has(identityOf(t)) && t.index === 0;
+  const reopens = (t) => doneIdentities.has(identityOf(t)) && (t.index === 0 || activeIdentity != null && identityOf(t) !== activeIdentity);
   const crossed = crossedTargets(targets, prevPos, pos, dir).filter((t) => unvisited(t) && !reopens(t));
   const missed = targets.filter(
     (t) => unvisited(t) && !doneIdentities.has(identityOf(t)) && !crossed.some((c) => c.key === t.key) && (dir < 0 ? t.top > pos + 1 : t.top < pos - 1)
@@ -4832,6 +4866,15 @@ function renderThinkSettings(containerEl, host) {
       await host.saveSettings();
     }
   });
+  new import_obsidian5.Setting(containerEl).setName("Countdown icon").setDesc("Any emoji or text (\u{1F914}, \u{1F4AD}, Think\u2026), or an image path/URL ending in .png, .gif, .svg or .webp.").addText(
+    (t) => {
+      var _a;
+      return t.setPlaceholder("\u{1F914}").setValue((_a = s.scrollThinkIcon) != null ? _a : "\u{1F914}").onChange(async (v) => {
+        s.scrollThinkIcon = v.trim() || "\u{1F914}";
+        await host.saveSettings();
+      });
+    }
+  );
   new import_obsidian5.Setting(containerEl).setName("Distraction-free run").setDesc(
     "Hide the status bar, view header and mobile toolbar while a run is going, so opening an answer never makes the screen blink."
   ).addToggle(
@@ -5996,6 +6039,10 @@ var NotionTogglePlugin = class extends import_obsidian8.Plugin {
     /** v1.2.1 — the quick-controls sheet is open (FAB stays pinned). */
     this.scrollSheetOpen = false;
     this.scrollElByOrdinal = /* @__PURE__ */ new Map();
+    /** v1.6.0 — identity -> element: survives a lazy re-render renumbering ordinals. */
+    this.scrollElByIdentity = /* @__PURE__ */ new Map();
+    /** Identity of the toggle currently parked on (its chunks stay eligible). */
+    this.scrollActiveIdentity = null;
     /** v1.5.4 — the lazy-render override held for the length of a run. */
     this.scrollFullRender = null;
     /** v1.5.4 — how many toggles the *note source* has (DOM-independent truth). */
@@ -8158,8 +8205,10 @@ ${deckSummary(
     this.scrollNoteTotal = noteToggleCount(container);
     this.scrollSourceTotal = scanSourceToggles(this.noteSource()).total;
     this.scrollElByOrdinal = /* @__PURE__ */ new Map();
+    this.scrollElByIdentity = /* @__PURE__ */ new Map();
     this.scrollBoxes = kept.map((st) => {
       this.scrollElByOrdinal.set(st.ordinal, st.el);
+      this.scrollElByIdentity.set(st.identity, st.el);
       return { page: st.ordinal, top: st.top, height: st.height, identity: st.identity };
     }).sort((a, b) => a.top - b.top);
     this.scrollTargetsKey = "";
@@ -8207,6 +8256,7 @@ ${deckSummary(
     this.scrollDwellKey = null;
     this.scrollVisited.clear();
     this.scrollVisitedToggles.clear();
+    this.scrollActiveIdentity = null;
     this.scrollSkipCount = 0;
     this.scrollLastSkips = [];
   }
@@ -8216,7 +8266,8 @@ ${deckSummary(
     this.scheduleScrollFrame();
   }
   parkOnToggle(ordinal, now, identity) {
-    const el = this.scrollElByOrdinal.get(ordinal);
+    var _a, _b;
+    const el = (_b = (_a = identity ? this.scrollElByIdentity.get(identity) : void 0) != null ? _a : this.scrollElByIdentity.get(String(ordinal))) != null ? _b : this.scrollElByOrdinal.get(ordinal);
     if (this.scrollOpenEl && this.scrollOpenEl !== el && this.settings.scrollAutoClose) {
       this.thinkGate.clear();
       this.setToggleOpen(this.scrollOpenEl, false);
@@ -8228,6 +8279,7 @@ ${deckSummary(
     this.scrollBoxesAt = 0;
     if (identity)
       this.scrollVisitedToggles.add(identity);
+    this.scrollActiveIdentity = identity != null ? identity : String(ordinal);
     this.noteScrollVisit(ordinal, now);
   }
   /** Reader parity: a visit opens here and is graded when the pause ends. */
@@ -8421,7 +8473,8 @@ ${deckSummary(
           this.scrollPos,
           this.scrollDir,
           this.scrollVisited,
-          this.scrollVisitedToggles
+          this.scrollVisitedToggles,
+          this.scrollActiveIdentity
         );
         if (pick.missed.length) {
           this.perf.noteSkipped(pick.missed.length);

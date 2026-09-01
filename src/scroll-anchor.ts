@@ -70,14 +70,22 @@ export function pickStops(
   pos: number,
   dir: number,
   visited: ReadonlySet<string>,
-  doneIdentities: ReadonlySet<string | number> = new Set()
+  doneIdentities: ReadonlySet<string | number> = new Set(),
+  activeIdentity: string | number | null = null
 ): StopPick {
   const unvisited = (t: DwellTarget) => !visited.has(t.key);
   const identityOf = (t: DwellTarget): string | number => t.identity ?? t.page;
   // A finished toggle's *first* stop can also drift forward when the toggle
-  // grows, so it must not be crossed a second time either. Its continuation
-  // chunks (index > 0) stay eligible: that is how a tall answer is read on.
-  const reopens = (t: DwellTarget) => doneIdentities.has(identityOf(t)) && t.index === 0;
+  // grows, so it must not be crossed a second time either.
+  //
+  // v1.6.0 — its continuation chunks (index > 0) only stay eligible while the
+  // toggle is still the one being read (`activeIdentity`). Once the run has
+  // moved on, a re-measure that hands an already-revised toggle fresh chunk
+  // keys must not pull the run back onto it — that was the remaining
+  // "Q5 dobara khul raha hai" glitch, including on a loop lap.
+  const reopens = (t: DwellTarget) =>
+    doneIdentities.has(identityOf(t)) &&
+    (t.index === 0 || (activeIdentity != null && identityOf(t) !== activeIdentity));
   const crossed = crossedTargets(targets, prevPos, pos, dir).filter((t) => unvisited(t) && !reopens(t));
 
   const missed = targets.filter(

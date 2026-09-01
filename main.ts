@@ -381,6 +381,10 @@ export default class NotionTogglePlugin extends Plugin {
   /** v1.2.1 — the quick-controls sheet is open (FAB stays pinned). */
   scrollSheetOpen = false;
   scrollElByOrdinal: Map<number, HTMLElement> = new Map();
+  /** v1.6.0 — identity -> element: survives a lazy re-render renumbering ordinals. */
+  scrollElByIdentity: Map<string, HTMLElement> = new Map();
+  /** Identity of the toggle currently parked on (its chunks stay eligible). */
+  scrollActiveIdentity: string | null = null;
   /** v1.5.4 — the lazy-render override held for the length of a run. */
   scrollFullRender: FullRenderHandle | null = null;
   /** v1.5.4 — how many toggles the *note source* has (DOM-independent truth). */
@@ -2515,10 +2519,12 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollNoteTotal = noteToggleCount(container);
     this.scrollSourceTotal = scanSourceToggles(this.noteSource()).total;
     this.scrollElByOrdinal = new Map();
+    this.scrollElByIdentity = new Map();
     // v1.5.0 — page numbers are the note's own toggle numbers.
     this.scrollBoxes = kept
       .map((st) => {
         this.scrollElByOrdinal.set(st.ordinal, st.el);
+        this.scrollElByIdentity.set(st.identity, st.el);
         return { page: st.ordinal, top: st.top, height: st.height, identity: st.identity };
       })
       .sort((a, b) => a.top - b.top);
@@ -2570,6 +2576,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollDwellKey = null;
     this.scrollVisited.clear();
     this.scrollVisitedToggles.clear();
+    this.scrollActiveIdentity = null;
     this.scrollSkipCount = 0;
     this.scrollLastSkips = [];
   }
@@ -2578,7 +2585,14 @@ export default class NotionTogglePlugin extends Plugin {
     this.scheduleScrollFrame();
   }
   private parkOnToggle(ordinal: number, now: number, identity?: string) {
-    const el = this.scrollElByOrdinal.get(ordinal);
+    // v1.6.0 — identity wins over the rendered ordinal. Obsidian can replace a
+    // lazy section and renumber the visible toggles between the measurement and
+    // this park, and an ordinal lookup then opened the *wrong* toggle — that is
+    // the "red filter par yellow bhi khula" report. Both maps only ever contain
+    // toggles that passed the filter, so a miss opens nothing at all.
+    const el = (identity ? this.scrollElByIdentity.get(identity) : undefined)
+      ?? this.scrollElByIdentity.get(String(ordinal))
+      ?? this.scrollElByOrdinal.get(ordinal);
     if (this.scrollOpenEl && this.scrollOpenEl !== el && this.settings.scrollAutoClose) {
       this.thinkGate.clear();
       this.setToggleOpen(this.scrollOpenEl, false);
@@ -2590,6 +2604,7 @@ export default class NotionTogglePlugin extends Plugin {
       el && this.settings.scrollAutoOpen ? this.thinkGate.begin(el, this.settings, now) : 0;
     this.scrollBoxesAt = 0; // v1.4.7 — the layout just changed: re-measure next frame.
     if (identity) this.scrollVisitedToggles.add(identity);
+    this.scrollActiveIdentity = identity ?? String(ordinal);
     this.noteScrollVisit(ordinal, now);
   }
   /** Reader parity: a visit opens here and is graded when the pause ends. */
@@ -2781,7 +2796,8 @@ export default class NotionTogglePlugin extends Plugin {
           this.scrollPos,
           this.scrollDir,
           this.scrollVisited,
-          this.scrollVisitedToggles
+          this.scrollVisitedToggles,
+          this.scrollActiveIdentity
         );
 
         if (pick.missed.length) {

@@ -1165,7 +1165,26 @@ body.ntt-focus-run .callout-fold,
 body.ntt-focus-run .callout-content {
   transition: none !important;
 }
+body.ntt-focus-run .titlebar,
+body.ntt-focus-run .workspace-tab-header-container,
+body.ntt-focus-run .view-header-title-container {
+  display: none !important;
+}
+/* v1.6.0 — with Obsidian's own header hidden the phone's system status bar sits
+   on top of the first question. Keep a safe-area gap so the text is never under
+   the clock/battery row, and the bottom stays clear of the gesture bar. */
 body.ntt-focus-run.is-mobile .markdown-preview-view,
 body.ntt-focus-run.is-mobile .markdown-reading-view {
+  padding-top: max(env(safe-area-inset-top), 24px) !important;
   padding-bottom: env(safe-area-inset-bottom) !important;
+}
+/* Image badge face (png / gif / svg) picked by the reader. */
+.ntt-think-badge-img {
+  height: 1.1em;
+  width: auto;
+  vertical-align: -0.15em;
+  margin-inline-end: 0.25em;
+}
+.ntt-think-badge-text {
+  font-variant-numeric: tabular-nums;
 }

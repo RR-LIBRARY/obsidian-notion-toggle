@@ -88,3 +88,21 @@ describe("v1.5.9 think gate + distraction-free run", () => {
     expect(focus).toContain("env(safe-area-inset-bottom)");
   });
 });
+
+describe("v1.6.0 — focus run keeps the system status bar off the question", () => {
+  const css = readFileSync("styles.css", "utf8");
+
+  it("adds a top safe-area gap when Obsidian's header is hidden", () => {
+    const block = css.slice(css.indexOf("body.ntt-focus-run.is-mobile .markdown-preview-view"));
+    expect(block).toContain("padding-top: max(env(safe-area-inset-top)");
+  });
+
+  it("hides the tab header / titlebar too, so nothing blinks mid-run", () => {
+    expect(css).toContain("body.ntt-focus-run .workspace-tab-header-container");
+    expect(css).toContain("body.ntt-focus-run .titlebar");
+  });
+
+  it("styles the image countdown face", () => {
+    expect(css).toContain(".ntt-think-badge-img");
+  });
+});

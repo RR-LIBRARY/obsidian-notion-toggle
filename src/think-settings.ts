@@ -14,6 +14,7 @@ export interface ThinkSettingsHost {
   settings: {
     scrollThinkEnabled: boolean;
     scrollThinkSeconds: number;
+    scrollThinkIcon: string;
     scrollFocusChrome: boolean;
   };
   saveSettings(): Promise<void>;
@@ -49,6 +50,19 @@ export function renderThinkSettings(containerEl: HTMLElement, host: ThinkSetting
       await host.saveSettings();
     },
   });
+
+  new Setting(containerEl)
+    .setName("Countdown icon")
+    .setDesc("Any emoji or text (🤔, 💭, Think…), or an image path/URL ending in .png, .gif, .svg or .webp.")
+    .addText((t) =>
+      t
+        .setPlaceholder("🤔")
+        .setValue(s.scrollThinkIcon ?? "🤔")
+        .onChange(async (v) => {
+          s.scrollThinkIcon = v.trim() || "🤔";
+          await host.saveSettings();
+        })
+    );
 
   new Setting(containerEl)
     .setName("Distraction-free run")

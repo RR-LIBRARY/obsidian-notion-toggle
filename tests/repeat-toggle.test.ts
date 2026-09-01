@@ -99,3 +99,25 @@ describe("v1.5.7 — a finished toggle is never re-opened", () => {
     expect(pick.stop?.index).toBe(1);
   });
 });
+
+describe("v1.6.0 — a revised toggle's later chunks cannot pull the run back", () => {
+  const t = (identity: string, top: number, index = 0): DwellTarget => ({
+    page: 1,
+    identity,
+    top,
+    index,
+    key: `${identity}:${index}`,
+  });
+
+  it("ignores fresh chunk keys of a toggle the run already left", () => {
+    const targets = [t("q5", 1200), t("q5", 1900, 1), t("q7", 2400)];
+    const pick = pickStops(targets, 1800, 2000, 1, new Set(["q5:0"]), new Set(["q5"]), "q7");
+    expect(pick.stop?.identity).toBe(undefined);
+  });
+
+  it("still reads the current tall toggle screen by screen", () => {
+    const targets = [t("q5", 1200), t("q5", 1900, 1)];
+    const pick = pickStops(targets, 1800, 2000, 1, new Set(["q5:0"]), new Set(["q5"]), "q5");
+    expect(pick.stop?.index).toBe(1);
+  });
+});

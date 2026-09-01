@@ -97,6 +97,14 @@ export interface AutoScrollSettings {
   scrollForceReading: boolean;
   /** v1.5.1 — put the note back into its old view mode when the run stops. */
   scrollRestoreMode: boolean;
+  /** v1.5.9 — hold the answer back after the toggle opens (thinking time). */
+  scrollThinkEnabled: boolean;
+  /** v1.5.9 — seconds of thinking time before the answer is released. */
+  scrollThinkSeconds: number;
+  /** v1.6.0 — countdown badge face: emoji/text, or a png/gif/svg path or URL. */
+  scrollThinkIcon: string;
+  /** v1.5.9 — hide Obsidian's chrome while a run is going (no blink). */
+  scrollFocusChrome: boolean;
 }
 
 export const DEFAULT_AUTOSCROLL: AutoScrollSettings = {
@@ -130,6 +138,10 @@ export const DEFAULT_AUTOSCROLL: AutoScrollSettings = {
   scrollStopAnchor: "middle",
   scrollForceReading: true,
   scrollRestoreMode: true,
+  scrollThinkEnabled: true,
+  scrollThinkSeconds: 5,
+  scrollThinkIcon: "🤔",
+  scrollFocusChrome: true,
 };
 
 export const SPEED_MIN = 1;

@@ -33,12 +33,24 @@ export interface ThinkSettings {
   scrollThinkEnabled: boolean;
   /** Seconds of thinking time before the answer is released. */
   scrollThinkSeconds: number;
+  /** v1.6.0 — badge face: any emoji/text, or a png/gif/svg path or URL. */
+  scrollThinkIcon?: string;
 }
 
 export const DEFAULT_THINK: ThinkSettings = {
   scrollThinkEnabled: true,
   scrollThinkSeconds: 5,
+  scrollThinkIcon: "🤔",
 };
+
+/** Is this badge face an image (png / gif / svg / webp / jpg) rather than text? */
+export function isIconImage(icon: string | undefined): boolean {
+  const v = (icon ?? "").trim();
+  if (!v) return false;
+  if (/^data:image\//i.test(v)) return true;
+  if (!/^(https?:|app:|file:|\/|\.{0,2}\/)/i.test(v) && !v.includes("/")) return false;
+  return /\.(png|gif|svg|webp|jpe?g)(\?.*)?$/i.test(v);
+}
 
 export function clampThinkSeconds(seconds: number): number {
   if (!Number.isFinite(seconds)) return DEFAULT_THINK.scrollThinkSeconds;
@@ -90,13 +102,15 @@ export function thinkSplit(holdMs: number, thinkMs: number) {
   return { thinkMs: think, holdMs: hold, totalMs: think + hold };
 }
 
-/** "⏱ 4" — countdown chip text for the remaining think window. */
-export function thinkCountdownLabel(msLeft: number): string {
+/** "🤔 4" — countdown chip text. `icon` is any emoji/text the reader picked. */
+export function thinkCountdownLabel(msLeft: number, icon = "🤔"): string {
+  const face = isIconImage(icon) ? "" : (icon ?? "").trim() || "🤔";
+  const lead = face ? `${face} ` : "";
   const secs = Math.max(0, Math.ceil(msLeft / 1000));
-  if (secs < 60) return `🤔 ${secs}`;
+  if (secs < 60) return `${lead}${secs}`;
   const m = Math.floor(secs / 60);
   const rest = secs % 60;
-  return rest ? `🤔 ${m}m ${rest}` : `🤔 ${m}m`;
+  return rest ? `${lead}${m}m ${rest}` : `${lead}${m}m`;
 }
 
 /** Title row of a toggle (summary for `<details>`, callout title otherwise). */
@@ -135,6 +149,8 @@ export class ThinkGate {
   private badge: HTMLElement | null = null;
   private onTap: ((ev: Event) => void) | null = null;
   private lastLabel = "";
+  private icon = "🤔";
+  private text: HTMLElement | null = null;
 
   /** Is an answer currently held back? */
   get thinking(): boolean {
@@ -159,6 +175,7 @@ export class ThinkGate {
       return 0;
     }
     this.el = el;
+    this.icon = (s.scrollThinkIcon ?? "🤔").trim() || "🤔";
     this.until = now + ms;
     setThinkHidden(el, true);
     this.paint(ms);
@@ -216,23 +233,38 @@ export class ThinkGate {
   private paint(msLeft: number) {
     const el = this.el;
     if (!el) return;
-    const label = thinkCountdownLabel(msLeft);
+    const label = thinkCountdownLabel(msLeft, this.icon);
     if (label === this.lastLabel && this.badge?.isConnected) return;
     this.lastLabel = label;
     if (!this.badge || !this.badge.isConnected) {
       const row = titleRowOf(el) ?? el;
       const badge = el.ownerDocument.createElement("span");
       badge.className = THINK_BADGE_CLASS;
+      if (isIconImage(this.icon)) {
+        const img = el.ownerDocument.createElement("img");
+        img.className = `${THINK_BADGE_CLASS}-img`;
+        img.src = this.icon;
+        img.alt = "";
+        badge.appendChild(img);
+        const text = el.ownerDocument.createElement("span");
+        text.className = `${THINK_BADGE_CLASS}-text`;
+        badge.appendChild(text);
+        this.text = text;
+      } else {
+        this.text = null;
+      }
       row.appendChild(badge);
       this.badge = badge;
     }
-    this.badge.textContent = label;
+    if (this.text) this.text.textContent = label;
+    else this.badge.textContent = label;
   }
 
   private detach() {
     if (this.badge) {
       this.badge.remove();
       this.badge = null;
+      this.text = null;
     }
     this.lastLabel = "";
     const el = this.el;

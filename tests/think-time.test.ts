@@ -15,6 +15,7 @@ import {
   ThinkGate,
   clampThinkSeconds,
   parseThinkSeconds,
+  isIconImage,
   thinkCountdownLabel,
   thinkMsFor,
   thinkSplit,
@@ -261,5 +262,25 @@ describe("pause-at panel — verified against the note's 14 toggles", () => {
     const stops = buildModeStops(tall, cfg({ mode: "all" }), 800);
     expect(stops.length).toBeGreaterThan(1);
     expect(stops.every((s) => s.ordinal === 1)).toBe(true);
+  });
+});
+
+describe("v1.6.0 — customisable countdown face", () => {
+  it("uses the reader's emoji or text in the chip", () => {
+    expect(thinkCountdownLabel(3200, "💭")).toBe("💭 4");
+    expect(thinkCountdownLabel(3200, "Think")).toBe("Think 4");
+    expect(thinkCountdownLabel(3200, "")).toBe("🤔 4");
+  });
+
+  it("drops the text face when an image is used, keeping the seconds", () => {
+    expect(thinkCountdownLabel(3200, "assets/brain.gif")).toBe("4");
+  });
+
+  it("recognises image faces only for image paths", () => {
+    expect(isIconImage("assets/brain.gif")).toBe(true);
+    expect(isIconImage("https://x.dev/a.png?v=2")).toBe(true);
+    expect(isIconImage("/icons/think.svg")).toBe(true);
+    expect(isIconImage("🤔")).toBe(false);
+    expect(isIconImage("Think")).toBe(false);
   });
 });
