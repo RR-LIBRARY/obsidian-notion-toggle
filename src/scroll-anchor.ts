@@ -53,25 +53,41 @@ export interface StopPick {
  *  2. a stop that a re-measure moved *behind* the playhead (a toggle above just
  *     opened or closed) — still unvisited, so it is picked up as "missed";
  *  3. two stops sharing a dwell key — the guard is a per-stop visited set.
+ *
+ * v1.5.7 — `donePages` closes the "one toggle keeps re-opening" loop. Opening a
+ * toggle makes it taller, so the forced re-measure can hand the *same* toggle a
+ * larger set of chunk keys (`7:1`, `7:2` …) that were never visited. Those new
+ * keys sit behind the playhead, so the "missed" rescue used to jump straight
+ * back onto the toggle the run had just finished. A toggle already recorded as
+ * visited can therefore never be rescued backwards again; chunk reading still
+ * works, because those stops are reached *forwards* as `crossed`.
  */
 export function pickStops(
   targets: DwellTarget[],
   prevPos: number,
   pos: number,
   dir: number,
-  visited: ReadonlySet<string>
+  visited: ReadonlySet<string>,
+  donePages: ReadonlySet<number> = new Set()
 ): StopPick {
   const unvisited = (t: DwellTarget) => !visited.has(t.key);
-  const crossed = crossedTargets(targets, prevPos, pos, dir).filter(unvisited);
+  // A finished toggle's *first* stop can also drift forward when the toggle
+  // grows, so it must not be crossed a second time either. Its continuation
+  // chunks (index > 0) stay eligible: that is how a tall answer is read on.
+  const reopens = (t: DwellTarget) => donePages.has(t.page) && t.index === 0;
+  const crossed = crossedTargets(targets, prevPos, pos, dir).filter((t) => unvisited(t) && !reopens(t));
+
   const missed = targets.filter(
     (t) =>
       unvisited(t) &&
+      !donePages.has(t.page) &&
       !crossed.some((c) => c.key === t.key) &&
       (dir < 0 ? t.top > pos + 1 : t.top < pos - 1)
   );
   const queue = [...missed, ...crossed].sort((a, b) => (dir < 0 ? b.top - a.top : a.top - b.top));
   return { stop: queue[0], missed, queue };
 }
+
 
 /** Cache key for anchored targets: viewport, dwell config, anchor and layout. */
 export function targetsKey(
