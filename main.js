@@ -116,8 +116,8 @@ function createState(s) {
     autoPaused: false
   };
 }
-function formatTime(ms2) {
-  const total = Math.max(0, Math.ceil(ms2 / 1e3));
+function formatTime(ms3) {
+  const total = Math.max(0, Math.ceil(ms3 / 1e3));
   const h = Math.floor(total / 3600);
   const m = Math.floor(total % 3600 / 60);
   const sec2 = total % 60;
@@ -1054,7 +1054,9 @@ var DEFAULT_AUTOSCROLL = {
   scrollThinkEnabled: true,
   scrollThinkSeconds: 5,
   scrollThinkIcon: "\u{1F914}",
-  scrollFocusChrome: true
+  scrollFocusChrome: true,
+  scrollReducedMotion: false,
+  scrollTimingDebug: false
 };
 var SPEED_MIN = 1;
 var SPEED_MAX = 1200;
@@ -1370,6 +1372,13 @@ function debugLines(f) {
   }
   lines.push(`event ${f.lastEvent || "\u2014"}`);
   lines.push(`grade ${f.lastGrade || "\u2014"}`);
+  if (f.thinkPhase)
+    lines.push(`think ${f.thinkPhase}`);
+  if (f.timing && f.timing.length) {
+    lines.push("\u2014 timings \u2014");
+    for (const t of f.timing)
+      lines.push(t);
+  }
   if (f.progress)
     lines.push(f.progress);
   return lines;
@@ -2889,8 +2898,8 @@ function clampRatio(ratio) {
 function ringOffset(ratio) {
   return RING_CIRCUMFERENCE * (1 - clampRatio(ratio));
 }
-function formatRingTime(ms2) {
-  const total = Math.max(0, Math.ceil((Number.isFinite(ms2) ? ms2 : 0) / 1e3));
+function formatRingTime(ms3) {
+  const total = Math.max(0, Math.ceil((Number.isFinite(ms3) ? ms3 : 0) / 1e3));
   const h = Math.floor(total / 3600);
   const m = Math.floor(total % 3600 / 60);
   const s = total % 60;
@@ -3124,6 +3133,7 @@ function revealLanded(el) {
 // src/think-gate.ts
 var THINK_RUN_CLASS = "ntt-think-run";
 var FOCUS_RUN_CLASS = "ntt-focus-run";
+var REDUCED_MOTION_CLASS = "ntt-reduced-motion";
 var THINK_HIDDEN_CLASS = "ntt-think-hidden";
 var THINK_SHOWN_CLASS = "ntt-think-shown";
 var THINK_BADGE_CLASS = "ntt-think-badge";
@@ -3231,20 +3241,20 @@ var ThinkGate = class {
     this.release();
     if (!el)
       return 0;
-    const ms2 = thinkMsFor(titleTextOf(el), s);
-    if (ms2 <= 0) {
+    const ms3 = thinkMsFor(titleTextOf(el), s);
+    if (ms3 <= 0) {
       setThinkHidden(el, false);
       return 0;
     }
     this.el = el;
     this.icon = ((_a = s.scrollThinkIcon) != null ? _a : "\u{1F914}").trim() || "\u{1F914}";
-    this.until = now + ms2;
+    this.until = now + ms3;
     setThinkHidden(el, true);
-    this.paint(ms2);
+    this.paint(ms3);
     const row = (_b = titleRowOf(el)) != null ? _b : el;
     this.onTap = () => this.revealNow();
     row.addEventListener("click", this.onTap, { capture: true });
-    return ms2;
+    return ms3;
   }
   /** Advance the gate. Returns true on the frame the answer is released. */
   tick(now) {
@@ -3341,6 +3351,171 @@ var ThinkGate = class {
   }
 };
 
+// src/think-scope.ts
+var EMPTY_THINK_SCOPE = { seconds: null, enabled: null, icon: null };
+function frontmatterBlock(source) {
+  const text = source != null ? source : "";
+  if (!/^\uFEFF?---\r?\n/.test(text))
+    return "";
+  const rest = text.replace(/^\uFEFF/, "").slice(4);
+  const end = rest.search(/\r?\n---\s*(\r?\n|$)/);
+  if (end < 0)
+    return "";
+  return rest.slice(0, end);
+}
+function unitSeconds(value, unit) {
+  const u = (unit != null ? unit : "s").toLowerCase();
+  return u === "h" ? value * 3600 : u === "m" ? value * 60 : value;
+}
+function parseThinkValue(raw) {
+  const v = (raw != null ? raw : "").trim().replace(/^["']|["']$/g, "").toLowerCase();
+  if (!v)
+    return null;
+  if (v === "off" || v === "false" || v === "no" || v === "none")
+    return 0;
+  if (v === "on" || v === "true" || v === "yes")
+    return null;
+  const m = v.match(/^(\d{1,5})\s*([smh])?$/);
+  if (!m)
+    return null;
+  const secs = unitSeconds(Number(m[1]), m[2]);
+  return Math.min(THINK_SECONDS_MAX, Math.max(0, Math.round(secs)));
+}
+function fieldOf(block, keys) {
+  var _a, _b;
+  for (const line of block.split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
+    if (!m)
+      continue;
+    const key = ((_a = m[1]) != null ? _a : "").toLowerCase();
+    if (keys.includes(key))
+      return ((_b = m[2]) != null ? _b : "").trim();
+  }
+  return null;
+}
+function noteThinkScope(source) {
+  const block = frontmatterBlock(source);
+  if (!block)
+    return EMPTY_THINK_SCOPE;
+  const rawThink = fieldOf(block, ["think", "think-time", "think_time", "thinktime"]);
+  const rawIcon = fieldOf(block, ["think-icon", "think_icon", "thinkicon"]);
+  const seconds = parseThinkValue(rawThink);
+  const icon = (rawIcon != null ? rawIcon : "").replace(/^["']|["']$/g, "").trim() || null;
+  let enabled = null;
+  if (rawThink !== null) {
+    const flag = rawThink.trim().toLowerCase();
+    if (flag === "off" || flag === "false" || flag === "no" || flag === "none")
+      enabled = false;
+    else if (seconds === 0)
+      enabled = false;
+    else if (seconds !== null || flag === "on" || flag === "true" || flag === "yes")
+      enabled = true;
+  }
+  return { seconds, enabled, icon };
+}
+function effectiveThinkSettings(settings, scope) {
+  var _a;
+  const enabled = scope.enabled === null ? settings.scrollThinkEnabled : scope.enabled;
+  const seconds = scope.seconds === null ? settings.scrollThinkSeconds : clampThinkSeconds(scope.seconds);
+  return {
+    scrollThinkEnabled: enabled && seconds > 0,
+    scrollThinkSeconds: seconds,
+    scrollThinkIcon: (_a = scope.icon) != null ? _a : settings.scrollThinkIcon
+  };
+}
+
+// src/think-timeline.ts
+var LABEL = {
+  open: "toggle open",
+  countdown: "countdown start",
+  tick: "tick",
+  reveal: "answer release",
+  close: "toggle close"
+};
+var ms = (n) => `${Math.round(n)}ms`;
+function thinkTimingLines(events, limit = 6) {
+  if (events.length === 0)
+    return ["timing \u2014"];
+  const base = events[0].at;
+  const shown = events.slice(-limit);
+  const out = [];
+  let prev = null;
+  for (const ev of shown) {
+    const delta = prev ? ev.at - prev.at : 0;
+    out.push(
+      `#${ev.ordinal} ${LABEL[ev.phase]} t+${ms(ev.at - base)}${prev ? ` (+${ms(delta)})` : ""}${ev.note ? ` \xB7 ${ev.note}` : ""}`
+    );
+    prev = ev;
+  }
+  return out;
+}
+var ThinkTimeline = class {
+  constructor(cap = 60) {
+    this.events = [];
+    /** Off by default; the settings switch turns it on. */
+    this.enabled = false;
+    this.cap = Math.max(4, cap);
+  }
+  reset() {
+    this.events = [];
+  }
+  mark(phase, ordinal, at, note) {
+    if (!this.enabled)
+      return;
+    if (phase === "tick") {
+      const last = [...this.events].reverse().find((e) => e.phase === "tick" && e.ordinal === ordinal);
+      if (last && at - last.at < 1e3)
+        return;
+    }
+    this.events.push({ phase, ordinal, at, note });
+    if (this.events.length > this.cap)
+      this.events = this.events.slice(-this.cap);
+  }
+  all() {
+    return [...this.events];
+  }
+  lines(limit = 6) {
+    return thinkTimingLines(this.events, limit);
+  }
+};
+
+// src/filter-guard.ts
+var connected = (el, probe) => probe ? probe(el) : el.isConnected !== false;
+function colorAllowed(color, filter) {
+  return filter.length === 0 || filter.includes(color);
+}
+function resolveParkTarget(lookup) {
+  var _a;
+  const { identity, ordinal, byIdentity, byOrdinal, filter, colorOf: colorOf2, isConnected } = lookup;
+  const byId = identity ? byIdentity.get(identity) : void 0;
+  const el = (_a = byId != null ? byId : byOrdinal.get(ordinal)) != null ? _a : null;
+  const reason2 = byId ? "identity" : el ? "ordinal" : "missing";
+  if (!el)
+    return { el: null, reason: "missing", color: null };
+  if (!connected(el, isConnected))
+    return { el: null, reason: "detached", color: null };
+  const color = colorOf2(el);
+  if (!colorAllowed(color, filter))
+    return { el: null, reason: "filtered-out", color };
+  return { el, reason: reason2, color };
+}
+function strayOpenToggles(scan, filter, keep) {
+  if (filter.length === 0)
+    return [];
+  return scan.filter((s) => s.open && s.el !== keep && !colorAllowed(s.color, filter)).map((s) => s.el);
+}
+function parkSkipLabel(res, ordinal) {
+  var _a;
+  if (res.el)
+    return "";
+  if (res.reason === "filtered-out") {
+    return `filter guard: skipped toggle ${ordinal} (${(_a = res.color) != null ? _a : "?"} not in filter)`;
+  }
+  if (res.reason === "detached")
+    return `filter guard: toggle ${ordinal} was re-rendered`;
+  return `filter guard: toggle ${ordinal} not in the filtered plan`;
+}
+
 // src/deeplink.ts
 var COLORS = KIND_ORDER;
 var KIND_ALIASES = {
@@ -3422,9 +3597,9 @@ var TimerAccuracy = class {
     this.open = { index, title, phase, scheduledMs, startedAt: now };
     this.paused = 0;
   }
-  addPause(ms2) {
-    if (Number.isFinite(ms2) && ms2 > 0)
-      this.paused += ms2;
+  addPause(ms3) {
+    if (Number.isFinite(ms3) && ms3 > 0)
+      this.paused += ms3;
   }
   finish(now) {
     const o = this.open;
@@ -3522,7 +3697,7 @@ var FreezeDetector = class {
   }
 };
 var signed = (n) => n > 0 ? `+${n}` : `${n}`;
-var ms = (n) => `${Math.round(n)}ms`;
+var ms2 = (n) => `${Math.round(n)}ms`;
 var sec = (v) => `${Math.round(v / 100) / 10}s`;
 function perfVerdict(r) {
   const acc = Math.round(r.timer.accuracy * 100);
@@ -3544,7 +3719,7 @@ function perfVerdict(r) {
 function formatQuizReport(r) {
   const t = r.timer;
   const q = r.quizRender;
-  const lat = (name, l) => `| ${name} | ${l.count} | ${ms(l.mean)} | ${ms(l.p95)} | ${ms(l.max)} |`;
+  const lat = (name, l) => `| ${name} | ${l.count} | ${ms2(l.mean)} | ${ms2(l.p95)} | ${ms2(l.max)} |`;
   const out = [`**${perfVerdict(r)}**`, "", "### Timer accuracy"];
   if (!t.questions)
     out.push("No question finished yet \u2014 run a quiz to collect timings.");
@@ -3552,7 +3727,7 @@ function formatQuizReport(r) {
     out.push(
       `- Questions measured: **${t.questions}**`,
       `- Accuracy: **${Math.round(t.accuracy * 100)}%** (scheduled ${sec(t.scheduledMs)}, actual ${sec(t.actualMs)})`,
-      `- Drift: mean ${ms(t.meanDriftMs)} \xB7 p95 ${ms(t.p95DriftMs)} \xB7 total ${signed(t.totalDriftMs)}ms`
+      `- Drift: mean ${ms2(t.meanDriftMs)} \xB7 p95 ${ms2(t.p95DriftMs)} \xB7 total ${signed(t.totalDriftMs)}ms`
     );
     if (t.worst)
       out.push(
@@ -3565,9 +3740,9 @@ function formatQuizReport(r) {
   if (!r.freezes.count)
     out.push("None detected \u2014 every tick arrived within 750ms.");
   else {
-    out.push(`- Count: **${r.freezes.count}** \xB7 longest ${ms(r.freezes.longestMs)} \xB7 total ${ms(r.freezes.totalMs)}`);
+    out.push(`- Count: **${r.freezes.count}** \xB7 longest ${ms2(r.freezes.longestMs)} \xB7 total ${ms2(r.freezes.totalMs)}`);
     for (const e of r.freezes.events.slice(-5))
-      out.push(`  - ${ms(e.ms)} during *${e.phase}*`);
+      out.push(`  - ${ms2(e.ms)} during *${e.phase}*`);
   }
   out.push(
     "",
@@ -3580,8 +3755,8 @@ function formatQuizReport(r) {
     lat("Quiz self-heal", r.quizHeal),
     "",
     "### Timer paint cadence",
-    `- ${q.paints} paints \xB7 avg ${ms(q.meanGap)} \xB7 p95 ${ms(q.p95Gap)} (target 250ms)`,
-    `- Jitter ${ms(q.jitter)} \xB7 dropped ${q.dropped} \xB7 stability **${Math.round(q.score * 100)}%**`,
+    `- ${q.paints} paints \xB7 avg ${ms2(q.meanGap)} \xB7 p95 ${ms2(q.p95Gap)} (target 250ms)`,
+    `- Jitter ${ms2(q.jitter)} \xB7 dropped ${q.dropped} \xB7 stability **${Math.round(q.score * 100)}%**`,
     "",
     "### Autoscroll",
     `- Skipped stops: **${r.skippedStops}** (crossed but recovered \u2014 0 means nothing was missed)`
@@ -3686,8 +3861,8 @@ var Latency = class {
   constructor() {
     this.s = new Samples(60);
   }
-  add(ms2) {
-    this.s.add(ms2);
+  add(ms3) {
+    this.s.add(ms3);
   }
   /** Time `fn`, record it, return its value. */
   measure(now, fn) {
@@ -4844,6 +5019,39 @@ var DueNotesModal = class extends import_obsidian4.Modal {
 };
 
 // src/think-settings.ts
+function playCountdownPreview(target, seconds, icon, win = window) {
+  const total = Math.max(1, clampThinkSeconds(seconds));
+  let left = total * 1e3;
+  const paint = () => {
+    var _a, _b;
+    (_a = target.empty) == null ? void 0 : _a.call(target);
+    target.textContent = "";
+    if (isIconImage(icon)) {
+      const img = target.createEl ? target.createEl("img") : target.ownerDocument.createElement("img");
+      img.src = icon;
+      img.alt = "";
+      (_b = img.addClass) == null ? void 0 : _b.call(img, "ntt-think-preview-img");
+      if (!target.createEl)
+        target.appendChild(img);
+      const text = target.ownerDocument.createElement("span");
+      text.textContent = ` ${thinkCountdownLabel(left, "")}`.trimEnd();
+      target.appendChild(text);
+    } else {
+      target.textContent = thinkCountdownLabel(left, icon);
+    }
+  };
+  paint();
+  const id = win.setInterval(() => {
+    left -= 1e3;
+    if (left <= 0) {
+      win.clearInterval(id);
+      target.textContent = "answer released \u2714";
+      return;
+    }
+    paint();
+  }, 1e3);
+  return () => win.clearInterval(id);
+}
 function renderThinkSettings(containerEl, host) {
   const s = host.settings;
   new import_obsidian5.Setting(containerEl).setName("Think time before the answer").setDesc("Toggle opens showing only the question; the answer is released after the think window.").addToggle(
@@ -4853,10 +5061,10 @@ function renderThinkSettings(containerEl, host) {
     })
   );
   const row = new import_obsidian5.Setting(containerEl).setName("Think seconds").setDesc(
-    `Currently ${formatDwell(clampThinkSeconds(s.scrollThinkSeconds))}. Per-toggle override: put \u{1F914}20s or ?30s in the question title. Tap the question to reveal early.`
+    `Currently ${formatDwell(clampThinkSeconds(s.scrollThinkSeconds))}. Per-toggle override: put \u{1F914}20s or ?30s in the question title. Per-note override: add "think: 20s" to the note's frontmatter. Tap the question to reveal early.`
   );
   addSecondsPicker(row, {
-    sliderMin: THINK_SECONDS_MIN,
+    sliderMin: Math.max(1, THINK_SECONDS_MIN),
     sliderMax: 60,
     max: THINK_SECONDS_MAX,
     get: () => clampThinkSeconds(s.scrollThinkSeconds),
@@ -4866,6 +5074,16 @@ function renderThinkSettings(containerEl, host) {
       await host.saveSettings();
     }
   });
+  const preview = new import_obsidian5.Setting(containerEl).setName("Preview the countdown").setDesc("Plays the selected think window here, with your countdown face.");
+  const badge = preview.controlEl.createSpan({ cls: "ntt-think-preview", text: "\u2014" });
+  let stop = null;
+  preview.addButton(
+    (b) => b.setButtonText("Play").onClick(() => {
+      var _a;
+      stop == null ? void 0 : stop();
+      stop = playCountdownPreview(badge, s.scrollThinkSeconds, (_a = s.scrollThinkIcon) != null ? _a : "\u{1F914}");
+    })
+  );
   new import_obsidian5.Setting(containerEl).setName("Countdown icon").setDesc("Any emoji or text (\u{1F914}, \u{1F4AD}, Think\u2026), or an image path/URL ending in .png, .gif, .svg or .webp.").addText(
     (t) => {
       var _a;
@@ -4875,11 +5093,23 @@ function renderThinkSettings(containerEl, host) {
       });
     }
   );
-  new import_obsidian5.Setting(containerEl).setName("Distraction-free run").setDesc(
-    "Hide the status bar, view header and mobile toolbar while a run is going, so opening an answer never makes the screen blink."
+  new import_obsidian5.Setting(containerEl).setName("Distraction-free mode").setDesc(
+    "Hide the status bar, view header and mobile toolbar during the think countdown and the rest of the run, so opening an answer never makes the screen blink."
   ).addToggle(
     (tg) => tg.setValue(s.scrollFocusChrome).onChange(async (v) => {
       s.scrollFocusChrome = v;
+      await host.saveSettings();
+    })
+  );
+  new import_obsidian5.Setting(containerEl).setName("Reduced motion").setDesc("Countdown and answer reveal become instant \u2014 no fades, no transitions.").addToggle(
+    (tg) => tg.setValue(s.scrollReducedMotion).onChange(async (v) => {
+      s.scrollReducedMotion = v;
+      await host.saveSettings();
+    })
+  );
+  new import_obsidian5.Setting(containerEl).setName("Timing debug overlay").setDesc("Log the exact toggle-open, countdown-start and answer-release timestamps on screen.").addToggle(
+    (tg) => tg.setValue(s.scrollTimingDebug).onChange(async (v) => {
+      s.scrollTimingDebug = v;
       await host.saveSettings();
     })
   );
@@ -6024,6 +6254,8 @@ var NotionTogglePlugin = class extends import_obsidian8.Plugin {
     this.scrollDwellUntil = 0;
     /** v1.5.9 — think-time gate: answer stays hidden until it releases. */
     this.thinkGate = new ThinkGate();
+    this.thinkTimeline = new ThinkTimeline();
+    this.scrollOpenOrdinal = 0;
     /** v1.5.9 — think ms granted to the current stop (added on top of the hold). */
     this.scrollThinkMs = 0;
     this.scrollDwellKey = null;
@@ -7363,10 +7595,10 @@ ${row}`, { line: cursor.line, ch: line.length });
    * v1.2.1 — status notice that respects "quiet mode". Errors keep using
    * `new Notice(...)` directly so they are never swallowed.
    */
-  say(message, ms2 = 3e3) {
+  say(message, ms3 = 3e3) {
     if (this.settings.scrollQuiet)
       return;
-    new import_obsidian8.Notice(message, ms2);
+    new import_obsidian8.Notice(message, ms3);
   }
   /** v1.4.10 — candidates + pick rule live in `src/scroll-container.ts`. */
   scrollCandidates() {
@@ -7674,18 +7906,18 @@ ${row}`, { line: cursor.line, ch: line.length });
       }));
     }
     const ordered = orderModeStops(toggleStops, cfg, this.settings.scrollReverse);
-    const togglePlan = ordered.flatMap((ms2) => {
-      const src = byOrdinal.get(ms2.ordinal);
+    const togglePlan = ordered.flatMap((ms3) => {
+      const src = byOrdinal.get(ms3.ordinal);
       if (!src)
         return [];
       return [{
         index: src.index,
-        top: ms2.top,
+        top: ms3.top,
         color: src.color,
         el: src.el,
         identity: src.identity,
-        ordinal: ms2.ordinal,
-        part: ms2.part
+        ordinal: ms3.ordinal,
+        part: ms3.part
       }];
     });
     if (advanceBy !== "both")
@@ -7926,6 +8158,9 @@ ${deckSummary(
     this.scrollLastGrade = "";
     document.body.classList.add(THINK_RUN_CLASS);
     document.body.classList.toggle(FOCUS_RUN_CLASS, this.settings.scrollFocusChrome);
+    document.body.classList.toggle(REDUCED_MOTION_CLASS, this.settings.scrollReducedMotion);
+    this.thinkTimeline.reset();
+    this.closeFilteredStrays(container, null);
     this.syncScrollDebugOverlay();
     this.say(sessionLabel(this.settings, plan.length));
     this.renderScrollBar();
@@ -7987,7 +8222,7 @@ ${deckSummary(
     this.thinkGate.clear();
     if (this.scrollOpenEl)
       clearThinkMarks(this.scrollOpenEl);
-    document.body.classList.remove(THINK_RUN_CLASS, FOCUS_RUN_CLASS);
+    document.body.classList.remove(THINK_RUN_CLASS, FOCUS_RUN_CLASS, REDUCED_MOTION_CLASS);
     if (this.scrollOpenEl && this.settings.scrollAutoClose) {
       this.setToggleOpen(this.scrollOpenEl, false);
     }
@@ -8085,7 +8320,8 @@ ${deckSummary(
   /** Mount or drop the debug overlay to match the setting. */
   syncScrollDebugOverlay() {
     var _a;
-    if (this.settings.scrollDebug && this.scrollRunning) {
+    this.thinkTimeline.enabled = !!this.settings.scrollTimingDebug;
+    if ((this.settings.scrollDebug || this.settings.scrollTimingDebug) && this.scrollRunning) {
       if (!this.scrollDebugOverlay) {
         this.scrollDebugOverlay = new ScrollDebugOverlay();
         this.scrollDebugOverlay.mount(document.body);
@@ -8120,6 +8356,8 @@ ${deckSummary(
         lastGrade: this.scrollLastGrade,
         progress: this.scrollProgressLabel()
       }),
+      thinkPhase: this.thinkGate.phaseLabel(ts),
+      timing: this.thinkTimeline.enabled ? this.thinkTimeline.lines() : void 0,
       ...this.filterTelemetry(container),
       ...this.stopTelemetry(container),
       ...frame
@@ -8265,17 +8503,61 @@ ${deckSummary(
       this.paintScrollDebug({}, ts);
     this.scheduleScrollFrame();
   }
+  /** v1.6.1 — the think settings this note is actually running with. */
+  thinkSettingsForNote() {
+    return effectiveThinkSettings(this.settings, noteThinkScope(this.noteSource()));
+  }
+  /**
+   * v1.6.1 — close every open toggle that the active filter excludes.
+   *
+   * A hand-opened answer (or one left open by an earlier plan) is
+   * indistinguishable from a filter leak on screen, so a filtered run clears
+   * them before and during the run.
+   */
+  closeFilteredStrays(container, keep) {
+    const filter = this.settings.scrollFilter;
+    if (!container || filter.length === 0)
+      return 0;
+    const scan = this.collectStops(container).filter((s) => !!s.el).map((s) => ({ el: s.el, color: s.color, open: this.isToggleOpen(s.el) }));
+    const strays = strayOpenToggles(scan, filter, keep != null ? keep : this.scrollOpenEl);
+    for (const el of strays) {
+      clearThinkMarks(el);
+      this.setToggleOpen(el, false);
+    }
+    return strays.length;
+  }
   parkOnToggle(ordinal, now, identity) {
-    var _a, _b;
-    const el = (_b = (_a = identity ? this.scrollElByIdentity.get(identity) : void 0) != null ? _a : this.scrollElByIdentity.get(String(ordinal))) != null ? _b : this.scrollElByOrdinal.get(ordinal);
+    const res = resolveParkTarget({
+      identity,
+      ordinal,
+      byIdentity: this.scrollElByIdentity,
+      byOrdinal: this.scrollElByOrdinal,
+      filter: this.settings.scrollFilter,
+      colorOf: (el2) => kindOf(toggleTypeOf(el2))
+    });
+    const el = res.el;
+    if (!el) {
+      this.scrollLastEvent = parkSkipLabel(res, ordinal);
+      this.scrollBoxesAt = 0;
+      if (res.reason === "filtered-out" || res.reason === "detached")
+        return;
+    }
     if (this.scrollOpenEl && this.scrollOpenEl !== el && this.settings.scrollAutoClose) {
       this.thinkGate.clear();
+      this.thinkTimeline.mark("close", this.scrollOpenOrdinal, now);
       this.setToggleOpen(this.scrollOpenEl, false);
     }
-    if (el && this.settings.scrollAutoOpen)
+    if (el && this.settings.scrollAutoOpen) {
       this.setToggleOpen(el, true);
+      this.thinkTimeline.mark("open", ordinal, now);
+    }
     this.scrollOpenEl = el != null ? el : null;
-    this.scrollThinkMs = el && this.settings.scrollAutoOpen ? this.thinkGate.begin(el, this.settings, now) : 0;
+    this.scrollOpenOrdinal = ordinal;
+    this.closeFilteredStrays(this.scrollContainer, el);
+    this.scrollThinkMs = el && this.settings.scrollAutoOpen ? this.thinkGate.begin(el, this.thinkSettingsForNote(), now) : 0;
+    if (this.scrollThinkMs > 0) {
+      this.thinkTimeline.mark("countdown", ordinal, now, `${Math.round(this.scrollThinkMs / 1e3)}s`);
+    }
     this.scrollBoxesAt = 0;
     if (identity)
       this.scrollVisitedToggles.add(identity);
@@ -8382,8 +8664,12 @@ ${deckSummary(
     const perFrame = clampSpeed(this.settings.scrollSpeed) / 60;
     if (this.scrollDwellUntil && ts < this.scrollDwellUntil) {
       this.scrollPos = container.scrollTop;
-      if (this.thinkGate.tick(ts))
+      if (this.thinkGate.tick(ts)) {
         this.scrollBoxesAt = 0;
+        this.thinkTimeline.mark("reveal", this.scrollOpenOrdinal, ts);
+      } else if (this.thinkGate.thinking) {
+        this.thinkTimeline.mark("tick", this.scrollOpenOrdinal, ts);
+      }
       if (this.scrollDebugOverlay)
         this.paintScrollDebug({}, ts);
       this.scheduleScrollFrame();
@@ -8845,8 +9131,8 @@ ${perfVerdict(this.perf.report())}`, 9e3);
       return;
     const title = (_a = this.quizTitles[st.at]) != null ? _a : "";
     const reveal = event === "reveal";
-    const ms2 = reveal ? clampRevealSeconds(this.settings.quizRevealSeconds) * 1e3 : questionMs(title, this.settings);
-    this.perf.timer.start(st.at + 1, title, reveal ? "reveal" : "question", ms2, Date.now());
+    const ms3 = reveal ? clampRevealSeconds(this.settings.quizRevealSeconds) * 1e3 : questionMs(title, this.settings);
+    this.perf.timer.start(st.at + 1, title, reveal ? "reveal" : "question", ms3, Date.now());
   }
   /** Paint the inline ring (and the optional dock) from the engine state. */
   renderQuizHud() {

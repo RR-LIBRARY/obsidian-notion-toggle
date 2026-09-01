@@ -82,7 +82,14 @@ export interface DebugFrame {
   lastSkips?: string[];
   /** Reverse wrap fallback index (where an up-leg restarts). */
   reverseWrap?: number | null;
+
+  /* --- v1.6.1 think-time timing log (optional) --- */
+  /** Current think phase, e.g. "think 3s" or "answer". */
+  thinkPhase?: string;
+  /** Pre-formatted timing lines from `ThinkTimeline`. */
+  timing?: string[];
 }
+
 
 
 const px = (n: number) => `${Math.round(n)}`;
@@ -158,9 +165,15 @@ export function debugLines(f: DebugFrame): string[] {
   }
   lines.push(`event ${f.lastEvent || "—"}`);
   lines.push(`grade ${f.lastGrade || "—"}`);
+  if (f.thinkPhase) lines.push(`think ${f.thinkPhase}`);
+  if (f.timing && f.timing.length) {
+    lines.push("— timings —");
+    for (const t of f.timing) lines.push(t);
+  }
   if (f.progress) lines.push(f.progress);
   return lines;
 }
+
 
 
 export class ScrollDebugOverlay {

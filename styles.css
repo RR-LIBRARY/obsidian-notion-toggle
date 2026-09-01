@@ -1188,3 +1188,32 @@ body.ntt-focus-run.is-mobile .markdown-reading-view {
 .ntt-think-badge-text {
   font-variant-numeric: tabular-nums;
 }
+
+/* v1.6.1 — reduced-motion switch: the setting does what
+   `prefers-reduced-motion` does, for readers who only want the countdown and
+   the reveal to be instant without changing their whole phone. */
+body.ntt-reduced-motion .callout.ntt-think-shown > .callout-content,
+body.ntt-reduced-motion details.ntt-think-shown > *:not(summary),
+body.ntt-reduced-motion .ntt-think-badge {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* v1.6.1 — countdown preview chip in settings. */
+.ntt-think-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 5.5em;
+  padding: 2px 8px;
+  margin-right: 8px;
+  border-radius: 10px;
+  background: var(--background-modifier-hover);
+  font-variant-numeric: tabular-nums;
+}
+.ntt-think-preview-img,
+.ntt-think-preview img {
+  width: 1.1em;
+  height: 1.1em;
+  object-fit: contain;
+}

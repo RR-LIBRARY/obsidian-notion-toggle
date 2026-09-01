@@ -191,7 +191,10 @@ import {
   type ToggleSnapshot,
 } from "./src/quiz-visibility";
 import { healQuizEls, needsHeal, revealLanded } from "./src/quiz-heal";
-import { FOCUS_RUN_CLASS, THINK_RUN_CLASS, ThinkGate, clearThinkMarks } from "./src/think-gate";
+import { FOCUS_RUN_CLASS, REDUCED_MOTION_CLASS, THINK_RUN_CLASS, ThinkGate, clearThinkMarks } from "./src/think-gate";
+import { effectiveThinkSettings, noteThinkScope } from "./src/think-scope";
+import { ThinkTimeline } from "./src/think-timeline";
+import { parkSkipLabel, resolveParkTarget, strayOpenToggles } from "./src/filter-guard";
 import { parseDeepLink } from "./src/deeplink";
 import { Telemetry, perfVerdict } from "./src/telemetry";
 import { anchorScrollTop, anchoredTargets, pickStops, routeStopTops, targetsKey } from "./src/scroll-anchor";
@@ -366,6 +369,8 @@ export default class NotionTogglePlugin extends Plugin {
   scrollDwellUntil = 0;
   /** v1.5.9 — think-time gate: answer stays hidden until it releases. */
   thinkGate = new ThinkGate();
+  thinkTimeline = new ThinkTimeline();
+  private scrollOpenOrdinal = 0;
   /** v1.5.9 — think ms granted to the current stop (added on top of the hold). */
   scrollThinkMs = 0;
   scrollDwellKey: string | null = null;
@@ -2249,6 +2254,9 @@ export default class NotionTogglePlugin extends Plugin {
     // v1.5.9 — think gate CSS + distraction-free chrome for this run.
     document.body.classList.add(THINK_RUN_CLASS);
     document.body.classList.toggle(FOCUS_RUN_CLASS, this.settings.scrollFocusChrome);
+    document.body.classList.toggle(REDUCED_MOTION_CLASS, this.settings.scrollReducedMotion);
+    this.thinkTimeline.reset();
+    this.closeFilteredStrays(container, null);
     this.syncScrollDebugOverlay();
     this.say(sessionLabel(this.settings, plan.length));
     this.renderScrollBar();
@@ -2301,7 +2309,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollRenderRetries = 0;
     this.thinkGate.clear();
     if (this.scrollOpenEl) clearThinkMarks(this.scrollOpenEl);
-    document.body.classList.remove(THINK_RUN_CLASS, FOCUS_RUN_CLASS);
+    document.body.classList.remove(THINK_RUN_CLASS, FOCUS_RUN_CLASS, REDUCED_MOTION_CLASS);
     if (this.scrollOpenEl && this.settings.scrollAutoClose) {
       this.setToggleOpen(this.scrollOpenEl, false);
     }
@@ -2398,7 +2406,8 @@ export default class NotionTogglePlugin extends Plugin {
   }
   /** Mount or drop the debug overlay to match the setting. */
   syncScrollDebugOverlay() {
-    if (this.settings.scrollDebug && this.scrollRunning) {
+    this.thinkTimeline.enabled = !!this.settings.scrollTimingDebug;
+    if ((this.settings.scrollDebug || this.settings.scrollTimingDebug) && this.scrollRunning) {
       if (!this.scrollDebugOverlay) {
         this.scrollDebugOverlay = new ScrollDebugOverlay();
         this.scrollDebugOverlay.mount(document.body);
@@ -2431,6 +2440,8 @@ export default class NotionTogglePlugin extends Plugin {
         lastGrade: this.scrollLastGrade,
         progress: this.scrollProgressLabel(),
       }),
+      thinkPhase: this.thinkGate.phaseLabel(ts),
+      timing: this.thinkTimeline.enabled ? this.thinkTimeline.lines() : undefined,
       ...this.filterTelemetry(container),
       ...this.stopTelemetry(container),
       ...frame,
@@ -2584,24 +2595,72 @@ export default class NotionTogglePlugin extends Plugin {
     if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
     this.scheduleScrollFrame();
   }
+  /** v1.6.1 — the think settings this note is actually running with. */
+  private thinkSettingsForNote() {
+    return effectiveThinkSettings(this.settings, noteThinkScope(this.noteSource()));
+  }
+  /**
+   * v1.6.1 — close every open toggle that the active filter excludes.
+   *
+   * A hand-opened answer (or one left open by an earlier plan) is
+   * indistinguishable from a filter leak on screen, so a filtered run clears
+   * them before and during the run.
+   */
+  private closeFilteredStrays(container: HTMLElement | null, keep?: HTMLElement | null) {
+    const filter = this.settings.scrollFilter;
+    if (!container || filter.length === 0) return 0;
+    const scan = (this.collectStops(container) as (ToggleStop & { el?: HTMLElement })[])
+      .filter((s): s is ToggleStop & { el: HTMLElement } => !!s.el)
+      .map((s) => ({ el: s.el, color: s.color, open: this.isToggleOpen(s.el) }));
+    const strays = strayOpenToggles(scan, filter, keep ?? this.scrollOpenEl);
+    for (const el of strays) {
+      clearThinkMarks(el);
+      this.setToggleOpen(el, false);
+    }
+    return strays.length;
+  }
   private parkOnToggle(ordinal: number, now: number, identity?: string) {
-    // v1.6.0 — identity wins over the rendered ordinal. Obsidian can replace a
-    // lazy section and renumber the visible toggles between the measurement and
-    // this park, and an ordinal lookup then opened the *wrong* toggle — that is
-    // the "red filter par yellow bhi khula" report. Both maps only ever contain
-    // toggles that passed the filter, so a miss opens nothing at all.
-    const el = (identity ? this.scrollElByIdentity.get(identity) : undefined)
-      ?? this.scrollElByIdentity.get(String(ordinal))
-      ?? this.scrollElByOrdinal.get(ordinal);
+    // v1.6.1 — identity first, then a hard re-check against reality: the
+    // element must still be in the document *and* its own live colour must pass
+    // the filter. Obsidian can replace a lazy Reading View section between the
+    // measurement and this park, which is how a 🟡 toggle used to open during
+    // a 🔴 run. A refused park opens nothing and is reported as a skip.
+    const res = resolveParkTarget({
+      identity,
+      ordinal,
+      byIdentity: this.scrollElByIdentity,
+      byOrdinal: this.scrollElByOrdinal,
+      filter: this.settings.scrollFilter,
+      colorOf: (el) => kindOf(toggleTypeOf(el)),
+    });
+    const el = res.el;
+    if (!el) {
+      this.scrollLastEvent = parkSkipLabel(res, ordinal);
+      this.scrollBoxesAt = 0; // re-measure: the plan is out of date.
+      if (res.reason === "filtered-out" || res.reason === "detached") return;
+    }
     if (this.scrollOpenEl && this.scrollOpenEl !== el && this.settings.scrollAutoClose) {
       this.thinkGate.clear();
+      this.thinkTimeline.mark("close", this.scrollOpenOrdinal, now);
       this.setToggleOpen(this.scrollOpenEl, false);
     }
-    if (el && this.settings.scrollAutoOpen) this.setToggleOpen(el, true);
+    if (el && this.settings.scrollAutoOpen) {
+      this.setToggleOpen(el, true);
+      this.thinkTimeline.mark("open", ordinal, now);
+    }
     this.scrollOpenEl = el ?? null;
+    this.scrollOpenOrdinal = ordinal;
+    // v1.6.1 — a filtered run also clears strays the plan does not own.
+    this.closeFilteredStrays(this.scrollContainer, el);
     // v1.5.9 — question first: the answer is held back for the think window.
+    // v1.6.1 — the window can come from this note's frontmatter.
     this.scrollThinkMs =
-      el && this.settings.scrollAutoOpen ? this.thinkGate.begin(el, this.settings, now) : 0;
+      el && this.settings.scrollAutoOpen
+        ? this.thinkGate.begin(el, this.thinkSettingsForNote(), now)
+        : 0;
+    if (this.scrollThinkMs > 0) {
+      this.thinkTimeline.mark("countdown", ordinal, now, `${Math.round(this.scrollThinkMs / 1000)}s`);
+    }
     this.scrollBoxesAt = 0; // v1.4.7 — the layout just changed: re-measure next frame.
     if (identity) this.scrollVisitedToggles.add(identity);
     this.scrollActiveIdentity = identity ?? String(ordinal);
@@ -2693,7 +2752,12 @@ export default class NotionTogglePlugin extends Plugin {
     if (this.scrollDwellUntil && ts < this.scrollDwellUntil) {
       this.scrollPos = container.scrollTop;
       // v1.5.9 — think window: question only, answer released when it ends.
-      if (this.thinkGate.tick(ts)) this.scrollBoxesAt = 0;
+      if (this.thinkGate.tick(ts)) {
+        this.scrollBoxesAt = 0;
+        this.thinkTimeline.mark("reveal", this.scrollOpenOrdinal, ts);
+      } else if (this.thinkGate.thinking) {
+        this.thinkTimeline.mark("tick", this.scrollOpenOrdinal, ts);
+      }
       if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
       this.scheduleScrollFrame();
       return;

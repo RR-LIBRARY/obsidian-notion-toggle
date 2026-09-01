@@ -456,17 +456,22 @@ body.is-phone .notion-toggle-timer .ntt-time {
     overflow-x: auto;
     font-size: 0.92em;
   }
-  /* Keep the last lines above Obsidian's mobile toolbar and quiz dock. */
+  /* v1.5.6 — the reading view only reserves room while the quiz dock is on
+     screen. Reserving it unconditionally left a permanent empty band (the
+     "white strip") under every note, even with no dock and no grading row. */
   .is-mobile .markdown-preview-view,
   .is-mobile .markdown-reading-view,
   .is-mobile .view-content,
-  .is-mobile .cm-contentContainer,
+  .is-mobile .cm-contentContainer {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
   body.ntt-quiz-active.is-mobile .markdown-preview-view,
   body.ntt-quiz-active.is-mobile .markdown-reading-view,
   body.ntt-quiz-active.is-mobile .view-content {
     padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
   }
 }
+
 
 /* ---------- v1.0.7: SM-2 grading row + due list ---------- */
 .ntt-grade-row {
@@ -671,6 +676,29 @@ body.ntt-quiz-active details > *:not(summary) {
 body.ntt-quiz-active .callout.ntt-quiz-shown > .callout-content {
   animation: ntt-reveal 160ms ease-out both;
 }
+/* v1.5.5 — the revert is animated too: the measured height stays on the element
+   after hiding, so the answer eases shut from its real height instead of
+   snapping to zero (that snap was the "blink" on mobile). */
+@keyframes ntt-collapse {
+  from {
+    max-height: var(--ntt-reveal-height, 0px);
+    opacity: 1;
+  }
+  to {
+    max-height: 0;
+    opacity: 0;
+  }
+}
+body.ntt-quiz-active .callout.ntt-quiz-hidden > .callout-content,
+body.ntt-quiz-active details.ntt-quiz-hidden > *:not(summary) {
+  animation: ntt-collapse 140ms ease-in both;
+}
+@media (prefers-reduced-motion: reduce) {
+  body.ntt-quiz-active .callout.ntt-quiz-hidden > .callout-content,
+  body.ntt-quiz-active details.ntt-quiz-hidden > *:not(summary) {
+    animation: none;
+  }
+}
 
 /* Slim control strip (hidden in minimal quiz UI mode). */
 .ntt-quiz-dock {
@@ -747,7 +775,8 @@ body.is-mobile .ntt-quiz-dock-btn {
 /* v1.1.1 — extra autoscroll bar buttons (mode / dwell / go-to-top) */
 .ntt-scroll-btn.is-mode,
 .ntt-scroll-btn.is-dwell,
-.ntt-scroll-btn.is-top {
+.ntt-scroll-btn.is-top,
+.ntt-scroll-btn.is-stop {
   font-size: 0.85em;
   min-width: 44px;
 }
@@ -1079,4 +1108,112 @@ body.is-mobile .ntt-fab.is-pressed,
   justify-content: flex-end;
   margin-top: 12px;
   flex-wrap: wrap;
+}
+
+/* ---------- v1.5.9 — think time gate + distraction-free run ---------- */
+
+/* The answer is held back while the question is being thought about. Classes
+   only: Obsidian's fold handler is never invoked, so no blink and no rewritten
+   fold state in the note. */
+body.ntt-think-run .callout.ntt-think-hidden > .callout-content,
+body.ntt-think-run details.ntt-think-hidden > *:not(summary) {
+  display: none !important;
+}
+/* Released answer: same 140ms feel as the quiz reveal, no flash. */
+body.ntt-think-run .callout.ntt-think-shown > .callout-content,
+body.ntt-think-run details.ntt-think-shown > *:not(summary) {
+  animation: ntt-think-in 140ms ease-out;
+}
+@keyframes ntt-think-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.ntt-think-run .callout.ntt-think-shown > .callout-content,
+  body.ntt-think-run details.ntt-think-shown > *:not(summary) {
+    animation: none;
+  }
+}
+/* Countdown chip on the question title. */
+.ntt-think-badge {
+  margin-inline-start: 0.5em;
+  padding: 0 0.45em;
+  border-radius: 10px;
+  font-size: 0.8em;
+  font-variant-numeric: tabular-nums;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+/* Distraction-free run: Obsidian's own chrome steps aside so nothing relayouts
+   (and blinks) every time an answer opens. Safe-area padding stays, so the note
+   text is never under the phone's gesture bar. */
+body.ntt-focus-run .status-bar,
+body.ntt-focus-run .view-header,
+body.ntt-focus-run .workspace-drawer,
+body.ntt-focus-run .mobile-navbar,
+body.ntt-focus-run .mobile-toolbar {
+  display: none !important;
+}
+body.ntt-focus-run .callout,
+body.ntt-focus-run .callout-title,
+body.ntt-focus-run .callout-fold,
+body.ntt-focus-run .callout-content {
+  transition: none !important;
+}
+body.ntt-focus-run .titlebar,
+body.ntt-focus-run .workspace-tab-header-container,
+body.ntt-focus-run .view-header-title-container {
+  display: none !important;
+}
+/* v1.6.0 — with Obsidian's own header hidden the phone's system status bar sits
+   on top of the first question. Keep a safe-area gap so the text is never under
+   the clock/battery row, and the bottom stays clear of the gesture bar. */
+body.ntt-focus-run.is-mobile .markdown-preview-view,
+body.ntt-focus-run.is-mobile .markdown-reading-view {
+  padding-top: max(env(safe-area-inset-top), 24px) !important;
+  padding-bottom: env(safe-area-inset-bottom) !important;
+}
+/* Image badge face (png / gif / svg) picked by the reader. */
+.ntt-think-badge-img {
+  height: 1.1em;
+  width: auto;
+  vertical-align: -0.15em;
+  margin-inline-end: 0.25em;
+}
+.ntt-think-badge-text {
+  font-variant-numeric: tabular-nums;
+}
+
+/* v1.6.1 — reduced-motion switch: the setting does what
+   `prefers-reduced-motion` does, for readers who only want the countdown and
+   the reveal to be instant without changing their whole phone. */
+body.ntt-reduced-motion .callout.ntt-think-shown > .callout-content,
+body.ntt-reduced-motion details.ntt-think-shown > *:not(summary),
+body.ntt-reduced-motion .ntt-think-badge {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* v1.6.1 — countdown preview chip in settings. */
+.ntt-think-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 5.5em;
+  padding: 2px 8px;
+  margin-right: 8px;
+  border-radius: 10px;
+  background: var(--background-modifier-hover);
+  font-variant-numeric: tabular-nums;
+}
+.ntt-think-preview-img,
+.ntt-think-preview img {
+  width: 1.1em;
+  height: 1.1em;
+  object-fit: contain;
 }

@@ -193,14 +193,15 @@ describe("run loop wiring (v1.5.9)", () => {
   });
 
   it("ticks the gate while parked, and clears it when the stop ends", () => {
-    expect(main).toContain("if (this.thinkGate.tick(ts)) this.scrollBoxesAt = 0;");
+    // v1.6.1 — the same tick, now also stamping the timing log.
+    expect(main).toMatch(/if \(this\.thinkGate\.tick\(ts\)\) \{[\s\S]{0,120}scrollBoxesAt = 0;/);
     expect(main).toMatch(/scrollDwellUntil = 0;[\s\S]{0,120}this\.thinkGate\.clear\(\)/);
   });
 
   it("adds the think + focus body classes on start and drops them on stop", () => {
     expect(main).toContain("document.body.classList.add(THINK_RUN_CLASS)");
     expect(main).toContain("classList.toggle(FOCUS_RUN_CLASS, this.settings.scrollFocusChrome)");
-    expect(main).toContain("classList.remove(THINK_RUN_CLASS, FOCUS_RUN_CLASS)");
+    expect(main).toContain("classList.remove(THINK_RUN_CLASS, FOCUS_RUN_CLASS, REDUCED_MOTION_CLASS)");
   });
 
   it("a loop wrap starts a clean lap (this was the loop-toggle glitch)", () => {

@@ -13,6 +13,7 @@ export interface ScrollBarCallbacks {
   onMode?: () => void;
   onDwell?: () => void;
   onTop?: () => void;
+  onStop?: () => void;
   onSpeedPresets?: () => void;
 }
 

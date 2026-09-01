@@ -17,6 +17,8 @@
 export const THINK_RUN_CLASS = "ntt-think-run";
 /** Body class that hides Obsidian's chrome for a distraction-free run. */
 export const FOCUS_RUN_CLASS = "ntt-focus-run";
+/** v1.6.1 — body class that makes countdown / reveal instant (no blink). */
+export const REDUCED_MOTION_CLASS = "ntt-reduced-motion";
 /** Answer held back by the think gate. */
 export const THINK_HIDDEN_CLASS = "ntt-think-hidden";
 /** Answer released by the think gate. */

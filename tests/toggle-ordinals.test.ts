@@ -9,7 +9,7 @@
 import { describe, expect, it } from "bun:test";
 import { Window } from "happy-dom";
 import { kindOf, matchesFilter, type RecallColor } from "../src/autoscroll";
-import { noteToggleCount, scanToggleEls, toggleTypeOf } from "../src/toggle-dom";
+import { noteToggleCount, scanToggleEls, toggleIdentity, toggleTypeOf } from "../src/toggle-dom";
 import { buildModeStops, orderModeStops } from "../src/scrollmode";
 
 const NOTE = `
@@ -73,5 +73,15 @@ describe("note-wide toggle numbers (v1.5.0)", () => {
     expect(ordered.map((s) => s.ordinal)).toEqual([4]);
     const src = kept.find((s) => s.ordinal === 4)!;
     expect(kindOf(toggleTypeOf(src.el))).toBe("important");
+  });
+
+  it("keeps a question identity stable when its lazy DOM window changes", () => {
+    const full = mount(NOTE);
+    const original = scanFiltered(full, ["red"])[1]!;
+    const partial = mount(NOTE.split("\n").slice(3).join("\n"));
+    const replacement = scanFiltered(partial, ["red"])[0]!;
+    expect(replacement.ordinal).not.toBe(original.ordinal);
+    expect(toggleIdentity(replacement.el)).toBe(toggleIdentity(original.el));
+    expect(replacement.identity).toBe(original.identity);
   });
 });

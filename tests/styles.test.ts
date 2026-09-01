@@ -106,3 +106,23 @@ describe("v1.6.0 — focus run keeps the system status bar off the question", ()
     expect(css).toContain(".ntt-think-badge-img");
   });
 });
+
+describe("v1.6.1 — reduced motion + countdown preview", () => {
+  const css = readFileSync("styles.css", "utf8");
+
+  it("the reduced-motion switch kills the reveal animation and badge transitions", () => {
+    const block = css.slice(css.indexOf("body.ntt-reduced-motion"));
+    expect(block).toContain("animation: none !important");
+    expect(block).toContain("transition: none !important");
+    expect(block).toContain(".ntt-think-badge");
+  });
+
+  it("still honours the OS-level reduced-motion preference", () => {
+    expect(css).toContain("@media (prefers-reduced-motion: reduce)");
+  });
+
+  it("styles the settings countdown preview chip (text and image faces)", () => {
+    expect(css).toContain(".ntt-think-preview");
+    expect(css).toContain(".ntt-think-preview-img");
+  });
+});

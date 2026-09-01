@@ -105,7 +105,12 @@ export interface AutoScrollSettings {
   scrollThinkIcon: string;
   /** v1.5.9 — hide Obsidian's chrome while a run is going (no blink). */
   scrollFocusChrome: boolean;
+  /** v1.6.1 — countdown / reveal animations become instant (no perceived blink). */
+  scrollReducedMotion: boolean;
+  /** v1.6.1 — log toggle-open / countdown / reveal timestamps in the debug overlay. */
+  scrollTimingDebug: boolean;
 }
+
 
 export const DEFAULT_AUTOSCROLL: AutoScrollSettings = {
   scrollSpeed: 60,
@@ -142,6 +147,8 @@ export const DEFAULT_AUTOSCROLL: AutoScrollSettings = {
   scrollThinkSeconds: 5,
   scrollThinkIcon: "🤔",
   scrollFocusChrome: true,
+  scrollReducedMotion: false,
+  scrollTimingDebug: false,
 };
 
 export const SPEED_MIN = 1;
