@@ -13,6 +13,7 @@ import {
   forgetAnswerWant,
   rememberAnswerWant,
   runAnswerSweep,
+  answerApplyIo,
   sweepRender,
   wantedAnswerState,
   type ToggleIo,
@@ -186,5 +187,35 @@ describe("v1.7.2 — watching Obsidian render the rest", () => {
     expect(isManualToggleClick(wrap.querySelector("#arrow"))).toBe(true);
     expect(isManualToggleClick(wrap.querySelector("#text"))).toBe(false);
     expect(isManualToggleClick(null)).toBe(false);
+  });
+});
+
+describe("v1.7.3 — the toggle IO for one apply", () => {
+  const quizLog: Array<[string, boolean]> = [];
+  const base = {
+    isOpen: (el: HTMLElement) => (el as unknown as Fake).open,
+    setOpen: (el: HTMLElement, open: boolean) => {
+      (el as unknown as Fake).open = open;
+    },
+    setQuizVisible: (el: HTMLElement, open: boolean) => quizLog.push([(el as unknown as { id: string }).id, open]),
+  };
+
+  test("outside a quiz it reads and writes the real fold state, skipping toggles already right", () => {
+    quizLog.length = 0;
+    const els = [toggle(false), toggle(true), toggle(false)];
+    expect(applyWantedToAll(els, "open", answerApplyIo("open", false, base))).toBe(2);
+    expect(els.map((e) => (e as unknown as Fake).open)).toEqual([true, true, true]);
+    expect(quizLog).toEqual([]);
+  });
+
+  test("during a quiz every toggle goes through the quiz's own show / hide, unconditionally", () => {
+    quizLog.length = 0;
+    const els = [{ id: "a", open: true }, { id: "b", open: false }] as unknown as HTMLElement[];
+    expect(applyWantedToAll(els, "open", answerApplyIo("open", true, base))).toBe(2);
+    expect(quizLog).toEqual([["a", true], ["b", true]]);
+    expect(els.map((e) => (e as unknown as Fake).open)).toEqual([true, false]); // the fold arrow is untouched
+    quizLog.length = 0;
+    expect(applyWantedToAll(els, "closed", answerApplyIo("closed", true, base))).toBe(2);
+    expect(quizLog).toEqual([["a", false], ["b", false]]);
   });
 });

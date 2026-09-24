@@ -98,36 +98,40 @@ describe("v1.5.9 think gate + distraction-free run", () => {
   });
 });
 
-describe("v1.6.0 — focus run keeps the system status bar off the question", () => {
+describe("v1.7.3 — focus run adds no 'status bar strip' of its own", () => {
   const css = readFileSync("styles.css", "utf8");
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const focusRules = [...bare.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([, sel]) => sel.includes("ntt-focus-run"));
 
-  it("adds a top safe-area gap when Obsidian's header is hidden", () => {
-    const block = css.slice(css.indexOf("body.ntt-focus-run.is-mobile .view-content"));
-    expect(block).toContain("padding-top: var(--ntt-focus-top-gap)");
-    // v1.7.1 — Obsidian's own inset, no floor.
-    expect(css).toContain("--ntt-focus-top-gap: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));");
+  // Obsidian mobile already pads `body.is-mobile` by `--safe-area-inset-top`,
+  // and the focus run never hides that padding. v1.6.0–v1.7.2 added the same
+  // inset again on `.view-content`, which is a blank band exactly one status
+  // bar tall under the real status bar for the whole run.
+  it("never pads the top of the note while a run is active", () => {
+    for (const [, sel, body] of focusRules) {
+      expect(`${sel.trim()} { ${body.trim()} }`).not.toMatch(/padding-top|margin-top|padding:\s*[^0;]/);
+    }
+    expect(bare).not.toContain("--ntt-focus-top-gap");
+    for (const [, , body] of focusRules) expect(body).not.toMatch(/safe-area-inset-top/);
   });
 
-  // v1.7.1 — the "white strip at the top": a 24px floor on a gap that Android
-  // always reported as 0 became a permanent blank band above the note, and it
-  // was applied to two nested elements so the first question sat 48px down.
-  it("has no fixed floor on the top gap and applies it to one element only", () => {
-    const token = css.match(/--ntt-focus-top-gap:\s*([^;]+);/)?.[1] ?? "";
-    expect(token).not.toMatch(/max\(|[1-9]\d*px/); // no `max(..., 24px)` floor — only a 0px fallback
-    expect(token).toContain("var(--safe-area-inset-top");
-    const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
-    const topRules = [...bare.matchAll(/([^{}]+)\{[^}]*padding-top:\s*var\(--ntt-focus-top-gap\)[^}]*\}/g)];
-    expect(topRules.length).toBe(1);
-    const selectors = topRules[0][1].split(",").map((s) => s.trim()).filter(Boolean);
-    expect(selectors).toEqual(["body.ntt-focus-run.is-mobile .view-content"]);
-    for (const sel of selectors) expect(sel).not.toMatch(/markdown-preview-view|markdown-reading-view/);
-  });
-
-  it("puts the bottom gap on the scroller only, so the last line can scroll clear", () => {
-    const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  it("keeps the bottom gap on the scroller only, so the last line can scroll clear of the gesture bar", () => {
     const rules = [...bare.matchAll(/([^{}]+)\{[^}]*padding-bottom:\s*var\(--ntt-focus-bottom-gap\)[^}]*\}/g)];
     expect(rules.length).toBe(1);
     expect(rules[0][1].trim()).toBe("body.ntt-focus-run.is-mobile .markdown-preview-view");
+    const token = css.match(/--ntt-focus-bottom-gap:\s*([^;]+);/)?.[1] ?? "";
+    expect(token).toBe("var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))");
+    expect(token).not.toMatch(/max\(|[1-9]\d*px/); // no fixed floor here either
+  });
+
+  it("leaves Obsidian's own mobile classes and body padding alone", () => {
+    // The strip fix relies on Obsidian's `body.is-mobile` padding staying in
+    // force: the plugin must never override body padding during a run.
+    for (const [, sel, body] of focusRules) {
+      if (/^\s*body\.ntt-focus-run(\.is-mobile)?\s*$/.test(sel)) {
+        expect(body).not.toMatch(/padding|margin|height/);
+      }
+    }
   });
 
   it("hides the tab header / titlebar too, so nothing blinks mid-run", () => {

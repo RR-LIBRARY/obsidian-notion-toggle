@@ -153,9 +153,11 @@ describe("focus-mode CSS tokens (v1.6.2)", () => {
     expect(css).toContain("display: var(--ntt-focus-chrome-display) !important;");
   });
 
-  test("safe-area gaps go through variables", () => {
-    expect(css).toContain("--ntt-focus-top-gap:");
-    expect(css).toContain("padding-top: var(--ntt-focus-top-gap) !important;");
+  test("the safe-area gap goes through a variable", () => {
+    expect(css).toContain("--ntt-focus-bottom-gap:");
     expect(css).toContain("padding-bottom: var(--ntt-focus-bottom-gap) !important;");
+    // v1.7.3 — there is no top gap any more: Obsidian pads the body itself, and
+    // a second inset on `.view-content` was the "status bar strip".
+    expect(css).not.toContain("--ntt-focus-top-gap");
   });
 });

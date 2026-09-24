@@ -1159,11 +1159,17 @@ body.ntt-think-run details.ntt-think-shown > *:not(summary) {
    `max(env(safe-area-inset-top), 24px)`: Android's WebView reports `env()` as
    0, so it always collapsed to a fixed 24px — too small to clear a visible
    status bar, and a pointless blank band when there is none — and it was
-   applied to two nested elements, so the band doubled. Obsidian publishes the
-   real inset as `--safe-area-inset-top`; use that, with no floor. */
+   applied to two nested elements, so the band doubled.
+   v1.7.3 — the "status bar strip" fix, root cause this time. Obsidian mobile
+   already pads `body.is-mobile` by `var(--safe-area-inset-top)`, and that
+   padding is never hidden by the focus run — only the header *inside* it is.
+   The plugin's own top gap on `.view-content` therefore counted the same inset
+   a second time: a blank band exactly one status bar tall, sitting right under
+   the real status bar, for the whole run. The plugin adds no top gap at all
+   now; the bottom gap stays because the scroller itself must clear the gesture
+   bar once the navbar is gone. */
 body.ntt-focus-run {
   --ntt-focus-chrome-display: none;
-  --ntt-focus-top-gap: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
   --ntt-focus-bottom-gap: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
 }
 body.ntt-focus-run .status-bar,
@@ -1189,16 +1195,13 @@ body.ntt-focus-run .workspace-tab-header-container,
 body.ntt-focus-run .view-header-title-container {
   display: var(--ntt-focus-chrome-display) !important;
 }
-/* v1.6.0 — with Obsidian's own header hidden the phone's system status bar sits
-   on top of the first question. Keep a safe-area gap so the text is never under
-   the clock/battery row, and the bottom stays clear of the gesture bar.
-   v1.7.1 — the top gap lives on `.view-content` only (the one non-scrolling
-   wrapper Obsidian itself pads under the status bar), exactly as tall as the
-   status bar and nothing more; the bottom gap lives on the scroller, so the
-   last line can still be scrolled clear of the gesture bar. */
-body.ntt-focus-run.is-mobile .view-content {
-  padding-top: var(--ntt-focus-top-gap) !important;
-}
+/* v1.6.0 — the bottom of the note must stay clear of the gesture bar once the
+   navbar is hidden; the gap lives on the scroller, so the last line can still
+   be scrolled clear of it.
+   v1.7.3 — no top gap any more (see above): the system status bar is already
+   kept off the first question by Obsidian's own `body.is-mobile` padding, which
+   the focus run never removes. A theme that needs one can still add it under
+   `body.ntt-focus-run.is-mobile` in a snippet. */
 body.ntt-focus-run.is-mobile .markdown-preview-view {
   padding-bottom: var(--ntt-focus-bottom-gap) !important;
 }

@@ -2,6 +2,22 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.7.3 — 2026-09-25 — Autoscroll: no status-bar strip, Open all stays out of the run's way
+
+### Fixed
+- **No more blank "status bar" strip while autoscroll is on.** Obsidian mobile already keeps the note below the phone's status bar (`body.is-mobile` is padded by the real inset, and the focus run never hides that padding). The plugin's distraction-free mode added the *same* inset again on top of the note, so a band exactly one status bar tall sat under the real status bar for the whole run. The plugin adds no top gap at all now; the bottom gap that keeps the last line clear of the gesture bar stays on the scroller. Themes that want a top gap can still set one under `body.ntt-focus-run.is-mobile`.
+- **Open all / Close all no longer fights an autoscroll run or a quiz.** In 1.7.2 the command was remembered for the note and re-applied to every answer Obsidian rendered later — including while a run was closing answers behind the reader. Starting or resuming a run now drops any remembered command, and a command tapped *during* a run or quiz is a one-shot flip (it still opens everything on screen, it just is not re-applied later). Outside a run the sticky behaviour is unchanged.
+- The mutation watcher stays quiet while a run or quiz owns the toggles, so a think badge or screen marker being inserted can never pop a just-closed answer open again.
+
+### Internal
+- `styles.css`: `--ntt-focus-top-gap` and the `.view-content` top-padding rule are gone; `--ntt-focus-bottom-gap` remains.
+- `main.ts`: `answerWantCanStick()`, `applyAnswerWant()`; `startAutoScroll` / resume call `clearAnswerWant()`.
+- `src/answer-state.ts`: `answerApplyIo()` — the quiz path re-applies the quiz's own visibility classes instead of touching the fold arrow.
+- New `tests/autoscroll-focus-run.test.ts`: a real `NotionTogglePlugin` instance in happy-dom drives start / stop / resume, Open all during a run and during a quiz, and render mutations mid-run.
+
+### Verified
+- 1101 tests, typecheck and release build pass. See `AUDIT-sheet-1.7.3.md`.
+
 ## 1.7.2 — 2026-09-24 — Open all / Close all for the whole note
 
 ### Fixed

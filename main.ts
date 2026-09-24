@@ -139,12 +139,14 @@ import { ensureFullRender, restoreFullRender, type FullRenderHandle } from "./sr
 import { gapScreenStops, stopHoldMs, isContinuationStop, screenStopLabel, keepOpenAtDwellEnd, waitFor, answersNotice, answersNoticeIsImportant } from "./src/screen-run";
 import { isFullyRendered, sourceKindCounts, sourceMatchCount, scanSourceToggles } from "./src/source-toggles";
 import {
+  answerApplyIo,
   applyWantedToAll,
   createAnswerWantState,
   forgetAnswerWant,
   rememberAnswerWant,
   runAnswerSweep,
   wantedAnswerState,
+  type AnswerWant,
 } from "./src/answer-state";
 
 import {
@@ -1905,6 +1907,9 @@ export default class NotionTogglePlugin extends Plugin {
    * used to flip. Now the full render is forced first, the DOM is given time
    * to catch up with the source, nested toggles are included, and the notice
    * says "N of M" honestly whenever the note is still only partly rendered.
+   * v1.7.3 — sticky only while nothing else owns the toggles: during an
+   * autoscroll run or a quiz it is a one-shot flip (a remembered "open" would
+   * be re-applied on the next DOM insert and pop the run's closed answer open).
    */
   async setAllAnswersOpen(open: boolean) {
     const container = this.findViewContainer();
@@ -1915,16 +1920,18 @@ export default class NotionTogglePlugin extends Plugin {
     // Wait for *every* callout the source declares; report against the ones
     // that can fold (a plain `> [!note]` has no arrow and is never "missing").
     const src = scanSourceToggles(this.noteSource());
+    const want: AnswerWant = open ? "open" : "closed";
     // v1.7.2 — remember the command first, so anything Obsidian renders from
     // now on (the sweep, or the reader scrolling later) is born in that state.
-    rememberAnswerWant(this.answerWant, this.activeNotePath(), open ? "open" : "closed");
+    if (this.answerWantCanStick()) rememberAnswerWant(this.answerWant, this.activeNotePath(), want);
+    else forgetAnswerWant(this.answerWant);
     if (this.beginFullRender()) await waitFor(() => noteToggleCount(container) >= src.total);
     const result = await runAnswerSweep({
       container,
       scroller: this.scrollContainer ?? this.findScrollContainer(),
       foldableEls: foldableToggleEls,
       sourceFoldable: src.foldable,
-      apply: (root) => this.applyWantedAnswers(root),
+      apply: (root) => this.applyAnswerWant(root, want),
       frame: () =>
         new Promise<void>((done) =>
           window.requestAnimationFrame(() => window.setTimeout(done, 16))
@@ -1933,31 +1940,34 @@ export default class NotionTogglePlugin extends Plugin {
     });
     if (!this.settings.scrollQuiet || answersNoticeIsImportant(result)) new Notice(answersNotice(open, result));
   }
+  /** v1.7.3 — may an Open all / Close all outlive the tap? Not while a run or quiz owns the toggles. */
+  private answerWantCanStick(): boolean {
+    return !this.scrollRunning && !this.quizState;
+  }
 
   /**
    * v1.7.2 — give every foldable toggle inside `root` the state the reader
    * last asked for. Returns how many actually changed. A no-op when no Open
-   * all / Close all command is in force for the active note.
+   * all / Close all command is in force for the active note, and (v1.7.3)
+   * while an autoscroll run or a quiz is driving the toggles itself.
    */
   applyWantedAnswers(root: ParentNode | null | undefined): number {
-    if (!root) return 0;
+    if (!root || !this.answerWantCanStick()) return 0;
     const want = wantedAnswerState(this.answerWant, this.activeNotePath());
-    if (!want) return 0;
-    const open = want === "open";
-    const quiz = !!this.quizState;
+    return want ? this.applyAnswerWant(root, want) : 0;
+  }
+  /** Flip every foldable toggle inside `root` to `want`; returns how many changed. */
+  private applyAnswerWant(root: ParentNode | null | undefined, want: AnswerWant): number {
+    if (!root) return 0;
     this.answerApplying = true;
     try {
-      return applyWantedToAll(foldableToggleEls(root), want, {
-        // During a quiz the visibility classes are re-applied unconditionally,
-        // so the run and the reader never disagree about a revealed answer.
-        isOpen: (el) => (quiz ? !open : this.isToggleOpen(el)),
-        setOpen: (el, next) => (quiz ? setQuizVisible(el, next) : this.setToggleOpen(el, next)),
-      });
+      const io = { isOpen: isToggleOpenDom, setOpen: setToggleOpenDom, setQuizVisible };
+      return applyWantedToAll(foldableToggleEls(root), want, answerApplyIo(want, !!this.quizState, io));
     } finally {
       this.answerApplying = false;
     }
   }
-  /** Forget the command (note switch, a manual tap, quiz taking over). */
+  /** Forget the command (note switch, a manual tap, a run or quiz taking over). */
   clearAnswerWant() {
     forgetAnswerWant(this.answerWant);
   }
@@ -2024,6 +2034,8 @@ export default class NotionTogglePlugin extends Plugin {
     if (this.scrollPlan.length === 0) this.startAutoScroll();
     else {
       this.scrollRunning = true;
+      // v1.7.3 — an Open all / Close all tapped while paused was a one-off.
+      this.clearAnswerWant();
       this.scrollLastFrame = 0;
       this.scheduleScrollFrame();
       this.renderScrollBar();
@@ -2295,6 +2307,9 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollHoldUntil = 0;
     this.scrollOpenedAt = 0;
     this.scrollRunning = true;
+    // v1.7.3 — the run owns every toggle from here on: a sticky Open all /
+    // Close all would re-open (on the next DOM insert) whatever the run closes.
+    this.clearAnswerWant();
     this.scrollLastFrame = 0;
     // v1.4.2 — a reverse run started at the top (or a forward run at the very
     // bottom) used to clamp on frame one and report "finished" immediately.

@@ -2396,6 +2396,12 @@ function applyWantedToAll(els, want, io) {
       changed++;
   return changed;
 }
+function answerApplyIo(want, quiz, io) {
+  if (!quiz)
+    return { isOpen: io.isOpen, setOpen: io.setOpen };
+  const open = want === "open";
+  return { isOpen: () => !open, setOpen: (el2, next) => io.setQuizVisible(el2, next) };
+}
 async function sweepRender(opts) {
   var _a, _b, _c;
   const { scroller } = opts;
@@ -10407,6 +10413,9 @@ ${row}`, { line: cursor.line, ch: line.length });
    * used to flip. Now the full render is forced first, the DOM is given time
    * to catch up with the source, nested toggles are included, and the notice
    * says "N of M" honestly whenever the note is still only partly rendered.
+   * v1.7.3 — sticky only while nothing else owns the toggles: during an
+   * autoscroll run or a quiz it is a one-shot flip (a remembered "open" would
+   * be re-applied on the next DOM insert and pop the run's closed answer open).
    */
   async setAllAnswersOpen(open) {
     var _a;
@@ -10416,7 +10425,11 @@ ${row}`, { line: cursor.line, ch: line.length });
       return;
     }
     const src = scanSourceToggles(this.noteSource());
-    rememberAnswerWant(this.answerWant, this.activeNotePath(), open ? "open" : "closed");
+    const want = open ? "open" : "closed";
+    if (this.answerWantCanStick())
+      rememberAnswerWant(this.answerWant, this.activeNotePath(), want);
+    else
+      forgetAnswerWant(this.answerWant);
     if (this.beginFullRender())
       await waitFor(() => noteToggleCount(container) >= src.total);
     const result = await runAnswerSweep({
@@ -10424,7 +10437,7 @@ ${row}`, { line: cursor.line, ch: line.length });
       scroller: (_a = this.scrollContainer) != null ? _a : this.findScrollContainer(),
       foldableEls: foldableToggleEls,
       sourceFoldable: src.foldable,
-      apply: (root) => this.applyWantedAnswers(root),
+      apply: (root) => this.applyAnswerWant(root, want),
       frame: () => new Promise(
         (done) => window.requestAnimationFrame(() => window.setTimeout(done, 16))
       ),
@@ -10433,32 +10446,35 @@ ${row}`, { line: cursor.line, ch: line.length });
     if (!this.settings.scrollQuiet || answersNoticeIsImportant(result))
       new import_obsidian14.Notice(answersNotice(open, result));
   }
+  /** v1.7.3 — may an Open all / Close all outlive the tap? Not while a run or quiz owns the toggles. */
+  answerWantCanStick() {
+    return !this.scrollRunning && !this.quizState;
+  }
   /**
    * v1.7.2 — give every foldable toggle inside `root` the state the reader
    * last asked for. Returns how many actually changed. A no-op when no Open
-   * all / Close all command is in force for the active note.
+   * all / Close all command is in force for the active note, and (v1.7.3)
+   * while an autoscroll run or a quiz is driving the toggles itself.
    */
   applyWantedAnswers(root) {
-    if (!root)
+    if (!root || !this.answerWantCanStick())
       return 0;
     const want = wantedAnswerState(this.answerWant, this.activeNotePath());
-    if (!want)
+    return want ? this.applyAnswerWant(root, want) : 0;
+  }
+  /** Flip every foldable toggle inside `root` to `want`; returns how many changed. */
+  applyAnswerWant(root, want) {
+    if (!root)
       return 0;
-    const open = want === "open";
-    const quiz = !!this.quizState;
     this.answerApplying = true;
     try {
-      return applyWantedToAll(foldableToggleEls(root), want, {
-        // During a quiz the visibility classes are re-applied unconditionally,
-        // so the run and the reader never disagree about a revealed answer.
-        isOpen: (el2) => quiz ? !open : this.isToggleOpen(el2),
-        setOpen: (el2, next) => quiz ? setQuizVisible(el2, next) : this.setToggleOpen(el2, next)
-      });
+      const io = { isOpen: isToggleOpen, setOpen: setToggleOpen, setQuizVisible };
+      return applyWantedToAll(foldableToggleEls(root), want, answerApplyIo(want, !!this.quizState, io));
     } finally {
       this.answerApplying = false;
     }
   }
-  /** Forget the command (note switch, a manual tap, quiz taking over). */
+  /** Forget the command (note switch, a manual tap, a run or quiz taking over). */
   clearAnswerWant() {
     forgetAnswerWant(this.answerWant);
   }
@@ -10533,6 +10549,7 @@ ${row}`, { line: cursor.line, ch: line.length });
       this.startAutoScroll();
     else {
       this.scrollRunning = true;
+      this.clearAnswerWant();
       this.scrollLastFrame = 0;
       this.scheduleScrollFrame();
       this.renderScrollBar();
@@ -10811,6 +10828,7 @@ ${deckSummary(
     this.scrollHoldUntil = 0;
     this.scrollOpenedAt = 0;
     this.scrollRunning = true;
+    this.clearAnswerWant();
     this.scrollLastFrame = 0;
     this.scrollPos = seedStartOffset(
       container.scrollTop,

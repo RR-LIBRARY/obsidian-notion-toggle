@@ -86,6 +86,23 @@ export function applyWantedToAll(
   return changed;
 }
 
+export interface AnswerApplyIo extends ToggleIo {
+  /** The quiz's own show / hide (its visibility classes, not the fold arrow). */
+  setQuizVisible: (el: HTMLElement, open: boolean) => void;
+}
+
+/**
+ * v1.7.3 — the toggle IO for one apply. Outside a quiz the real fold state is
+ * read and written. During a quiz the quiz's visibility classes are re-applied
+ * unconditionally (every toggle "changes"), so the run and the reader never
+ * disagree about a revealed answer.
+ */
+export function answerApplyIo(want: AnswerWant, quiz: boolean, io: AnswerApplyIo): ToggleIo {
+  if (!quiz) return { isOpen: io.isOpen, setOpen: io.setOpen };
+  const open = want === "open";
+  return { isOpen: () => !open, setOpen: (el, next) => io.setQuizVisible(el, next) };
+}
+
 export interface SweepScroller {
   scrollTop: number;
   clientHeight: number;
