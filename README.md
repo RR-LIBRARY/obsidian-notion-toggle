@@ -2,9 +2,9 @@
 
 Notion-style collapsible toggles for Obsidian, plus a recall workflow built on top of them: traffic-light grading, a floating Pomodoro timer, and SM-2 spaced repetition. You never type `<details>`, `<summary>` or `>` brackets by hand.
 
-Works on desktop and mobile. Version 1.7.6.
+Works on desktop and mobile. Version 1.7.7.
 
-Autoscroll sheet ki Hindi guide: **[AUTOSCROLL-SHEET-GUIDE.md](AUTOSCROLL-SHEET-GUIDE.md)** — sheet ke saare 35 options, number-wise.
+Autoscroll sheet ki Hindi guide: **[AUTOSCROLL-SHEET-GUIDE.md](AUTOSCROLL-SHEET-GUIDE.md)** — sheet ke saare 35 options, number-wise, + student presets. Minimal sheet ideas: [SHEET-MINIMAL-IDEAS.md](SHEET-MINIMAL-IDEAS.md).
 
 Full guide: **[MANUAL.md](MANUAL.md)** — install/enable, **every setting explained one by one** (Toggle basics, Recall timer, Focus guard, Minimal mode, Auto-scroll revision, Quiz mode, Web research), commands list for the mobile toolbar, ready-made presets, debug overlay, stats panel and troubleshooting.
 

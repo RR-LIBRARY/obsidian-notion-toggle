@@ -2,6 +2,16 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.7.7 — 2026-09-24 — Autoscroll sheet: deep parameter stress tests + student presets
+
+### Added
+- **`tests/sheet-stress.test.ts`** (28 tests) — every sheet setting at its limits and in odd combinations: speed min/max/NaN and rapid changes, pause 1s/20s/1h and broken saved values, toggle hold vs screen pause both ways, all advance-mode × chunking combos, empty / one-toggle / 600-toggle / 25-screen notes, filter with no matches, reverse runs, floating button under overlays.
+- **Guide:** "Student ke liye best settings" — 6 presets, expert tips, common mistakes.
+- **`SHEET-MINIMAL-IDEAS.md`** — how the sheet could shrink to ~10 everyday rows without removing features (proposal only).
+
+### Notes
+- No behaviour change. No bugs found by the stress tests.
+
 ## 1.7.6 — 2026-09-24 — Autoscroll sheet: full feature audit + Hindi guide
 
 ### Added

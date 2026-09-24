@@ -213,3 +213,32 @@ Screen पर उंगली दबाए रखें, या floating button 
 
 **"Direction" और "Reverse direction ↑" में फर्क?**
 कोई फर्क नहीं — दोनों एक ही setting हैं।
+
+---
+
+## Student के लिए best settings (expert presets)
+
+| Preset | कब use करें | Advance by | Tall toggles | Pause on each screen | Pause for (hold) | Filter | Think time |
+|---|---|---|---|---|---|---|---|
+| 1. तेज़ revision | Exam से एक दिन पहले, सब दोहराना | Toggles | Off | — | 2–3s | कोई नहीं | Off |
+| 2. पहली बार पढ़ना | नया chapter | Toggles + screens | On | 20–30s | 5s | कोई नहीं | On, 5s |
+| 3. लंबे जवाब / theory | 1-2 page के answers | Toggles + screens | On | 30–60s | 5s | कोई नहीं | Off |
+| 4. कमज़ोर topics | Exam से पहले | Toggles | On | 20s | 5s | Red (+ Yellow) | On, 8–10s |
+| 5. Active recall quiz | खुद को परखना | — | — | — | — | Red + Yellow | Quiz on, loop on |
+| 6. Hands-free (फोन stand पर) | खाना खाते / चलते हुए | Screens | On | 10–20s | — | कोई नहीं | Off, Distraction-free on |
+
+### Expert tips
+1. **रंग का system तय करें:** Red = याद नहीं, Yellow = आधा याद, Green = पक्का। हर revision के बाद रंग बदलें — फिर filter से सिर्फ़ Red/Yellow पढ़ें।
+2. **Think time हमेशा on रखें** जब पहली बार नहीं पढ़ रहे — जवाब खुलने से पहले दिमाग़ में बोलकर याद करें। यही असली recall है।
+3. **Screen pause अपनी पढ़ने की speed से रखें:** एक screen पढ़ने में जितना समय लगे, उससे 20% ज़्यादा। जल्दी पढ़ लिया तो tap करके आगे बढ़ें।
+4. **1h pause** तब काम का है जब एक ही screen पर लिखकर practice करनी हो (numericals, diagrams)।
+5. **Speed 60–120 px/s** आमतौर पर आँखों के लिए आराम की है; बहुत तेज़ speed पर toggles के बीच का text छूट सकता है।
+6. **फोन की screen timeout** लंबी कर दें (या Obsidian की keep-awake setting) — वरना 30s+ pause में screen बंद हो सकती है।
+7. **Battery:** लंबे session में Reduced motion on करें।
+8. **Open all** revision से पहले दबाने की ज़रूरत नहीं — autoscroll खुद toggle खोलता है। Open all तभी जब पूरा note एक साथ देखना हो।
+
+### आम गलतियां
+- Tall toggles off रखकर लंबे जवाब पढ़ना — जवाब आधा पढ़ते ही आगे चला जाता है।
+- Filter Red लगाकर भूल जाना — फिर "कोई toggle नहीं मिला" जैसा लगता है। Sheet में filter देखें।
+- Pause for (hold) बहुत छोटा (0–1s) और Think time off — कुछ याद करने का मौका नहीं मिलता।
+- बहुत बड़ा screen overlap (40–50%) — हर screen लगभग वही text दोहराती है।
