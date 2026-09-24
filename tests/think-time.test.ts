@@ -188,9 +188,12 @@ describe("run loop wiring (v1.5.9)", () => {
   const main = readFileSync("main.ts", "utf8");
 
   it("extends every stop's dwell by the think window", () => {
-    const additions = main.match(/scrollDwellUntil \+= this\.scrollThinkMs/g) ?? [];
-    expect(additions.length).toBe(2); // route waypoints + normal stops
+    // v1.6.2 — hold + think are now computed by the pure `dwellPlan` helper, so
+    // a refused park can return a 0 deadline instead of holding an empty stop.
+    const plans = main.match(/dwellPlan\(ts, [^)]+, this\.scrollThinkMs, parked\)/g) ?? [];
+    expect(plans.length).toBe(2); // route waypoints + normal stops
   });
+
 
   it("ticks the gate while parked, and clears it when the stop ends", () => {
     // v1.6.1 — the same tick, now also stamping the timing log.

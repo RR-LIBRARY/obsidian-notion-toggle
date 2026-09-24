@@ -33,13 +33,25 @@ export function isPrimary(id: string): id is PrimaryId {
 }
 
 /**
+ * v1.7.0 — web-research commands form their own family ("Research: …"), so
+ * they keep their names in minimal mode instead of becoming
+ * "Advanced: Research: …".
+ */
+export const RESEARCH_PREFIX = "research-";
+
+export function isResearchCommand(id: string): boolean {
+  return id.startsWith(RESEARCH_PREFIX);
+}
+
+/**
  * Display name for a command.
- * minimal = true  -> primary names as-is, everything else "Advanced: …"
+ * minimal = true  -> primary names as-is, research names as-is, everything else "Advanced: …"
  * minimal = false -> original legacy names (nothing renamed)
  */
 export function commandName(id: string, legacyName: string, minimal: boolean): string {
   if (isPrimary(id)) return PRIMARY_NAMES[id];
   if (!minimal) return legacyName;
+  if (isResearchCommand(id)) return legacyName;
   if (legacyName.startsWith("Advanced: ")) return legacyName;
   return `Advanced: ${legacyName}`;
 }

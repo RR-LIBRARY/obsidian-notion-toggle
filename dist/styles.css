@@ -1151,13 +1151,26 @@ body.ntt-think-run details.ntt-think-shown > *:not(summary) {
 }
 /* Distraction-free run: Obsidian's own chrome steps aside so nothing relayouts
    (and blinks) every time an answer opens. Safe-area padding stays, so the note
-   text is never under the phone's gesture bar. */
+   text is never under the phone's gesture bar.
+   v1.6.2 — every value goes through a variable, so a theme (or a user snippet)
+   can override the plugin without having to out-`!important` it: set
+   `--ntt-focus-chrome-display: flex` to keep Obsidian's chrome visible. */
+body.ntt-focus-run {
+  --ntt-focus-chrome-display: none;
+  --ntt-focus-top-gap: max(env(safe-area-inset-top), 24px);
+  --ntt-focus-bottom-gap: env(safe-area-inset-bottom);
+}
 body.ntt-focus-run .status-bar,
 body.ntt-focus-run .view-header,
 body.ntt-focus-run .workspace-drawer,
 body.ntt-focus-run .mobile-navbar,
-body.ntt-focus-run .mobile-toolbar {
-  display: none !important;
+body.ntt-focus-run .mobile-toolbar,
+/* v1.6.2 — fallbacks for the renamed chrome in newer Obsidian builds, so a
+   class rename degrades to "one bar still shows" instead of breaking focus. */
+body.ntt-focus-run .mobile-toolbar-container,
+body.ntt-focus-run .mobile-navbar-container,
+body.ntt-focus-run .status-bar-item-container {
+  display: var(--ntt-focus-chrome-display) !important;
 }
 body.ntt-focus-run .callout,
 body.ntt-focus-run .callout-title,
@@ -1168,16 +1181,17 @@ body.ntt-focus-run .callout-content {
 body.ntt-focus-run .titlebar,
 body.ntt-focus-run .workspace-tab-header-container,
 body.ntt-focus-run .view-header-title-container {
-  display: none !important;
+  display: var(--ntt-focus-chrome-display) !important;
 }
 /* v1.6.0 — with Obsidian's own header hidden the phone's system status bar sits
    on top of the first question. Keep a safe-area gap so the text is never under
    the clock/battery row, and the bottom stays clear of the gesture bar. */
 body.ntt-focus-run.is-mobile .markdown-preview-view,
 body.ntt-focus-run.is-mobile .markdown-reading-view {
-  padding-top: max(env(safe-area-inset-top), 24px) !important;
-  padding-bottom: env(safe-area-inset-bottom) !important;
+  padding-top: var(--ntt-focus-top-gap) !important;
+  padding-bottom: var(--ntt-focus-bottom-gap) !important;
 }
+
 /* Image badge face (png / gif / svg) picked by the reader. */
 .ntt-think-badge-img {
   height: 1.1em;
@@ -1216,4 +1230,312 @@ body.ntt-reduced-motion .ntt-think-badge {
   width: 1.1em;
   height: 1.1em;
   object-fit: contain;
+}
+
+/* ======================================================================
+   v1.7.0 — Web research: side panel, prompt dialogs, finished-run notice.
+   Everything uses Obsidian theme variables so it follows light/dark and
+   community themes; no fixed colours.
+   ====================================================================== */
+
+/* ---- side panel shell ---- */
+.ntt-research-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 10px 16px;
+  font-size: var(--font-ui-small);
+}
+.ntt-rp-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+}
+.ntt-rp-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: var(--font-ui-medium);
+}
+.ntt-rp-title-icon svg {
+  width: 16px;
+  height: 16px;
+  color: var(--interactive-accent);
+}
+.ntt-rp-status {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--font-ui-smaller);
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+}
+.ntt-rp-status.is-ok {
+  color: var(--text-success);
+  background: rgba(var(--color-green-rgb), 0.12);
+}
+.ntt-rp-status.is-off {
+  color: var(--text-warning);
+  background: rgba(var(--color-yellow-rgb), 0.14);
+}
+.ntt-rp-iconbtn {
+  padding: 4px;
+  border-radius: var(--radius-s);
+}
+.ntt-rp-iconbtn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ---- composer ---- */
+.ntt-rp-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-primary);
+}
+.ntt-rp-kind {
+  width: 100%;
+}
+.ntt-rp-input {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: var(--font-ui-small);
+  line-height: 1.4;
+}
+.ntt-rp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.ntt-rp-actions button {
+  font-size: var(--font-ui-smaller);
+  padding: 4px 10px;
+  min-height: 28px;
+}
+.ntt-rp-grow {
+  margin-right: auto;
+}
+.ntt-rp-link {
+  background: transparent;
+  box-shadow: none;
+  border: none;
+  color: var(--text-muted);
+  text-decoration: underline;
+  padding: 0 4px;
+}
+.ntt-rp-link:hover {
+  color: var(--text-normal);
+}
+.ntt-rp-close {
+  padding: 2px 8px;
+  color: var(--text-muted);
+}
+
+/* ---- setup nudge / busy line ---- */
+.ntt-rp-setup {
+  padding: 10px 12px;
+  border-radius: var(--radius-m);
+  border: 1px dashed var(--background-modifier-border-hover);
+  background: var(--background-secondary);
+}
+.ntt-rp-setup-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.ntt-rp-setup-text {
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+.ntt-rp-busy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  padding: 2px 4px;
+}
+
+/* ---- status dots ---- */
+.ntt-rp-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.ntt-rp-dot.is-queued {
+  background: var(--text-muted);
+}
+.ntt-rp-dot.is-running {
+  background: var(--interactive-accent);
+  animation: ntt-rp-pulse 1.4s ease-in-out infinite;
+}
+.ntt-rp-dot.is-completed {
+  background: var(--text-success);
+}
+.ntt-rp-dot.is-failed,
+.ntt-rp-dot.is-cancelled {
+  background: var(--text-error);
+}
+@keyframes ntt-rp-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ntt-rp-dot.is-running {
+    animation: none;
+  }
+}
+body.ntt-reduced-motion .ntt-rp-dot.is-running {
+  animation: none;
+}
+
+/* ---- sections, runs, result cards ---- */
+.ntt-rp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ntt-rp-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: var(--font-ui-smaller);
+  padding-top: 4px;
+}
+.ntt-rp-chip {
+  display: inline-block;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  line-height: 1.6;
+}
+.ntt-rp-run,
+.ntt-rp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+.ntt-rp-run.is-completed {
+  border-color: rgba(var(--color-green-rgb), 0.45);
+}
+.ntt-rp-run.is-failed {
+  border-color: rgba(var(--color-red-rgb), 0.45);
+}
+.ntt-rp-run-head,
+.ntt-rp-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ntt-rp-run-label,
+.ntt-rp-card-title {
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.ntt-rp-card-head .ntt-rp-meta {
+  margin-left: auto;
+}
+.ntt-rp-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+.ntt-rp-error {
+  color: var(--text-error);
+  font-size: var(--font-ui-smaller);
+  overflow-wrap: anywhere;
+}
+.ntt-rp-empty {
+  color: var(--text-muted);
+  padding: 6px 2px;
+  line-height: 1.4;
+}
+.ntt-rp-card-body {
+  max-height: 40vh;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+}
+.ntt-rp-card-body > :first-child {
+  margin-top: 0;
+}
+.ntt-rp-card-body > :last-child {
+  margin-bottom: 0;
+}
+.ntt-rp-card-body .callout {
+  margin: 6px 0;
+}
+
+/* Phones: the panel is a full-width sheet; give the taps more room. */
+.is-mobile .ntt-research-panel .ntt-rp-actions button {
+  min-height: 36px;
+  padding: 6px 12px;
+}
+.is-mobile .ntt-rp-input {
+  min-height: 84px;
+  font-size: var(--font-ui-medium);
+}
+
+/* ---- prompt dialogs ---- */
+.ntt-research-textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.4;
+}
+.ntt-research-options {
+  margin-top: 6px;
+}
+.ntt-research-options .setting-item {
+  padding: 8px 0;
+  border-top: none;
+}
+.ntt-research-hint {
+  margin: -4px 0 10px;
+  line-height: 1.45;
+}
+
+/* ---- "deep research ready" notice with inline actions ---- */
+.ntt-research-notice-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.ntt-research-notice-actions button {
+  font-size: var(--font-ui-smaller);
+  padding: 4px 10px;
 }

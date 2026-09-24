@@ -73,7 +73,13 @@ describe("v1.5.9 think gate + distraction-free run", () => {
 
   it("hides Obsidian chrome only while a focus run is active", () => {
     const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
-    const hidden = [...bare.matchAll(/([^{}]*)\{[^}]*display:\s*none\s*!important[^}]*\}/g)];
+    // v1.6.2 — the value moved into --ntt-focus-chrome-display (default none),
+    // so match either the literal or the token; the scoping rule is unchanged.
+    const hidden = [
+      ...bare.matchAll(
+        /([^{}]*)\{[^}]*display:\s*(?:none|var\(--ntt-focus-chrome-display\))\s*!important[^}]*\}/g
+      ),
+    ];
     const chrome = hidden.filter(([, sel]) => /status-bar|view-header|mobile-navbar|mobile-toolbar/.test(sel));
     expect(chrome.length).toBeGreaterThan(0);
     for (const [, sel] of chrome) {
@@ -85,7 +91,9 @@ describe("v1.5.9 think gate + distraction-free run", () => {
 
   it("keeps the safe-area inset so text never sits under the gesture bar", () => {
     const focus = css.slice(css.indexOf("body.ntt-focus-run.is-mobile"));
-    expect(focus).toContain("env(safe-area-inset-bottom)");
+    expect(focus).toContain("var(--ntt-focus-bottom-gap)");
+    // v1.6.2 — the token itself must still resolve to the real inset.
+    expect(css).toContain("--ntt-focus-bottom-gap: env(safe-area-inset-bottom);");
   });
 });
 
@@ -94,7 +102,8 @@ describe("v1.6.0 — focus run keeps the system status bar off the question", ()
 
   it("adds a top safe-area gap when Obsidian's header is hidden", () => {
     const block = css.slice(css.indexOf("body.ntt-focus-run.is-mobile .markdown-preview-view"));
-    expect(block).toContain("padding-top: max(env(safe-area-inset-top)");
+    expect(block).toContain("padding-top: var(--ntt-focus-top-gap)");
+    expect(css).toContain("--ntt-focus-top-gap: max(env(safe-area-inset-top), 24px);");
   });
 
   it("hides the tab header / titlebar too, so nothing blinks mid-run", () => {

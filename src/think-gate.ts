@@ -129,6 +129,21 @@ export function titleTextOf(el: HTMLElement): string {
   return (row?.textContent ?? "").trim();
 }
 
+/**
+ * v1.6.2 — is this click target something the reader clicked *for its own
+ * behaviour* (a link, a button, a checkbox, an embed)? Those must not double as
+ * "reveal the answer": the old capture listener revealed and navigated at once.
+ */
+export function isInteractiveTarget(target: unknown): boolean {
+  const el = target as { closest?: (sel: string) => unknown } | null;
+  if (!el || typeof el.closest !== "function") return false;
+  return !!el.closest(
+    "a, button, input, select, textarea, [contenteditable='true'], .internal-link, .external-link, .tag, .footnote-link"
+  );
+}
+
+
+
 /** Hide / show the answer body with plugin-owned classes only. */
 export function setThinkHidden(el: HTMLElement, hidden: boolean): void {
   el.classList.toggle(THINK_HIDDEN_CLASS, hidden);
@@ -182,8 +197,15 @@ export class ThinkGate {
     setThinkHidden(el, true);
     this.paint(ms);
     const row = titleRowOf(el) ?? el;
-    this.onTap = () => this.revealNow();
+    // v1.6.2 — a tap on the question reveals the answer, but a tap on a link /
+    // button inside the question must stay a link click. The capture listener
+    // used to reveal *and* navigate on the same tap.
+    this.onTap = (ev: Event) => {
+      if (isInteractiveTarget(ev.target)) return;
+      this.revealNow();
+    };
     row.addEventListener("click", this.onTap, { capture: true });
+
     return ms;
   }
 

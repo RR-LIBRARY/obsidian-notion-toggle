@@ -195,6 +195,9 @@ import { FOCUS_RUN_CLASS, REDUCED_MOTION_CLASS, THINK_RUN_CLASS, ThinkGate, clea
 import { effectiveThinkSettings, noteThinkScope } from "./src/think-scope";
 import { ThinkTimeline } from "./src/think-timeline";
 import { parkSkipLabel, resolveParkTarget, strayOpenToggles } from "./src/filter-guard";
+import { dwellPlan, isRefusedPark, nextActiveIdentity } from "./src/run-step";
+import { migrateSettings } from "./src/settings-migrate";
+
 import { parseDeepLink } from "./src/deeplink";
 import { Telemetry, perfVerdict } from "./src/telemetry";
 import { anchorScrollTop, anchoredTargets, pickStops, routeStopTops, targetsKey } from "./src/scroll-anchor";
@@ -229,6 +232,9 @@ import {
   ScrollStatsModal,
 } from "./src/modals";
 import { ScrollSheetModal } from "./src/sheet-modal";
+import { installResearch, uninstallResearch } from "./src/research/wire";
+import type { ResearchService } from "./src/research/service";
+import { DEFAULT_RESEARCH_SETTINGS, type ResearchSettings } from "./src/research/types";
 import {
   ANSWER_LINE,
   EMPTY_ANSWER_LINE,
@@ -260,8 +266,11 @@ import {
 } from "./src/editor-blocks";
 export * from "./src/editor-blocks";
 export { CALLOUT_TYPES, TOGGLE_COLORS, calloutForColor, QUIZ_FILTER_OPTIONS };
-interface NotionToggleSettings extends PomodoroSettings, AutoScrollSettings, QuizSettings {
+interface NotionToggleSettings extends PomodoroSettings, AutoScrollSettings, QuizSettings, ResearchSettings {
+  /** v1.6.2 — data.json shape stamp; see src/settings-migrate.ts. */
+  settingsVersion?: number;
   calloutType: string;
+
   defaultCollapsed: boolean;
   boldSummary: boolean;
   autoContinue: boolean;
@@ -301,6 +310,7 @@ const DEFAULT_SETTINGS: NotionToggleSettings = {
   ...DEFAULT_POMODORO,
   ...DEFAULT_AUTOSCROLL,
   ...DEFAULT_QUIZ,
+  ...DEFAULT_RESEARCH_SETTINGS,
   calloutType: "question",
   defaultCollapsed: true,
   boldSummary: true,
@@ -327,6 +337,16 @@ const DEFAULT_SETTINGS: NotionToggleSettings = {
 export { TRAFFIC_CYCLE };
 export default class NotionTogglePlugin extends Plugin {
   settings: NotionToggleSettings = DEFAULT_SETTINGS;
+  /* v1.7.0 web research (panel, commands, background runs) — see src/research/ */
+  research!: ResearchService;
+  get clientVersion(): string {
+    return `obsidian-notion-toggle/${this.manifest.version}`;
+  }
+  openSettings(): void {
+    const setting = (this.app as App & { setting?: { open(): void; openTabById(id: string): void } }).setting;
+    setting?.open();
+    setting?.openTabById(this.manifest.id);
+  }
   /* v1.0.5 timer state */
   timerState: PomodoroState = createState(DEFAULT_SETTINGS);
   timerWidget: TimerWidget | null = null;
@@ -985,8 +1005,15 @@ export default class NotionTogglePlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on("rename", async (file, oldPath) => {
         const { store, moved } = renameCardKey(this.settings.srs ?? {}, oldPath, file.path);
-        if (!moved) return;
+        // v1.6.2 — autoscroll's FSRS memory and per-note speed/hold follow the
+        // note too. They used to stay behind under the old path forever, which
+        // is how data.json grew without bound.
+        const mem = renameCardKey(this.settings.scrollMemory ?? {}, oldPath, file.path);
+        const per = renameCardKey(this.settings.scrollPerNote ?? {}, oldPath, file.path);
+        if (!moved && !mem.moved && !per.moved) return;
         this.settings.srs = store;
+        this.settings.scrollMemory = mem.store;
+        this.settings.scrollPerNote = per.store;
         await this.saveSettings();
         this.renderTimer();
       })
@@ -994,12 +1021,17 @@ export default class NotionTogglePlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on("delete", async (file) => {
         const { store, removed } = removeCardKey(this.settings.srs ?? {}, file.path);
-        if (!removed) return;
+        const mem = removeCardKey(this.settings.scrollMemory ?? {}, file.path);
+        const per = removeCardKey(this.settings.scrollPerNote ?? {}, file.path);
+        if (!removed && !mem.removed && !per.removed) return;
         this.settings.srs = store;
+        this.settings.scrollMemory = mem.store;
+        this.settings.scrollPerNote = per.store;
         await this.saveSettings();
         this.renderTimer();
       })
     );
+
     // Drop cards whose note vanished (deleted outside Obsidian, or pre-v1.0.8).
     void this.pruneSchedule(true);
     if (this.settings.showOnStartup) this.showTimer();
@@ -1069,6 +1101,8 @@ export default class NotionTogglePlugin extends Plugin {
       )
     );
     registerCalloutCommands(this);
+    // v1.7.0 — web research: side panel, commands, ribbon, background runs.
+    installResearch(this);
     this.addSettingTab(new NotionToggleSettingTab(this.app, this));
   }
   /** Callout type actually used, honouring the colour setting. */
@@ -1621,6 +1655,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.renderTimer();
   }
   onunload() {
+    uninstallResearch(this);
     this.hideTimer();
     this.stopAutoScroll(false);
     this.stopQuiz(false);
@@ -2619,7 +2654,11 @@ export default class NotionTogglePlugin extends Plugin {
     }
     return strays.length;
   }
-  private parkOnToggle(ordinal: number, now: number, identity?: string) {
+  /**
+   * Open the toggle for `ordinal`. Returns false when nothing could be opened —
+   * the caller must then keep gliding instead of holding an empty stop.
+   */
+  private parkOnToggle(ordinal: number, now: number, identity?: string): boolean {
     // v1.6.1 — identity first, then a hard re-check against reality: the
     // element must still be in the document *and* its own live colour must pass
     // the filter. Obsidian can replace a lazy Reading View section between the
@@ -2634,38 +2673,52 @@ export default class NotionTogglePlugin extends Plugin {
       colorOf: (el) => kindOf(toggleTypeOf(el)),
     });
     const el = res.el;
-    if (!el) {
+    // v1.6.2 — every refusal behaves the same way. `missing` used to fall
+    // through here and burn the full hold + think window on a stop with no
+    // element, which looked like the run had frozen.
+    if (!el || isRefusedPark(res.reason)) {
       this.scrollLastEvent = parkSkipLabel(res, ordinal);
       this.scrollBoxesAt = 0; // re-measure: the plan is out of date.
-      if (res.reason === "filtered-out" || res.reason === "detached") return;
+      if (this.scrollOpenEl && this.settings.scrollAutoClose) {
+        this.thinkGate.clear();
+        this.thinkTimeline.mark("close", this.scrollOpenOrdinal, now);
+        this.setToggleOpen(this.scrollOpenEl, false);
+        this.scrollOpenEl = null;
+      }
+      this.scrollThinkMs = 0;
+      this.scrollActiveIdentity = nextActiveIdentity(identity, false);
+      return false;
     }
     if (this.scrollOpenEl && this.scrollOpenEl !== el && this.settings.scrollAutoClose) {
       this.thinkGate.clear();
       this.thinkTimeline.mark("close", this.scrollOpenOrdinal, now);
       this.setToggleOpen(this.scrollOpenEl, false);
     }
-    if (el && this.settings.scrollAutoOpen) {
+    if (this.settings.scrollAutoOpen) {
       this.setToggleOpen(el, true);
       this.thinkTimeline.mark("open", ordinal, now);
     }
-    this.scrollOpenEl = el ?? null;
+    this.scrollOpenEl = el;
     this.scrollOpenOrdinal = ordinal;
     // v1.6.1 — a filtered run also clears strays the plan does not own.
     this.closeFilteredStrays(this.scrollContainer, el);
     // v1.5.9 — question first: the answer is held back for the think window.
     // v1.6.1 — the window can come from this note's frontmatter.
-    this.scrollThinkMs =
-      el && this.settings.scrollAutoOpen
-        ? this.thinkGate.begin(el, this.thinkSettingsForNote(), now)
-        : 0;
+    this.scrollThinkMs = this.settings.scrollAutoOpen
+      ? this.thinkGate.begin(el, this.thinkSettingsForNote(), now)
+      : 0;
     if (this.scrollThinkMs > 0) {
       this.thinkTimeline.mark("countdown", ordinal, now, `${Math.round(this.scrollThinkMs / 1000)}s`);
     }
     this.scrollBoxesAt = 0; // v1.4.7 — the layout just changed: re-measure next frame.
     if (identity) this.scrollVisitedToggles.add(identity);
-    this.scrollActiveIdentity = identity ?? String(ordinal);
+    // v1.6.2 — never a synthetic ordinal string: `reopens()` compares real
+    // rendered identities against this, and a reused ordinal weakened the guard.
+    this.scrollActiveIdentity = nextActiveIdentity(identity, true);
     this.noteScrollVisit(ordinal, now);
+    return true;
   }
+
   /** Reader parity: a visit opens here and is graded when the pause ends. */
   private noteScrollVisit(ordinal: number, now = Date.now()) {
     if (!Number.isFinite(ordinal) || ordinal <= 0) return;
@@ -2813,13 +2866,15 @@ export default class NotionTogglePlugin extends Plugin {
         if (routeTarget != null && waypointReached(prevPos, this.scrollPos, routeTarget)) {
           this.scrollPos = routeTarget;
           container.scrollTop = Math.floor(routeTarget);
-          this.scrollDwellUntil = ts + (routeTarget != null && this.scrollRouteStop < routeStops.length
+          const holdMs = routeTarget != null && this.scrollRouteStop < routeStops.length
             ? clampScreenDwellMs(this.settings.scrollScreenDwellMs)
-            : cfg.seconds * 1000);
+            : cfg.seconds * 1000;
           const ordinal = cfg.route[this.scrollRouteIdx % cfg.route.length];
           this.scrollLastEvent = `waypointReached toggle ${ordinal} @ ${Math.round(routeTarget)}`;
-          this.parkOnToggle(ordinal, ts, this.scrollBoxes.find((box) => box.page === ordinal)?.identity);
-          this.scrollDwellUntil += this.scrollThinkMs; // v1.5.9 — think time is extra.
+          const parked = this.parkOnToggle(ordinal, ts, this.scrollBoxes.find((box) => box.page === ordinal)?.identity);
+          // v1.5.9 — think time is extra. v1.6.2 — a refused park never holds.
+          this.scrollDwellUntil = dwellPlan(ts, holdMs, this.scrollThinkMs, parked).dwellUntil;
+
           // More screenfuls left on this toggle → stay on this waypoint.
           if (this.scrollRouteStop < routeStops.length - 1) {
             this.scrollRouteStop += 1;
@@ -2874,13 +2929,16 @@ export default class NotionTogglePlugin extends Plugin {
           const stop = crossed as DwellTarget;
           this.scrollDwellKey = stop.key;
           this.scrollVisited.add(stop.key);
-          this.scrollDwellUntil = ts + cfg.seconds * 1000;
           this.scrollPos = stop.top;
           container.scrollTop = Math.floor(stop.top);
           this.scrollAt = targets.findIndex((t) => t.key === stop.key);
           this.scrollLastEvent = `crossedTarget ${stop.key} @ ${Math.round(stop.top)}`;
-          this.parkOnToggle(stop.page, ts, stop.identity);
-          this.scrollDwellUntil += this.scrollThinkMs; // v1.5.9 — think time is extra.
+          const parked = this.parkOnToggle(stop.page, ts, stop.identity);
+          // v1.5.9 — think time is extra. v1.6.2 — a stop that could not be
+          // opened (filtered out, re-rendered, or gone) glides on immediately
+          // instead of standing still for hold + think.
+          this.scrollDwellUntil = dwellPlan(ts, cfg.seconds * 1000, this.scrollThinkMs, parked).dwellUntil;
+
           this.renderScrollBar();
           this.endScrollFrame(ts);
           return;
@@ -3273,22 +3331,32 @@ export default class NotionTogglePlugin extends Plugin {
   async pruneSchedule(silent = false): Promise<number> {
     const existing = this.app.vault.getMarkdownFiles().map((f) => f.path);
     const { store, removed } = pruneCards(this.settings.srs ?? {}, existing);
-    if (removed.length) {
+    // v1.6.2 — the same sweep for autoscroll memory / per-note run settings.
+    const mem = pruneCards(this.settings.scrollMemory ?? {}, existing);
+    const per = pruneCards(this.settings.scrollPerNote ?? {}, existing);
+    const total = removed.length + mem.removed.length + per.removed.length;
+    if (total) {
       this.settings.srs = store;
+      this.settings.scrollMemory = mem.store;
+      this.settings.scrollPerNote = per.store;
       await this.saveSettings();
       this.renderTimer();
     }
     if (!silent) {
       new Notice(
-        removed.length
-          ? `Removed ${removed.length} schedule${removed.length === 1 ? "" : "s"} for missing notes.`
+        total
+          ? `Removed ${total} saved entr${total === 1 ? "y" : "ies"} for missing notes.`
           : "Recall schedule is already clean."
       );
     }
-    return removed.length;
+    return total;
   }
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const raw = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    // v1.6.2 — one migration point, so nested stores are validated on load
+    // instead of blowing up later as an `undefined` field read.
+    this.settings = migrateSettings(raw).settings;
+
     // v1.4.3 — the saved plan must come back exactly as it was typed, even if
     // an older/edited data.json stored junk in those arrays.
     const nums = (v: unknown) =>

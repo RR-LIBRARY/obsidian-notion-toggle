@@ -17,7 +17,10 @@ describe("module boundaries", () => {
     // only wires it into the run loop, so the budget moves by a few lines only.
     // v1.6.1 — the filter hard guard + per-note think scope wiring; the logic
     // itself lives in src/filter-guard.ts, src/think-scope.ts, src/think-timeline.ts.
-    expect(lines("main.ts")).toBeLessThan(3340);
+    // v1.6.2 — park/dwell decisions moved to src/run-step.ts and settings
+    // upgrades to src/settings-migrate.ts; main.ts gained only the vault-event
+    // and migration wiring those modules are called from.
+    expect(lines("main.ts")).toBeLessThan(3400);
   });
 
   test("extracted modules exist and stay reviewable", () => {
@@ -134,5 +137,22 @@ describe("dependency boundaries (v1.3.3)", () => {
     ]) {
       expect(src).toContain(mod);
     }
+  });
+});
+
+/* ---------- v1.6.2 — focus mode must stay themeable ---------- */
+
+describe("focus-mode CSS tokens (v1.6.2)", () => {
+  const css = readFileSync("styles.css", "utf8");
+
+  test("chrome hiding goes through a variable, not a hardcoded none", () => {
+    expect(css).toContain("--ntt-focus-chrome-display: none;");
+    expect(css).toContain("display: var(--ntt-focus-chrome-display) !important;");
+  });
+
+  test("safe-area gaps go through variables", () => {
+    expect(css).toContain("--ntt-focus-top-gap:");
+    expect(css).toContain("padding-top: var(--ntt-focus-top-gap) !important;");
+    expect(css).toContain("padding-bottom: var(--ntt-focus-bottom-gap) !important;");
   });
 });
