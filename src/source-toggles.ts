@@ -15,7 +15,7 @@
 import { kindOf, matchesFilter, type RecallColor } from "./autoscroll";
 
 /** `> [!kind]` at the start of a callout block (any blockquote nesting depth). */
-const CALLOUT_RE = /^[ \t]*(?:>[ \t]*)+\[!([^\]\n]+)\][+-]?/gm;
+const CALLOUT_RE = /^[ \t]*(?:>[ \t]*)+\[!([^\]\n]+)\]([+-]?)/gm;
 const DETAILS_RE = /<details[\s>]/gi;
 
 export interface SourceToggles {
@@ -23,6 +23,12 @@ export interface SourceToggles {
   kinds: RecallColor[];
   /** How many toggles the note has in total. */
   total: number;
+  /**
+   * v1.7.1 — how many of them can actually fold: `[!kind]-` / `[!kind]+`
+   * callouts and every `<details>`. A plain `> [!note]` has no fold arrow, so
+   * "Open all" must not count it as missing.
+   */
+  foldable: number;
 }
 
 /** Strip fenced code blocks so a documented example never counts as a toggle. */
@@ -33,11 +39,16 @@ function withoutFences(text: string): string {
 export function scanSourceToggles(text: string | null | undefined): SourceToggles {
   const src = withoutFences(String(text ?? ""));
   const kinds: RecallColor[] = [];
-  for (const m of src.matchAll(CALLOUT_RE)) kinds.push(kindOf(m[1]));
+  let foldable = 0;
+  for (const m of src.matchAll(CALLOUT_RE)) {
+    kinds.push(kindOf(m[1]));
+    if (m[2] === "-" || m[2] === "+") foldable++;
+  }
   const details = src.match(DETAILS_RE)?.length ?? 0;
   for (let i = 0; i < details; i++) kinds.push("other");
-  return { kinds, total: kinds.length };
+  return { kinds, total: kinds.length, foldable: foldable + details };
 }
+
 
 /** How many toggles the source has for this filter (empty filter = all). */
 export function sourceMatchCount(text: string | null | undefined, filter: RecallColor[] = []): number {

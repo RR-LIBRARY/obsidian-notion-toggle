@@ -2,6 +2,20 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.7.2 — 2026-09-24 — Open all / Close all for the whole note
+
+### Fixed
+- **Open all / Close all now reaches every answer, not just the dozen on screen.** On mobile Obsidian keeps Reading View lazy even with the full-render flag, so a 71-answer note flipped 12 and asked the reader to scroll and tap again. The command is now remembered for the note, the rest of the note is swept into existence in small hops (scroll position restored afterwards), and anything Obsidian renders later — when the reader scrolls — is born in the remembered state.
+- The remembered command is dropped the moment it stops being the reader's intent: switching notes, tapping a single fold arrow, or starting/stopping a quiz (the quiz keeps owning answer visibility).
+- Foldable answers are counted from the note source by marker (`> [!q]-` / `+` and `<details>`), so a plain `> [!note]` is never reported as "not rendered yet".
+- Honest notice: "Opened 71 of 71 answers.", or "Opened 12 of 71 answers — the rest will open as you scroll." instead of "scroll down and tap again".
+
+### Internal
+- New `src/answer-state.ts` (sticky state, `applyWanted*`, `sweepRender`, `runAnswerSweep`) and `src/answer-render-watch.ts` (render observer + manual-tap detection); `main.ts` only registers the wiring.
+
+### Verified
+- 1091 tests, typecheck and release build pass.
+
 ## 1.7.1 — 2026-09-24 — Autoscroll correctness
 
 ### Fixed

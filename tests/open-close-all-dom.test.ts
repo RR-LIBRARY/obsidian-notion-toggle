@@ -169,7 +169,7 @@ describe("Open all / Close all on a lazily rendered note", () => {
     expect(note.querySelectorAll(".callout.is-collapsed").length).toBe(0);
     // …but the other 27 questions were never rendered, so they are still closed in the note.
     const r = { changed: 13, rendered: 13, total: scanSourceToggles(source()).foldable };
-    expect(answersNotice(true, r)).toBe("Opened 13 answers — 31 more not rendered yet; scroll down and tap again.");
+    expect(answersNotice(true, r)).toBe("Opened 13 of 44 answers — the rest will open as you scroll.");
   });
 
   test("NEW: forces the full render, waits for the DOM, then opens every foldable toggle", async () => {
@@ -183,7 +183,7 @@ describe("Open all / Close all on a lazily rendered note", () => {
     const { result, notice, important } = await done;
     expect(view.previewMode.renderer.showAll).toBe(true);
     expect(result).toEqual({ changed: TOTAL + TOTAL / 10, rendered: TOTAL + TOTAL / 10, total: TOTAL + TOTAL / 10 });
-    expect(notice).toBe("Opened 44 answers.");
+    expect(notice).toBe("Opened 44 of 44 answers.");
     expect(important).toBe(false);
     expect(note.querySelectorAll(".callout.is-collapsible.is-collapsed").length).toBe(0);
     // the plain note callout was left untouched (it has no fold state at all)
@@ -196,7 +196,7 @@ describe("Open all / Close all on a lazily rendered note", () => {
     const clock = fakeClock();
     await setAllAnswersOpen(true, note, view, source(), clock);
     const closed = await setAllAnswersOpen(false, note, view, source(), clock);
-    expect(closed.notice).toBe("Closed 44 answers.");
+    expect(closed.notice).toBe("Closed 44 of 44 answers.");
     expect(note.querySelectorAll(".callout.is-collapsible:not(.is-collapsed)").length).toBe(0);
     const again = await setAllAnswersOpen(false, note, view, source(), clock);
     expect(again.notice).toBe("All 44 answers already closed.");
@@ -211,7 +211,7 @@ describe("Open all / Close all on a lazily rendered note", () => {
     await clock.run(4000); // past the 2.5 s wait
     const { result, notice, important } = await done;
     expect(result.rendered).toBe(13);
-    expect(notice).toBe("Opened 13 answers — 31 more not rendered yet; scroll down and tap again.");
+    expect(notice).toBe("Opened 13 of 44 answers — the rest will open as you scroll.");
     expect(important).toBe(true); // shown even in quiet mode
   });
 });

@@ -139,6 +139,15 @@ import { ensureFullRender, restoreFullRender, type FullRenderHandle } from "./sr
 import { gapScreenStops, stopHoldMs, isContinuationStop, screenStopLabel, keepOpenAtDwellEnd, waitFor, answersNotice, answersNoticeIsImportant } from "./src/screen-run";
 import { isFullyRendered, sourceKindCounts, sourceMatchCount, scanSourceToggles } from "./src/source-toggles";
 import {
+  applyWantedToAll,
+  createAnswerWantState,
+  forgetAnswerWant,
+  rememberAnswerWant,
+  runAnswerSweep,
+  wantedAnswerState,
+} from "./src/answer-state";
+
+import {
   buildShuffleOrder,
   deckStats,
   deckSummary,
@@ -196,6 +205,7 @@ import { healQuizEls, needsHeal, revealLanded } from "./src/quiz-heal";
 import { FOCUS_RUN_CLASS, REDUCED_MOTION_CLASS, THINK_RUN_CLASS, ThinkGate, clearThinkMarks } from "./src/think-gate";
 import { effectiveThinkSettings, noteThinkScope } from "./src/think-scope";
 import { ThinkTimeline } from "./src/think-timeline";
+import { isManualToggleClick, watchAnswerRenders } from "./src/answer-render-watch";
 import { parkSkipLabel, resolveParkTarget, strayOpenToggles } from "./src/filter-guard";
 import { dwellPlan, isRefusedPark, nextActiveIdentity } from "./src/run-step";
 import { migrateSettings } from "./src/settings-migrate";
@@ -372,6 +382,11 @@ export default class NotionTogglePlugin extends Plugin {
   scrollLastFrame = 0;
   scrollRaf: number | null = null;
   scrollContainer: HTMLElement | null = null;
+  /* v1.7.2 — sticky "Open all / Close all": the command survives lazy rendering. */
+  readonly answerWant = createAnswerWantState();
+  /** True while we are flipping toggles ourselves (so our clicks never clear the command). */
+  private answerApplying = false;
+
   /* v1.1.1 pause-at / memory state */
   scrollOpenedAt = 0;
   scrollSeen: Set<number> = new Set();
@@ -1005,8 +1020,35 @@ export default class NotionTogglePlugin extends Plugin {
         // v1.7.1 — "Open all" forces the full render for the note; give lazy
         // rendering back when the reader moves on (a run releases its own).
         if (!this.scrollRunning && !this.quizState) this.endFullRender();
+        // v1.7.2 — the sticky Open all / Close all belongs to one note only.
+        this.clearAnswerWant();
       })
     );
+    /* ---------- v1.7.2: keep "Open all / Close all" true for the whole note ----------
+       Obsidian builds Reading View a screenful at a time, so answers below the
+       fold are created long after the button was tapped. The post processor
+       catches fresh sections, the observer catches every other insert, and a
+       manual tap on one answer hands control back to the reader. */
+    this.registerMarkdownPostProcessor((el) => void this.applyWantedAnswers(el));
+    this.register(
+      watchAnswerRenders(document.body, {
+        active: () => !!this.answerWant.want,
+        busy: () => this.answerApplying,
+        apply: () => void this.applyWantedAnswers(this.findViewContainer()),
+        schedule: (fn) => window.requestAnimationFrame(fn),
+      })
+    );
+    this.registerDomEvent(
+      document,
+      "click",
+      (ev) => {
+        if (this.answerApplying || !this.answerWant.want) return;
+        if (isManualToggleClick(ev.target)) this.clearAnswerWant();
+      },
+      true
+    );
+    this.registerEvent(this.app.workspace.on("file-open", () => this.clearAnswerWant()));
+
     /* ---------- v1.0.8: keep the recall schedule in sync with the vault ---------- */
     this.registerEvent(
       this.app.vault.on("rename", async (file, oldPath) => {
@@ -1484,7 +1526,7 @@ export default class NotionTogglePlugin extends Plugin {
     new Notice(summary);
   }
   private activeNotePath(): string | null {
-    return this.app.workspace.activeEditor?.file?.path ?? null;
+    return this.app.workspace.activeEditor?.file?.path ?? this.app.workspace.getActiveFile()?.path ?? null;
   }
   /** Auto-pause / auto-resume based on visibility and the session note. */
   private evaluateAttention() {
@@ -1873,18 +1915,53 @@ export default class NotionTogglePlugin extends Plugin {
     // Wait for *every* callout the source declares; report against the ones
     // that can fold (a plain `> [!note]` has no arrow and is never "missing").
     const src = scanSourceToggles(this.noteSource());
+    // v1.7.2 — remember the command first, so anything Obsidian renders from
+    // now on (the sweep, or the reader scrolling later) is born in that state.
+    rememberAnswerWant(this.answerWant, this.activeNotePath(), open ? "open" : "closed");
     if (this.beginFullRender()) await waitFor(() => noteToggleCount(container) >= src.total);
-    const els = foldableToggleEls(container);
-    let changed = 0;
-    for (const el of els) {
-      if (this.quizState) setQuizVisible(el, open);
-      else if (this.isToggleOpen(el) === open) continue;
-      else this.setToggleOpen(el, open);
-      changed++;
-    }
-    const result = { changed, rendered: els.length, total: src.foldable };
+    const result = await runAnswerSweep({
+      container,
+      scroller: this.scrollContainer ?? this.findScrollContainer(),
+      foldableEls: foldableToggleEls,
+      sourceFoldable: src.foldable,
+      apply: (root) => this.applyWantedAnswers(root),
+      frame: () =>
+        new Promise<void>((done) =>
+          window.requestAnimationFrame(() => window.setTimeout(done, 16))
+        ),
+      now: () => performance.now(),
+    });
     if (!this.settings.scrollQuiet || answersNoticeIsImportant(result)) new Notice(answersNotice(open, result));
   }
+
+  /**
+   * v1.7.2 — give every foldable toggle inside `root` the state the reader
+   * last asked for. Returns how many actually changed. A no-op when no Open
+   * all / Close all command is in force for the active note.
+   */
+  applyWantedAnswers(root: ParentNode | null | undefined): number {
+    if (!root) return 0;
+    const want = wantedAnswerState(this.answerWant, this.activeNotePath());
+    if (!want) return 0;
+    const open = want === "open";
+    const quiz = !!this.quizState;
+    this.answerApplying = true;
+    try {
+      return applyWantedToAll(foldableToggleEls(root), want, {
+        // During a quiz the visibility classes are re-applied unconditionally,
+        // so the run and the reader never disagree about a revealed answer.
+        isOpen: (el) => (quiz ? !open : this.isToggleOpen(el)),
+        setOpen: (el, next) => (quiz ? setQuizVisible(el, next) : this.setToggleOpen(el, next)),
+      });
+    } finally {
+      this.answerApplying = false;
+    }
+  }
+  /** Forget the command (note switch, a manual tap, quiz taking over). */
+  clearAnswerWant() {
+    forgetAnswerWant(this.answerWant);
+  }
+
   /** Re-apply the quiz answer rule after the "keep answers open" switch flips. */
   refreshQuizAnswerVisibility() {
     if (!this.quizState) return;
@@ -3111,7 +3188,10 @@ export default class NotionTogglePlugin extends Plugin {
       if (this.settings.quizKeepAnswersOpen) this.forceQuizOpen(s.el);
       else setQuizVisible(s.el, false);
     }
+    // v1.7.2 — the quiz owns answer visibility from here; drop any sticky command.
+    this.clearAnswerWant();
     this.quizState = startQuiz(this.quizTitles, this.settings);
+
     if (!this.quizBoard) this.quizBoard = new QuizBoard(document);
     if (!this.settings.quizMinimalUi && !this.quizBar) {
       this.quizBar = new QuizBar({
@@ -3130,6 +3210,8 @@ export default class NotionTogglePlugin extends Plugin {
     this.startQuizLoop();
   }
   stopQuiz(notify: boolean) {
+    this.clearAnswerWant();
+
     if (this.quizInterval !== null) {
       window.clearInterval(this.quizInterval);
       this.quizInterval = null;

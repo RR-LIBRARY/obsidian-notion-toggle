@@ -20,7 +20,10 @@ describe("module boundaries", () => {
     // v1.6.2 — park/dwell decisions moved to src/run-step.ts and settings
     // upgrades to src/settings-migrate.ts; main.ts gained only the vault-event
     // and migration wiring those modules are called from.
-    expect(lines("main.ts")).toBeLessThan(3400);
+    // v1.7.2 — sticky "Open all / Close all" wiring: the state machine lives in
+    // src/answer-state.ts and the render watcher in src/answer-render-watch.ts,
+    // main.ts only registers them.
+    expect(lines("main.ts")).toBeLessThan(3500);
   });
 
   test("extracted modules exist and stay reviewable", () => {

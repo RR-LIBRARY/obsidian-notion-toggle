@@ -1154,11 +1154,17 @@ body.ntt-think-run details.ntt-think-shown > *:not(summary) {
    text is never under the phone's gesture bar.
    v1.6.2 — every value goes through a variable, so a theme (or a user snippet)
    can override the plugin without having to out-`!important` it: set
-   `--ntt-focus-chrome-display: flex` to keep Obsidian's chrome visible. */
+   `--ntt-focus-chrome-display: flex` to keep Obsidian's chrome visible.
+   v1.7.1 — the "white strip at the top" fix. The old token was
+   `max(env(safe-area-inset-top), 24px)`: Android's WebView reports `env()` as
+   0, so it always collapsed to a fixed 24px — too small to clear a visible
+   status bar, and a pointless blank band when there is none — and it was
+   applied to two nested elements, so the band doubled. Obsidian publishes the
+   real inset as `--safe-area-inset-top`; use that, with no floor. */
 body.ntt-focus-run {
   --ntt-focus-chrome-display: none;
-  --ntt-focus-top-gap: max(env(safe-area-inset-top), 24px);
-  --ntt-focus-bottom-gap: env(safe-area-inset-bottom);
+  --ntt-focus-top-gap: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --ntt-focus-bottom-gap: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
 }
 body.ntt-focus-run .status-bar,
 body.ntt-focus-run .view-header,
@@ -1185,10 +1191,15 @@ body.ntt-focus-run .view-header-title-container {
 }
 /* v1.6.0 — with Obsidian's own header hidden the phone's system status bar sits
    on top of the first question. Keep a safe-area gap so the text is never under
-   the clock/battery row, and the bottom stays clear of the gesture bar. */
-body.ntt-focus-run.is-mobile .markdown-preview-view,
-body.ntt-focus-run.is-mobile .markdown-reading-view {
+   the clock/battery row, and the bottom stays clear of the gesture bar.
+   v1.7.1 — the top gap lives on `.view-content` only (the one non-scrolling
+   wrapper Obsidian itself pads under the status bar), exactly as tall as the
+   status bar and nothing more; the bottom gap lives on the scroller, so the
+   last line can still be scrolled clear of the gesture bar. */
+body.ntt-focus-run.is-mobile .view-content {
   padding-top: var(--ntt-focus-top-gap) !important;
+}
+body.ntt-focus-run.is-mobile .markdown-preview-view {
   padding-bottom: var(--ntt-focus-bottom-gap) !important;
 }
 

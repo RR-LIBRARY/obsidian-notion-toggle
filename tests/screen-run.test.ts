@@ -210,18 +210,18 @@ describe("answersNotice — honest Open all / Close all copy", () => {
   });
   test("partial render says N of M and asks to scroll", () => {
     const r = { changed: 12, rendered: 12, total: 73 };
-    expect(answersNotice(true, r)).toBe("Opened 12 answers — 61 more not rendered yet; scroll down and tap again.");
+    expect(answersNotice(true, r)).toBe("Opened 12 of 73 answers — the rest will open as you scroll.");
     expect(answersNoticeIsImportant(r)).toBe(true);
   });
   test("complete render: plain counts, quiet-mode friendly", () => {
-    expect(answersNotice(true, { changed: 73, rendered: 73, total: 73 })).toBe("Opened 73 answers.");
+    expect(answersNotice(true, { changed: 73, rendered: 73, total: 73 })).toBe("Opened 73 of 73 answers.");
     expect(answersNotice(false, { changed: 1, rendered: 1, total: 1 })).toBe("Closed 1 answer.");
-    expect(answersNotice(false, { changed: 70, rendered: 73, total: 73 })).toBe("Closed 70 answers (3 already closed).");
+    expect(answersNotice(false, { changed: 70, rendered: 73, total: 73 })).toBe("Closed 73 of 73 answers.");
     expect(answersNotice(true, { changed: 0, rendered: 73, total: 73 })).toBe("All 73 answers already open.");
     expect(answersNoticeIsImportant({ changed: 0, rendered: 73, total: 73 })).toBe(false);
   });
   test("unknown source total (0) never claims something is missing", () => {
-    expect(answersNotice(true, { changed: 5, rendered: 5, total: 0 })).toBe("Opened 5 answers.");
+    expect(answersNotice(true, { changed: 5, rendered: 5, total: 0 })).toBe("Opened 5 of 5 answers.");
     expect(answersNoticeIsImportant({ changed: 5, rendered: 5, total: 0 })).toBe(false);
   });
 });

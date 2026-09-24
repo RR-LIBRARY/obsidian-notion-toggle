@@ -216,17 +216,29 @@ export interface AnswersResult {
   total: number;
 }
 
-/** Notice copy: honest about partial results, silent-friendly when complete. */
+/**
+ * Notice copy: honest about partial results, silent-friendly when complete.
+ *
+ * v1.7.2 — the count is always "N of M", and a partial result no longer tells
+ * the reader to scroll down and tap again: the sticky state applies the same
+ * command to every answer the renderer builds later, so the rest follow on
+ * their own.
+ */
 export function answersNotice(open: boolean, r: AnswersResult): string {
   const verb = open ? "Opened" : "Closed";
   const noun = (n: number) => `${n} answer${n === 1 ? "" : "s"}`;
   if (r.rendered === 0) return "No answer toggles in this note.";
+  const total = Math.max(r.total, r.rendered);
   if (r.total > r.rendered) {
-    return `${verb} ${noun(r.rendered)} — ${r.total - r.rendered} more not rendered yet; scroll down and tap again.`;
+    return `${verb} ${r.rendered} of ${total} answers — the rest will ${
+      open ? "open" : "close"
+    } as you scroll.`;
   }
   if (r.changed === 0) return `All ${noun(r.rendered)} already ${open ? "open" : "closed"}.`;
-  return `${verb} ${noun(r.changed)}${r.changed < r.rendered ? ` (${r.rendered - r.changed} already ${open ? "open" : "closed"})` : ""}.`;
+  if (total === 1) return `${verb} ${noun(1)}.`;
+  return `${verb} ${r.rendered} of ${total} answers.`;
 }
+
 
 /** Should the notice show even in quiet mode? Only when something is off. */
 export function answersNoticeIsImportant(r: AnswersResult): boolean {

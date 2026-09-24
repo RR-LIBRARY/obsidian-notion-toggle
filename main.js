@@ -2308,19 +2308,22 @@ function answersNotice(open, r) {
   const noun = (n) => `${n} answer${n === 1 ? "" : "s"}`;
   if (r.rendered === 0)
     return "No answer toggles in this note.";
+  const total = Math.max(r.total, r.rendered);
   if (r.total > r.rendered) {
-    return `${verb} ${noun(r.rendered)} \u2014 ${r.total - r.rendered} more not rendered yet; scroll down and tap again.`;
+    return `${verb} ${r.rendered} of ${total} answers \u2014 the rest will ${open ? "open" : "close"} as you scroll.`;
   }
   if (r.changed === 0)
     return `All ${noun(r.rendered)} already ${open ? "open" : "closed"}.`;
-  return `${verb} ${noun(r.changed)}${r.changed < r.rendered ? ` (${r.rendered - r.changed} already ${open ? "open" : "closed"})` : ""}.`;
+  if (total === 1)
+    return `${verb} ${noun(1)}.`;
+  return `${verb} ${r.rendered} of ${total} answers.`;
 }
 function answersNoticeIsImportant(r) {
   return r.rendered === 0 || r.total > r.rendered;
 }
 
 // src/source-toggles.ts
-var CALLOUT_RE = /^[ \t]*(?:>[ \t]*)+\[!([^\]\n]+)\]([+-])?/gm;
+var CALLOUT_RE = /^[ \t]*(?:>[ \t]*)+\[!([^\]\n]+)\]([+-]?)/gm;
 var DETAILS_RE = /<details[\s>]/gi;
 function withoutFences(text) {
   return text.replace(/^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[ \t]*$/gm, "");
@@ -2332,7 +2335,7 @@ function scanSourceToggles(text) {
   let foldable = 0;
   for (const m of src.matchAll(CALLOUT_RE)) {
     kinds.push(kindOf(m[1]));
-    if (m[2])
+    if (m[2] === "-" || m[2] === "+")
       foldable++;
   }
   const details = (_b = (_a = src.match(DETAILS_RE)) == null ? void 0 : _a.length) != null ? _b : 0;
@@ -2357,6 +2360,87 @@ function isFullyRendered(domCount, sourceTotal) {
   if (!Number.isFinite(sourceTotal) || sourceTotal <= 0)
     return true;
   return Number(domCount) >= sourceTotal;
+}
+
+// src/answer-state.ts
+function createAnswerWantState() {
+  return { file: null, want: null };
+}
+function rememberAnswerWant(state, file, want) {
+  state.file = file != null ? file : null;
+  state.want = want;
+}
+function forgetAnswerWant(state) {
+  state.file = null;
+  state.want = null;
+}
+function wantedAnswerState(state, file) {
+  if (!state.want)
+    return null;
+  const current = file != null ? file : null;
+  if (state.file !== current)
+    return null;
+  return state.want;
+}
+function applyWanted(el2, want, io) {
+  const open = want === "open";
+  if (io.isOpen(el2) === open)
+    return false;
+  io.setOpen(el2, open);
+  return true;
+}
+function applyWantedToAll(els, want, io) {
+  let changed = 0;
+  for (const el2 of els)
+    if (applyWanted(el2, want, io))
+      changed++;
+  return changed;
+}
+async function sweepRender(opts) {
+  var _a, _b, _c;
+  const { scroller } = opts;
+  const startedAt = opts.now();
+  const timeout = Math.max(0, (_a = opts.timeoutMs) != null ? _a : 4e3);
+  const maxHops = Math.max(1, (_b = opts.maxHops) != null ? _b : 400);
+  const viewport = Math.max(1, scroller.clientHeight || 1);
+  const step = Math.max(1, Math.round(viewport * ((_c = opts.stepRatio) != null ? _c : 0.8)));
+  const home = scroller.scrollTop;
+  let hops = 0;
+  opts.flush();
+  try {
+    while (!opts.done() && hops < maxHops) {
+      const bottom = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      const next = Math.min(bottom, scroller.scrollTop + step);
+      const atEnd2 = next <= scroller.scrollTop;
+      scroller.scrollTop = next;
+      hops++;
+      await opts.frame();
+      opts.flush();
+      if (atEnd2)
+        break;
+      if (opts.now() - startedAt >= timeout)
+        break;
+    }
+  } finally {
+    scroller.scrollTop = home;
+  }
+  return { complete: opts.done(), hops };
+}
+async function runAnswerSweep(o) {
+  const enough = () => o.sourceFoldable > 0 && o.foldableEls(o.container).length >= o.sourceFoldable;
+  let changed = o.apply(o.container);
+  if (o.scroller && !enough()) {
+    await sweepRender({
+      scroller: o.scroller,
+      flush: () => {
+        changed += o.apply(o.container);
+      },
+      done: enough,
+      frame: o.frame,
+      now: o.now
+    });
+  }
+  return { changed, rendered: o.foldableEls(o.container).length, total: o.sourceFoldable };
 }
 
 // src/reader/fsrsScheduler.ts
@@ -3629,6 +3713,34 @@ var ThinkTimeline = class {
     return thinkTimingLines(this.events, limit);
   }
 };
+
+// src/answer-render-watch.ts
+function watchAnswerRenders(target, deps) {
+  let queued = false;
+  const run = () => {
+    queued = false;
+    if (deps.active())
+      deps.apply();
+  };
+  const observer = new MutationObserver((records) => {
+    if (queued || deps.busy() || !deps.active())
+      return;
+    for (const record of records) {
+      if (record.addedNodes.length === 0)
+        continue;
+      queued = true;
+      deps.schedule(run);
+      return;
+    }
+  });
+  observer.observe(target, { childList: true, subtree: true });
+  return () => observer.disconnect();
+}
+function isManualToggleClick(target) {
+  var _a;
+  const el2 = target;
+  return !!((_a = el2 == null ? void 0 : el2.closest) == null ? void 0 : _a.call(el2, ".callout-title, summary"));
+}
 
 // src/filter-guard.ts
 var connected = (el2, probe) => probe ? probe(el2) : el2.isConnected !== false;
@@ -8769,6 +8881,10 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
     this.scrollLastFrame = 0;
     this.scrollRaf = null;
     this.scrollContainer = null;
+    /* v1.7.2 — sticky "Open all / Close all": the command survives lazy rendering. */
+    this.answerWant = createAnswerWantState();
+    /** True while we are flipping toggles ourselves (so our clicks never clear the command). */
+    this.answerApplying = false;
     /* v1.1.1 pause-at / memory state */
     this.scrollOpenedAt = 0;
     this.scrollSeen = /* @__PURE__ */ new Set();
@@ -9384,8 +9500,30 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
         this.evaluateAttention();
         if (!this.scrollRunning && !this.quizState)
           this.endFullRender();
+        this.clearAnswerWant();
       })
     );
+    this.registerMarkdownPostProcessor((el2) => void this.applyWantedAnswers(el2));
+    this.register(
+      watchAnswerRenders(document.body, {
+        active: () => !!this.answerWant.want,
+        busy: () => this.answerApplying,
+        apply: () => void this.applyWantedAnswers(this.findViewContainer()),
+        schedule: (fn) => window.requestAnimationFrame(fn)
+      })
+    );
+    this.registerDomEvent(
+      document,
+      "click",
+      (ev) => {
+        if (this.answerApplying || !this.answerWant.want)
+          return;
+        if (isManualToggleClick(ev.target))
+          this.clearAnswerWant();
+      },
+      true
+    );
+    this.registerEvent(this.app.workspace.on("file-open", () => this.clearAnswerWant()));
     this.registerEvent(
       this.app.vault.on("rename", async (file, oldPath) => {
         var _a, _b, _c;
@@ -9885,8 +10023,8 @@ ${row}`, { line: cursor.line, ch: line.length });
     new import_obsidian14.Notice(summary);
   }
   activeNotePath() {
-    var _a, _b, _c;
-    return (_c = (_b = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.file) == null ? void 0 : _b.path) != null ? _c : null;
+    var _a, _b, _c, _d, _e;
+    return (_e = (_d = (_b = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.file) == null ? void 0 : _b.path) != null ? _d : (_c = this.app.workspace.getActiveFile()) == null ? void 0 : _c.path) != null ? _e : null;
   }
   /** Auto-pause / auto-resume based on visibility and the session note. */
   evaluateAttention() {
@@ -10271,28 +10409,58 @@ ${row}`, { line: cursor.line, ch: line.length });
    * says "N of M" honestly whenever the note is still only partly rendered.
    */
   async setAllAnswersOpen(open) {
+    var _a;
     const container = this.findViewContainer();
     if (!container) {
       new import_obsidian14.Notice("Open a note first.");
       return;
     }
     const src = scanSourceToggles(this.noteSource());
+    rememberAnswerWant(this.answerWant, this.activeNotePath(), open ? "open" : "closed");
     if (this.beginFullRender())
       await waitFor(() => noteToggleCount(container) >= src.total);
-    const els = foldableToggleEls(container);
-    let changed = 0;
-    for (const el2 of els) {
-      if (this.quizState)
-        setQuizVisible(el2, open);
-      else if (this.isToggleOpen(el2) === open)
-        continue;
-      else
-        this.setToggleOpen(el2, open);
-      changed++;
-    }
-    const result = { changed, rendered: els.length, total: src.foldable };
+    const result = await runAnswerSweep({
+      container,
+      scroller: (_a = this.scrollContainer) != null ? _a : this.findScrollContainer(),
+      foldableEls: foldableToggleEls,
+      sourceFoldable: src.foldable,
+      apply: (root) => this.applyWantedAnswers(root),
+      frame: () => new Promise(
+        (done) => window.requestAnimationFrame(() => window.setTimeout(done, 16))
+      ),
+      now: () => performance.now()
+    });
     if (!this.settings.scrollQuiet || answersNoticeIsImportant(result))
       new import_obsidian14.Notice(answersNotice(open, result));
+  }
+  /**
+   * v1.7.2 — give every foldable toggle inside `root` the state the reader
+   * last asked for. Returns how many actually changed. A no-op when no Open
+   * all / Close all command is in force for the active note.
+   */
+  applyWantedAnswers(root) {
+    if (!root)
+      return 0;
+    const want = wantedAnswerState(this.answerWant, this.activeNotePath());
+    if (!want)
+      return 0;
+    const open = want === "open";
+    const quiz = !!this.quizState;
+    this.answerApplying = true;
+    try {
+      return applyWantedToAll(foldableToggleEls(root), want, {
+        // During a quiz the visibility classes are re-applied unconditionally,
+        // so the run and the reader never disagree about a revealed answer.
+        isOpen: (el2) => quiz ? !open : this.isToggleOpen(el2),
+        setOpen: (el2, next) => quiz ? setQuizVisible(el2, next) : this.setToggleOpen(el2, next)
+      });
+    } finally {
+      this.answerApplying = false;
+    }
+  }
+  /** Forget the command (note switch, a manual tap, quiz taking over). */
+  clearAnswerWant() {
+    forgetAnswerWant(this.answerWant);
   }
   /** Re-apply the quiz answer rule after the "keep answers open" switch flips. */
   refreshQuizAnswerVisibility() {
@@ -11495,6 +11663,7 @@ ${deckSummary(
       else
         setQuizVisible(s.el, false);
     }
+    this.clearAnswerWant();
     this.quizState = startQuiz(this.quizTitles, this.settings);
     if (!this.quizBoard)
       this.quizBoard = new QuizBoard(document);
@@ -11517,6 +11686,7 @@ ${deckSummary(
   }
   stopQuiz(notify) {
     var _a, _b;
+    this.clearAnswerWant();
     if (this.quizInterval !== null) {
       window.clearInterval(this.quizInterval);
       this.quizInterval = null;
