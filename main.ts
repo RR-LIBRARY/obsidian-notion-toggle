@@ -1,4 +1,4 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, type WorkspaceLeaf } from "obsidian";
+import { App, Editor, MarkdownView, Modal, Notice, Platform, Plugin, PluginSettingTab, Setting, type WorkspaceLeaf } from "obsidian";
 import { Prec } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
 import {
@@ -205,6 +205,7 @@ import {
 } from "./src/quiz-visibility";
 import { healQuizEls, needsHeal, revealLanded } from "./src/quiz-heal";
 import { FOCUS_RUN_CLASS, REDUCED_MOTION_CLASS, THINK_RUN_CLASS, ThinkGate, clearThinkMarks } from "./src/think-gate";
+import { DrawerGuard } from "./src/drawer-guard";
 import { effectiveThinkSettings, noteThinkScope } from "./src/think-scope";
 import { ThinkTimeline } from "./src/think-timeline";
 import { isManualToggleClick, watchAnswerRenders } from "./src/answer-render-watch";
@@ -453,6 +454,7 @@ export default class NotionTogglePlugin extends Plugin {
   /** v1.1.8 hold-anywhere-to-pause. */
   holdPause: HoldPause | null = null;
   scrollHoldPaused = false;
+  drawerGuard = new DrawerGuard({ close: () => [this.app.workspace.leftSplit, this.app.workspace.rightSplit].filter((d) => d && !d.collapsed).map((d) => d.collapse()).length > 0 });
   private scrollHoldAt = 0;
   /* v1.1.0 quiz mode state */
   /** v1.3.3 — lightweight perf telemetry (quiz paint cadence, re-measure latency). */
@@ -2356,6 +2358,7 @@ export default class NotionTogglePlugin extends Plugin {
     // v1.5.9 — think gate CSS + distraction-free chrome for this run.
     document.body.classList.add(THINK_RUN_CLASS);
     document.body.classList.toggle(FOCUS_RUN_CLASS, this.settings.scrollFocusChrome);
+    if (this.settings.scrollFocusChrome && Platform.isMobile) this.drawerGuard.start();
     document.body.classList.toggle(REDUCED_MOTION_CLASS, this.settings.scrollReducedMotion);
     this.thinkTimeline.reset();
     this.closeFilteredStrays(container, null);
@@ -2412,6 +2415,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.thinkGate.clear();
     if (this.scrollOpenEl) clearThinkMarks(this.scrollOpenEl);
     document.body.classList.remove(THINK_RUN_CLASS, FOCUS_RUN_CLASS, REDUCED_MOTION_CLASS);
+    this.drawerGuard.stop();
     if (this.scrollOpenEl && this.settings.scrollAutoClose) {
       this.setToggleOpen(this.scrollOpenEl, false);
     }

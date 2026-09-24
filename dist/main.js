@@ -3593,6 +3593,50 @@ var ThinkGate = class {
   }
 };
 
+// src/drawer-guard.ts
+var DrawerGuard = class {
+  constructor(cb) {
+    this.cb = cb;
+    this.obs = null;
+    this.pending = false;
+    this.closes = 0;
+  }
+  get active() {
+    return this.obs !== null;
+  }
+  start(doc = document) {
+    if (this.obs || typeof MutationObserver === "undefined")
+      return;
+    const body = doc.body;
+    this.check(body);
+    this.obs = new MutationObserver(() => this.schedule(body));
+    this.obs.observe(body, { subtree: true, childList: true, attributes: true, attributeFilter: ["class", "style"] });
+  }
+  stop() {
+    var _a;
+    (_a = this.obs) == null ? void 0 : _a.disconnect();
+    this.obs = null;
+    this.pending = false;
+  }
+  schedule(body) {
+    if (this.pending)
+      return;
+    this.pending = true;
+    queueMicrotask(() => {
+      this.pending = false;
+      if (this.obs)
+        this.check(body);
+    });
+  }
+  check(body) {
+    try {
+      if (this.cb.close())
+        this.closes++;
+    } catch (e) {
+    }
+  }
+};
+
 // src/think-scope.ts
 var EMPTY_THINK_SCOPE = { seconds: null, enabled: null, icon: null };
 function frontmatterBlock(source) {
@@ -9300,6 +9344,7 @@ var NotionTogglePlugin = class extends import_obsidian15.Plugin {
     /** v1.1.8 hold-anywhere-to-pause. */
     this.holdPause = null;
     this.scrollHoldPaused = false;
+    this.drawerGuard = new DrawerGuard({ close: () => [this.app.workspace.leftSplit, this.app.workspace.rightSplit].filter((d) => d && !d.collapsed).map((d) => d.collapse()).length > 0 });
     this.scrollHoldAt = 0;
     /* v1.1.0 quiz mode state */
     /** v1.3.3 — lightweight perf telemetry (quiz paint cadence, re-measure latency). */
@@ -11218,6 +11263,8 @@ ${deckSummary(
     this.scrollLastGrade = "";
     document.body.classList.add(THINK_RUN_CLASS);
     document.body.classList.toggle(FOCUS_RUN_CLASS, this.settings.scrollFocusChrome);
+    if (this.settings.scrollFocusChrome && import_obsidian15.Platform.isMobile)
+      this.drawerGuard.start();
     document.body.classList.toggle(REDUCED_MOTION_CLASS, this.settings.scrollReducedMotion);
     this.thinkTimeline.reset();
     this.closeFilteredStrays(container, null);
@@ -11283,6 +11330,7 @@ ${deckSummary(
     if (this.scrollOpenEl)
       clearThinkMarks(this.scrollOpenEl);
     document.body.classList.remove(THINK_RUN_CLASS, FOCUS_RUN_CLASS, REDUCED_MOTION_CLASS);
+    this.drawerGuard.stop();
     if (this.scrollOpenEl && this.settings.scrollAutoClose) {
       this.setToggleOpen(this.scrollOpenEl, false);
     }

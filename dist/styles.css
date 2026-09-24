@@ -1576,3 +1576,14 @@ body.ntt-reduced-motion .ntt-rp-dot.is-running {
 .ntt-pause-chips { display: flex; flex-wrap: wrap; gap: 0.5em; }
 .ntt-pause-chip { flex: 1 0 calc(25% - 0.5em); min-height: 40px; border-radius: var(--radius-m); }
 .ntt-pause-chip.is-active { background: var(--interactive-accent); color: var(--text-on-accent); }
+
+/* v1.7.8 — the focus run hides the mobile drawers, but a sideways swipe still
+   made Obsidian fade in the drawer backdrop: the whole note turned a faded
+   yellow with no sidebar in sight until the next tap. The backdrop is kept
+   invisible and click-through for the run; the drawer guard closes the drawer
+   itself on the same frame. */
+body.ntt-focus-run .workspace-drawer-backdrop {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

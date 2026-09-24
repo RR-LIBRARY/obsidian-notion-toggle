@@ -2,6 +2,14 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.7.8 — 2026-09-24 — Fix: note turns faded yellow on a sideways swipe during autoscroll
+
+### Fixed
+- **Yellow / faded screen on swipe (phone).** During a focus (distraction-free) run, a sideways swipe started Obsidian's mobile sidebar gesture. The run hides the sidebar, but Obsidian still faded in its dim backdrop, so the whole note looked washed-out yellow with no sidebar visible until the next tap. Now any drawer that opens during the run is closed immediately (`src/drawer-guard.ts`, via the left/right split API), and `body.ntt-focus-run .workspace-drawer-backdrop` is hidden and click-through.
+
+### Added
+- `tests/drawer-guard.test.ts` (7 tests).
+
 ## 1.7.7 — 2026-09-24 — Autoscroll sheet: deep parameter stress tests + student presets
 
 ### Added
