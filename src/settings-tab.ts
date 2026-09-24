@@ -19,6 +19,7 @@ import {
   filterLabel,
 } from "./autoscroll";
 import { formatDwell, modeLabel, multiplierFromSpeed } from "./scrollmode";
+import { renderScreenPause } from "./screen-pause-ui";
 import { clampScreenOverlap, normalizeAdvanceBy, clampScreenDwellMs, clampViewportPct } from "./screen-stops";
 import { renderThinkSettings } from "./think-settings";
 import { renderResearchSettings } from "./research/settings";
@@ -591,19 +592,8 @@ export class NotionToggleSettingTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
-      .setName("Screen pause duration")
-      .setDesc("How long each screenful stays still before the next screen (seconds).")
-      .addSlider((sl) =>
-        sl.setLimits(0.25, 30, 0.25)
-          .setValue(clampScreenDwellMs(this.plugin.settings.scrollScreenDwellMs) / 1000)
-          .setDynamicTooltip()
-          .onChange(async (v) => {
-            this.plugin.settings.scrollScreenDwellMs = clampScreenDwellMs(v * 1000);
-            await this.plugin.saveSettings();
-            this.plugin.reanchorAfterResize();
-          })
-      );
+    // v1.7.5 — shared 1s…1h pause control (same as the quick sheet).
+    renderScreenPause(containerEl, this.plugin);
 
     new Setting(containerEl)
       .setName("Usable viewport")

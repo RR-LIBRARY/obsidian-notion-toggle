@@ -105,8 +105,8 @@ export const DEFAULT_VIEWPORT_PCT = 0.9;
 export const MIN_VIEWPORT_PCT = 0.5;
 /** How long a plain screen stop is held, in ms. */
 export const DEFAULT_SCREEN_DWELL_MS = 4000;
-export const MIN_SCREEN_DWELL_MS = 250;
-export const MAX_SCREEN_DWELL_MS = 120000;
+export const MIN_SCREEN_DWELL_MS = 1000;
+export const MAX_SCREEN_DWELL_MS = 3_600_000;
 
 export function clampViewportPct(value: unknown): number {
   const n = Number(value);

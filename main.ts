@@ -1709,8 +1709,8 @@ export default class NotionTogglePlugin extends Plugin {
     // v1.2.4 — only float over a real markdown note, never over Settings,
     // Search, Graph, Canvas or any other modal layer.
     const mdView = this.app.workspace.getActiveViewOfType(MarkdownView);
-    const overlayOpen =
-      !this.scrollSheetOpen && !!document.body.querySelector(".modal-container, .modal-bg");
+    // v1.7.5 — the Autoscroll sheet hides the button too (it covered Play / sliders).
+    const overlayOpen = this.scrollSheetOpen || !!document.body.querySelector(".modal-container, .modal-bg");
     const want = fabShouldShow(
       !!this.settings.scrollFab,
       !!this.app.workspace.getActiveFile(),
@@ -1727,7 +1727,6 @@ export default class NotionTogglePlugin extends Plugin {
       this.scrollFabBtn = new ScrollFab({
         onTap: () => this.toggleAutoScroll(),
         onLongPress: () => {
-          // v1.2.1 — keep the button on screen while the sheet is open.
           this.scrollSheetOpen = true;
           this.syncScrollFab();
           new ScrollSheetModal(this.app, this).open();
@@ -3042,7 +3041,7 @@ export default class NotionTogglePlugin extends Plugin {
           // v1.7.1 — screen stops and continuation chunks hold for the screen
           // dwell and never touch the open toggle; a toggle's first stop holds
           // for "Hold" (+ think time).
-          const holdMs = stopHoldMs(stop, cfg.seconds, clampScreenDwellMs(this.settings.scrollScreenDwellMs));
+          const holdMs = stopHoldMs(stop, cfg.seconds, clampScreenDwellMs(this.settings.scrollScreenDwellMs), targets.some((t) => t.page === stop.page && t.index > 0));
           const parked = isScreenStop(stop.page)
             ? this.parkOnScreen(stop, holdMs)
             : this.parkOnToggle(stop.page, ts, stop.identity, isContinuationStop(stop));

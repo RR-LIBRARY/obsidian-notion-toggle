@@ -2100,8 +2100,8 @@ function isScreenStop(page) {
 var DEFAULT_VIEWPORT_PCT = 0.9;
 var MIN_VIEWPORT_PCT = 0.5;
 var DEFAULT_SCREEN_DWELL_MS = 4e3;
-var MIN_SCREEN_DWELL_MS = 250;
-var MAX_SCREEN_DWELL_MS = 12e4;
+var MIN_SCREEN_DWELL_MS = 1e3;
+var MAX_SCREEN_DWELL_MS = 36e5;
 function clampViewportPct(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0)
@@ -2249,11 +2249,12 @@ function gapScreenStops(toggleStops, stepPx, maxScroll, tolerance, screenHeight 
   }
   return out;
 }
-function stopHoldMs(stop, holdSeconds, screenDwellMs) {
+function stopHoldMs(stop, holdSeconds, screenDwellMs, chunked = false) {
   const screen = Math.max(0, screenDwellMs);
   if (isScreenStop(stop.page) || stop.index > 0)
     return screen;
-  return Math.max(0, holdSeconds) * 1e3;
+  const hold = Math.max(0, holdSeconds) * 1e3;
+  return chunked ? Math.max(hold, screen) : hold;
 }
 function isContinuationStop(stop) {
   return !isScreenStop(stop.page) && stop.index > 0;
@@ -4904,6 +4905,107 @@ function registerPaddingDiagnostic(plugin) {
 // src/settings-tab.ts
 var import_obsidian8 = require("obsidian");
 
+// src/pause-scale.ts
+var PAUSE_MIN_MS = 1e3;
+var PAUSE_MAX_MS = 36e5;
+var PAUSE_STEPS = 100;
+var PAUSE_CHIPS = [
+  { label: "10s", ms: 1e4 },
+  { label: "20s", ms: 2e4 },
+  { label: "30s", ms: 3e4 },
+  { label: "60s", ms: 6e4 },
+  { label: "1h", ms: 36e5 }
+];
+var LN = Math.log(PAUSE_MAX_MS / PAUSE_MIN_MS);
+function roundPause(ms3) {
+  const s = Math.min(PAUSE_MAX_MS, Math.max(PAUSE_MIN_MS, ms3)) / 1e3;
+  if (s < 120)
+    return Math.round(s) * 1e3;
+  if (s < 600)
+    return Math.round(s / 5) * 5e3;
+  return Math.round(s / 60) * 6e4;
+}
+function sliderToPause(pos) {
+  const p = Math.min(PAUSE_STEPS, Math.max(0, pos)) / PAUSE_STEPS;
+  return roundPause(PAUSE_MIN_MS * Math.exp(LN * p));
+}
+function pauseToSlider(ms3) {
+  const v = Math.min(PAUSE_MAX_MS, Math.max(PAUSE_MIN_MS, ms3));
+  return Math.round(Math.log(v / PAUSE_MIN_MS) / LN * PAUSE_STEPS);
+}
+function formatPause(ms3) {
+  const total = Math.round(ms3 / 1e3);
+  if (total >= 3600)
+    return total % 3600 === 0 ? `${total / 3600}h` : `${Math.floor(total / 3600)}h ${Math.round(total % 3600 / 60)}m`;
+  if (total >= 60)
+    return total % 60 === 0 ? `${total / 60}m` : `${Math.floor(total / 60)}m ${total % 60}s`;
+  return `${total}s`;
+}
+
+// src/screen-pause-ui.ts
+function renderScreenPause(parent, host) {
+  var _a;
+  const doc = parent.ownerDocument;
+  const mk = (tag, cls, text) => {
+    const e = doc.createElement(tag);
+    e.className = cls;
+    if (text != null)
+      e.textContent = text;
+    return e;
+  };
+  const box = mk("div", "ntt-pause");
+  const head = mk("div", "ntt-pause-head");
+  head.append(mk("span", "ntt-pause-label", "Pause on each screen"));
+  const value = mk("span", "ntt-pause-value");
+  head.append(value);
+  const slider = mk("input", "ntt-pause-slider");
+  slider.type = "range";
+  slider.min = "0";
+  slider.max = String(PAUSE_STEPS);
+  slider.step = "1";
+  slider.setAttribute("aria-label", "Pause on each screen");
+  const scale = mk("div", "ntt-pause-scale");
+  for (const t of ["1s", "1m", "1h"])
+    scale.append(mk("span", "", t));
+  const chips = mk("div", "ntt-pause-chips");
+  const chipEls = [];
+  const show = (ms3) => {
+    value.textContent = formatPause(ms3);
+    slider.value = String(pauseToSlider(ms3));
+    for (const c of chipEls)
+      c.classList.toggle("is-active", Number(c.dataset.ms) === ms3);
+  };
+  const commit = async (ms3) => {
+    host.settings.scrollScreenDwellMs = clampScreenDwellMs(ms3);
+    show(host.settings.scrollScreenDwellMs);
+    await host.saveSettings();
+    host.refreshScrollPlan();
+  };
+  for (const c of PAUSE_CHIPS) {
+    const b = mk("button", "ntt-pause-chip", c.label);
+    b.type = "button";
+    b.dataset.ms = String(c.ms);
+    b.addEventListener("click", () => void commit(c.ms));
+    chipEls.push(b);
+    chips.append(b);
+  }
+  slider.addEventListener("input", () => {
+    value.textContent = formatPause(sliderToPause(Number(slider.value)));
+  });
+  slider.addEventListener("change", () => void commit(sliderToPause(Number(slider.value))));
+  box.append(head, slider, scale, chips);
+  parent.append(box);
+  show(clampScreenDwellMs(host.settings.scrollScreenDwellMs));
+  const setEnabled = (on) => {
+    box.classList.toggle("is-disabled", !on);
+    slider.disabled = !on;
+    for (const c of chipEls)
+      c.disabled = !on;
+  };
+  setEnabled(host.settings.scrollChunkTall || ((_a = host.settings.scrollAdvanceBy) != null ? _a : "toggles") !== "toggles");
+  return { el: box, setEnabled };
+}
+
 // src/think-settings.ts
 var import_obsidian6 = require("obsidian");
 
@@ -6596,13 +6698,7 @@ var NotionToggleSettingTab = class extends import_obsidian8.PluginSettingTab {
         refreshMath();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("Screen pause duration").setDesc("How long each screenful stays still before the next screen (seconds).").addSlider(
-      (sl) => sl.setLimits(0.25, 30, 0.25).setValue(clampScreenDwellMs(this.plugin.settings.scrollScreenDwellMs) / 1e3).setDynamicTooltip().onChange(async (v) => {
-        this.plugin.settings.scrollScreenDwellMs = clampScreenDwellMs(v * 1e3);
-        await this.plugin.saveSettings();
-        this.plugin.reanchorAfterResize();
-      })
-    );
+    renderScreenPause(containerEl, this.plugin);
     new import_obsidian8.Setting(containerEl).setName("Usable viewport").setDesc("Percentage of the live screen height used for one screenful on mobile and desktop.").addSlider(
       (sl) => sl.setLimits(0.5, 1, 0.05).setValue(clampViewportPct(this.plugin.settings.scrollViewportPct)).setDynamicTooltip().onChange(async (v) => {
         this.plugin.settings.scrollViewportPct = clampViewportPct(v);
@@ -6922,11 +7018,14 @@ var ScrollSheetModal = class extends import_obsidian9.Modal {
         this.plugin.settings.scrollChunkTall = v;
         await this.plugin.saveSettings();
         this.plugin.refreshScrollPlan();
+        pause.setEnabled(v || normalizeAdvanceBy(this.plugin.settings.scrollAdvanceBy) !== "toggles");
       })
     );
+    const pause = renderScreenPause(this.contentEl, this.plugin);
     new import_obsidian9.Setting(this.contentEl).setName("Advance by").setDesc("Toggles, full screens, or both in Reading View.").addDropdown(
       (dd) => dd.addOptions({ toggles: "Toggles", screens: "Screens", both: "Toggles + screens" }).setValue(normalizeAdvanceBy(s.scrollAdvanceBy)).onChange(async (v) => {
         this.plugin.settings.scrollAdvanceBy = normalizeAdvanceBy(v);
+        pause.setEnabled(this.plugin.settings.scrollChunkTall || normalizeAdvanceBy(v) !== "toggles");
         await this.plugin.saveSettings();
         this.plugin.refreshScrollPlan();
       })
@@ -6941,11 +7040,6 @@ var ScrollSheetModal = class extends import_obsidian9.Modal {
         refreshMath();
       })
     );
-    new import_obsidian9.Setting(this.contentEl).setName("Screen pause duration").setDesc("Pause on each screenful (seconds).").addSlider((sl) => sl.setLimits(0.25, 30, 0.25).setValue(clampScreenDwellMs(s.scrollScreenDwellMs) / 1e3).setDynamicTooltip().onChange(async (v) => {
-      this.plugin.settings.scrollScreenDwellMs = clampScreenDwellMs(v * 1e3);
-      await this.plugin.saveSettings();
-      this.plugin.refreshScrollPlan();
-    }));
     new import_obsidian9.Setting(this.contentEl).setName("Usable viewport").setDesc("Percentage of live screen height used for one screenful.").addSlider((sl) => sl.setLimits(0.5, 1, 0.05).setValue(clampViewportPct(s.scrollViewportPct)).setDynamicTooltip().onChange(async (v) => {
       this.plugin.settings.scrollViewportPct = clampViewportPct(v);
       await this.plugin.saveSettings();
@@ -10467,7 +10561,7 @@ ${row}`, { line: cursor.line, ch: line.length });
   syncScrollFab() {
     var _a;
     const mdView = this.app.workspace.getActiveViewOfType(import_obsidian15.MarkdownView);
-    const overlayOpen = !this.scrollSheetOpen && !!document.body.querySelector(".modal-container, .modal-bg");
+    const overlayOpen = this.scrollSheetOpen || !!document.body.querySelector(".modal-container, .modal-bg");
     const want = fabShouldShow(
       !!this.settings.scrollFab,
       !!this.app.workspace.getActiveFile(),
@@ -11791,7 +11885,7 @@ ${deckSummary(
           container.scrollTop = Math.floor(stop.top);
           this.scrollAt = targets.findIndex((t) => t.key === stop.key);
           this.scrollLastEvent = `crossedTarget ${stop.key} @ ${Math.round(stop.top)}`;
-          const holdMs = stopHoldMs(stop, cfg.seconds, clampScreenDwellMs(this.settings.scrollScreenDwellMs));
+          const holdMs = stopHoldMs(stop, cfg.seconds, clampScreenDwellMs(this.settings.scrollScreenDwellMs), targets.some((t) => t.page === stop.page && t.index > 0));
           const parked = isScreenStop(stop.page) ? this.parkOnScreen(stop, holdMs) : this.parkOnToggle(stop.page, ts, stop.identity, isContinuationStop(stop));
           this.scrollDwellUntil = dwellPlan(ts, holdMs, this.scrollThinkMs, parked).dwellUntil;
           this.renderScrollBar();

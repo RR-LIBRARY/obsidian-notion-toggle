@@ -115,11 +115,14 @@ export function screenPlanEntries(tops: readonly number[]): { top: number; ordin
 export function stopHoldMs(
   stop: { page: number; index: number },
   holdSeconds: number,
-  screenDwellMs: number
+  screenDwellMs: number,
+  chunked = false
 ): number {
   const screen = Math.max(0, screenDwellMs);
   if (isScreenStop(stop.page) || stop.index > 0) return screen;
-  return Math.max(0, holdSeconds) * 1000;
+  const hold = Math.max(0, holdSeconds) * 1000;
+  // v1.7.5 — a tall (chunked) toggle's first screen is read too: wait at least the screen pause.
+  return chunked ? Math.max(hold, screen) : hold;
 }
 
 /** A stop is a continuation of an already-open toggle (chunk 2, 3, …). */

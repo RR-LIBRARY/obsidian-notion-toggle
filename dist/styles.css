@@ -1564,3 +1564,15 @@ body.ntt-reduced-motion .ntt-rp-dot.is-running {
   font-size: var(--font-ui-smaller);
   padding: 4px 10px;
 }
+
+/* v1.7.5 — "Pause on each screen": 1s … 1h slider + quick chips (sheet + settings). */
+.ntt-pause { padding: 0.25em 0 0.9em; border-bottom: 1px solid var(--background-modifier-border); }
+.ntt-pause.is-disabled { opacity: 0.45; }
+.ntt-pause-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.4em; }
+.ntt-pause-label { font-size: var(--font-ui-small); font-weight: var(--font-semibold); letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+.ntt-pause-value { font-size: var(--font-ui-medium); font-weight: var(--font-semibold); color: var(--text-normal); font-variant-numeric: tabular-nums; }
+.ntt-pause-slider { width: 100%; }
+.ntt-pause-scale { display: flex; justify-content: space-between; font-size: var(--font-ui-smaller); color: var(--text-muted); margin: 0.2em 0 0.6em; }
+.ntt-pause-chips { display: flex; flex-wrap: wrap; gap: 0.5em; }
+.ntt-pause-chip { flex: 1 0 calc(25% - 0.5em); min-height: 40px; border-radius: var(--radius-m); }
+.ntt-pause-chip.is-active { background: var(--interactive-accent); color: var(--text-on-accent); }

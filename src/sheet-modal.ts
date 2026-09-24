@@ -7,6 +7,7 @@ import { App, Modal, Notice, Setting } from "obsidian";
 import type NotionTogglePlugin from "../main";
 import { clampHold, filterLabel } from "./autoscroll";
 import { formatDwell, modeLabel, multiplierFromSpeed } from "./scrollmode";
+import { renderScreenPause } from "./screen-pause-ui";
 import { clampScreenOverlap, normalizeAdvanceBy, clampScreenDwellMs, clampViewportPct } from "./screen-stops";
 import {
   QUIZ_SECONDS_MAX,
@@ -253,8 +254,11 @@ export class ScrollSheetModal extends Modal {
           this.plugin.settings.scrollChunkTall = v;
           await this.plugin.saveSettings();
           this.plugin.refreshScrollPlan();
+          pause.setEnabled(v || normalizeAdvanceBy(this.plugin.settings.scrollAdvanceBy) !== "toggles");
         })
       );
+    // v1.7.5 — how long each screen of a tall answer (and each screen stop) waits.
+    const pause = renderScreenPause(this.contentEl, this.plugin);
 
     new Setting(this.contentEl)
       .setName("Advance by")
@@ -264,6 +268,7 @@ export class ScrollSheetModal extends Modal {
           .setValue(normalizeAdvanceBy(s.scrollAdvanceBy))
           .onChange(async (v) => {
             this.plugin.settings.scrollAdvanceBy = normalizeAdvanceBy(v);
+            pause.setEnabled(this.plugin.settings.scrollChunkTall || normalizeAdvanceBy(v) !== "toggles");
             await this.plugin.saveSettings();
             this.plugin.refreshScrollPlan();
           })
@@ -287,17 +292,6 @@ export class ScrollSheetModal extends Modal {
         })
       );
 
-    new Setting(this.contentEl)
-      .setName("Screen pause duration")
-      .setDesc("Pause on each screenful (seconds).")
-      .addSlider((sl) => sl.setLimits(0.25, 30, 0.25)
-        .setValue(clampScreenDwellMs(s.scrollScreenDwellMs) / 1000)
-        .setDynamicTooltip()
-        .onChange(async (v) => {
-          this.plugin.settings.scrollScreenDwellMs = clampScreenDwellMs(v * 1000);
-          await this.plugin.saveSettings();
-          this.plugin.refreshScrollPlan();
-        }));
 
     new Setting(this.contentEl)
       .setName("Usable viewport")

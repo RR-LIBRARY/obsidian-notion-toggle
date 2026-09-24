@@ -2,6 +2,20 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.7.5 — 2026-09-25 — Autoscroll sheet: no floating button, pause time per screen
+
+### Changed
+- **The floating autoscroll button hides while the Autoscroll quick-controls sheet is open** (it used to sit on top of Play and the sliders). It comes back when the sheet closes.
+- **New "Pause on each screen" control** right under "Tall toggles screen-by-screen" (sheet and Settings): a 1 s … 1 h slider (fine steps at the short end, coarse at the long end) plus 10s / 20s / 30s / 60s / 1h chips and a live value. It replaces the old 0.25–30 s "Screen pause duration" slider; your saved value carries over (values under 1 s round up to 1 s).
+- A tall toggle's **first** screen now also waits at least this long (or the toggle hold, whichever is longer), so every screenful of a long answer can be read. Screen stops keep using the same pause.
+- The control greys out only when tall-toggle chunking is off *and* the run advances by toggles only.
+
+### Internal
+- New pure `src/pause-scale.ts`, DOM helper `src/screen-pause-ui.ts` (no Obsidian import), `stopHoldMs(..., chunked)`, `MAX_SCREEN_DWELL_MS` = 1 h, `MIN` = 1 s. New `tests/screen-pause.test.ts` (12 tests).
+
+### Verified
+- 1122 tests, typecheck and release build pass. See `AUDIT-sheet-1.7.5.md`.
+
 ## 1.7.4 — 2026-09-25 — Top padding diagnostic
 
 ### Added
