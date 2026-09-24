@@ -2,6 +2,19 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.7.1 — 2026-09-24 — Autoscroll correctness
+
+### Fixed
+- Open all / Close all now forces the complete Reading View render, waits for lazy sections, includes nested foldables, excludes plain callouts, and reports honest counts.
+- Screen stops use their own pause duration; Toggles + screens gap-fills between stable toggle stops without backward rescue.
+- Tall-answer continuation keeps the answer open, skips repeated think countdowns, and uses screen dwell; route first stops retain normal hold timing.
+- Removed the permanent Android top strip by giving one wrapper ownership of the real safe area, with no artificial 24px floor.
+- Research requests now stop stalled panel states with clear operation-specific timeout messages and generous ceilings for generated answers.
+
+### Verified
+- Screenshot control audit: 24/25 groups automated-pass; the remaining group is physical-device endurance, not a known failure.
+- 1080 tests, 4361 assertions, typecheck and release build pass. See `AUDIT-sheet-1.7.1.md`.
+
 ## 1.7.0 — 2026-09-24 — Web research
 
 ### Added

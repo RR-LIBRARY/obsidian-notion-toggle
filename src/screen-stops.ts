@@ -228,3 +228,21 @@ export function screenMergeTolerance(screenPx: number): number {
   return Math.max(1, Math.round(Math.max(1, screenPx) * 0.25));
 }
 
+
+/**
+ * v1.7.1 — the screen tops a run will actually visit: pruned by the colour
+ * filter (once the DOM has caught up), clamped to the browser's real maximum
+ * scroll position (the logical screen can be shorter than the viewport, the
+ * scroller can never go past its end) and de-duplicated.
+ */
+export function plannedScreenTops(
+  plan: ScreenPlan,
+  filtered: boolean,
+  keptTops: number[],
+  fullyRendered: boolean,
+  maxScroll: number
+): number[] {
+  const selected = filtered ? filterScreenStops(plan.stops, keptTops, plan.screenPx, fullyRendered) : plan.stops;
+  const limit = Math.max(0, maxScroll);
+  return [...new Set(selected.map((top) => Math.min(top, limit)))];
+}

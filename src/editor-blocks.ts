@@ -515,3 +515,25 @@ export function questionBlockPlan(
     ch: head[head.length - 1].length,
   };
 }
+
+/**
+ * v1.7.1 — wrap a multi-line selection as one callout toggle: the first
+ * non-empty line becomes the (optionally bold) title, the rest the body.
+ * Returns `null` when the selection has no text at all.
+ */
+export function wrapSelectionMarkdown(
+  selection: string,
+  type: string,
+  fold: "+" | "-",
+  bold: (title: string) => string
+): string | null {
+  const lines = selection.split("\n");
+  const at = lines.findIndex((l) => l.trim().length > 0);
+  if (at < 0) return null;
+  const title = bold(lines[at].trim());
+  const bodyLines = lines.slice(at + 1);
+  while (bodyLines.length > 0 && bodyLines[0].trim().length === 0) bodyLines.shift();
+  const body =
+    bodyLines.length > 0 ? "\n" + bodyLines.map((l) => `> ${l}`.replace(/>\s+$/, ">")).join("\n") : "";
+  return `> [!${type}]${fold} ${title}${body}\n`;
+}

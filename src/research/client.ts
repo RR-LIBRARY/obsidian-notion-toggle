@@ -42,7 +42,7 @@ export type Transport = (req: TransportRequest) => Promise<TransportResponse>;
 
 export class ResearchError extends Error {
   constructor(
-    public readonly code: BridgeErrorCode | "network" | "not_configured",
+    public readonly code: BridgeErrorCode | "network" | "not_configured" | "timeout",
     message: string,
     public readonly status = 0,
     public readonly retryAfterSec: number | null = null
@@ -87,12 +87,44 @@ export function describeError(err: unknown): string {
         return "The research workspace is out of credits. Top up in the dashboard, then try again.";
       case "network":
         return `Could not reach the research bridge: ${err.message}`;
+      case "timeout":
+        return err.message;
       default:
         return err.message;
     }
   }
   return err instanceof Error ? err.message : String(err);
 }
+
+/**
+ * v1.7.1 — per-operation ceilings (ms). Obsidian's `requestUrl` has no timeout
+ * of its own, so without these a stalled mobile connection left the panel
+ * spinning forever. The ceilings are deliberately generous — minutes for
+ * anything a model writes — so a slow-but-working answer is never thrown
+ * away; they exist only so the UI can stop and *say* something went wrong.
+ * Lookups (search / extract) are bounded by the bridge at ~55 s, so their
+ * ceilings are a superset of that.
+ */
+export type ResearchOp =
+  | "health"
+  | "search"
+  | "perplexity"
+  | "extract"
+  | "answer"
+  | "factcheck"
+  | "recall"
+  | "tasks";
+
+export const DEFAULT_TIMEOUTS_MS: Readonly<Record<ResearchOp, number>> = Object.freeze({
+  health: 15_000,
+  search: 75_000,
+  perplexity: 75_000,
+  extract: 90_000,
+  answer: 300_000,
+  factcheck: 300_000,
+  recall: 360_000,
+  tasks: 30_000,
+});
 
 export interface ResearchClientOptions {
   bridgeUrl: string;
@@ -101,6 +133,27 @@ export interface ResearchClientOptions {
   cache?: ResearchCache | null;
   /** Sent as an X-Client hint so the dashboard can label requests. */
   clientVersion?: string;
+  /** Override one or more of `DEFAULT_TIMEOUTS_MS` (tests use tiny values). */
+  timeoutsMs?: Partial<Record<ResearchOp, number>>;
+  /** Injectable timer for tests. */
+  setTimeout?: (fn: () => void, ms: number) => unknown;
+  clearTimeout?: (handle: unknown) => void;
+}
+
+/** Human copy for a timeout — names the operation and the ceiling so the reader knows what to change. */
+export function timeoutMessage(op: ResearchOp, ms: number): string {
+  const secs = Math.round(ms / 1000);
+  const what: Record<ResearchOp, string> = {
+    health: "The bridge health check",
+    search: "Web search",
+    perplexity: "Perplexity search",
+    extract: "Reading the page",
+    answer: "The researched answer",
+    factcheck: "Fact-checking",
+    recall: "Recall card generation",
+    tasks: "Deep research status",
+  };
+  return `${what[op]} timed out after ${secs}s. Check the connection, then try again — or ask a narrower question.`;
 }
 
 export class ResearchClient {
@@ -109,6 +162,9 @@ export class ResearchClient {
   private readonly transport: Transport;
   private readonly cache: ResearchCache | null;
   private readonly clientVersion: string;
+  private readonly timeouts: Record<ResearchOp, number>;
+  private readonly schedule: (fn: () => void, ms: number) => unknown;
+  private readonly cancel: (handle: unknown) => void;
 
   constructor(opts: ResearchClientOptions) {
     this.base = normalizeBridgeUrl(opts.bridgeUrl);
@@ -116,6 +172,14 @@ export class ResearchClient {
     this.transport = opts.transport;
     this.cache = opts.cache ?? null;
     this.clientVersion = opts.clientVersion ?? "obsidian-notion-toggle";
+    this.timeouts = { ...DEFAULT_TIMEOUTS_MS, ...(opts.timeoutsMs ?? {}) };
+    this.schedule = opts.setTimeout ?? ((fn, ms) => setTimeout(fn, ms));
+    this.cancel = opts.clearTimeout ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
+  }
+
+  /** The ceiling this client applies to `op` (ms). */
+  timeoutFor(op: ResearchOp): number {
+    return this.timeouts[op];
   }
 
   get configured(): boolean {
@@ -127,39 +191,41 @@ export class ResearchClient {
   }
 
   health(): Promise<HealthResponse> {
-    return this.request<HealthResponse>("GET", "/health");
+    return this.request<HealthResponse>("health", "GET", "/health");
   }
 
   search(req: SearchRequest): Promise<SearchResponse> {
-    return this.cached("search", req, () => this.request<SearchResponse>("POST", "/search", req));
+    return this.cached("search", req, () => this.request<SearchResponse>("search", "POST", "/search", req));
   }
 
   perplexity(req: PerplexityRequest): Promise<PerplexityResponse> {
-    return this.cached("perplexity", req, () => this.request<PerplexityResponse>("POST", "/perplexity", req));
+    return this.cached("perplexity", req, () => this.request<PerplexityResponse>("perplexity", "POST", "/perplexity", req));
   }
 
   extract(req: ExtractRequest): Promise<ExtractResponse & { cached?: boolean }> {
-    return this.cached("extract", req, () => this.request<ExtractResponse & { cached?: boolean }>("POST", "/extract", req));
+    return this.cached("extract", req, () =>
+      this.request<ExtractResponse & { cached?: boolean }>("extract", "POST", "/extract", req)
+    );
   }
 
   answer(req: AnswerRequest): Promise<AnswerResponse> {
-    return this.request<AnswerResponse>("POST", "/answer", req);
+    return this.request<AnswerResponse>("answer", "POST", "/answer", req);
   }
 
   factCheck(req: FactCheckRequest): Promise<FactCheckResponse> {
-    return this.request<FactCheckResponse>("POST", "/factcheck", req);
+    return this.request<FactCheckResponse>("factcheck", "POST", "/factcheck", req);
   }
 
   recall(req: RecallRequest): Promise<RecallResponse> {
-    return this.request<RecallResponse>("POST", "/recall", req);
+    return this.request<RecallResponse>("recall", "POST", "/recall", req);
   }
 
   createTask(req: TaskCreateRequest): Promise<TaskRun> {
-    return this.request<TaskRun>("POST", "/tasks", req);
+    return this.request<TaskRun>("tasks", "POST", "/tasks", req);
   }
 
   pollTask(runId: string): Promise<TaskRun> {
-    return this.request<TaskRun>("GET", `/tasks/${encodeURIComponent(runId)}`);
+    return this.request<TaskRun>("tasks", "GET", `/tasks/${encodeURIComponent(runId)}`);
   }
 
   listTasks(opts: { limit?: number; includeResult?: boolean } = {}): Promise<TaskListResponse> {
@@ -167,7 +233,7 @@ export class ResearchClient {
     if (opts.limit) params.set("limit", String(opts.limit));
     if (opts.includeResult) params.set("include", "result");
     const qs = params.toString();
-    return this.request<TaskListResponse>("GET", `/tasks${qs ? `?${qs}` : ""}`);
+    return this.request<TaskListResponse>("tasks", "GET", `/tasks${qs ? `?${qs}` : ""}`);
   }
 
   private async cached<T extends { cached?: boolean }>(op: string, body: unknown, run: () => Promise<T>): Promise<T> {
@@ -180,11 +246,11 @@ export class ResearchClient {
     return fresh;
   }
 
-  private async request<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+  private async request<T>(op: ResearchOp, method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
     if (!this.configured) throw new ResearchError("not_configured", "Research bridge is not configured");
     let res: TransportResponse;
     try {
-      res = await this.transport({
+      res = await this.withTimeout(op, this.transport({
         url: this.endpoint(path),
         method,
         headers: {
@@ -194,8 +260,9 @@ export class ResearchClient {
           "X-Client": this.clientVersion,
         },
         body: body === undefined ? undefined : JSON.stringify(body),
-      });
+      }));
     } catch (err) {
+      if (err instanceof ResearchError) throw err;
       throw new ResearchError("network", err instanceof Error ? err.message : String(err));
     }
     const parsed = parseJson(res.text);
@@ -207,6 +274,34 @@ export class ResearchClient {
     const code = errBody?.error?.code ?? codeForStatus(res.status);
     const message = errBody?.error?.message ?? `Bridge request failed (${res.status})`;
     throw new ResearchError(code, message, res.status, errBody?.error?.retryAfterSec ?? null);
+  }
+
+  /** Race `work` against the op's ceiling; a loss becomes a `timeout` ResearchError (status 0 — nothing came back). */
+  private withTimeout<T>(op: ResearchOp, work: Promise<T>): Promise<T> {
+    const ms = this.timeoutFor(op);
+    if (!(ms > 0) || !Number.isFinite(ms)) return work;
+    return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      const handle = this.schedule(() => {
+        if (settled) return;
+        settled = true;
+        reject(new ResearchError("timeout", timeoutMessage(op, ms), 0));
+      }, ms);
+      work.then(
+        (value) => {
+          if (settled) return;
+          settled = true;
+          this.cancel(handle);
+          resolve(value);
+        },
+        (err) => {
+          if (settled) return;
+          settled = true;
+          this.cancel(handle);
+          reject(err);
+        }
+      );
+    });
   }
 }
 

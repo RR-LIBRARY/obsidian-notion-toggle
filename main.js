@@ -47,7 +47,8 @@ __export(main_exports, {
   planEnter: () => planEnter,
   questionBlockPlan: () => questionBlockPlan,
   renumberToggles: () => renumberToggles,
-  toggleOptionCheckbox: () => toggleOptionCheckbox
+  toggleOptionCheckbox: () => toggleOptionCheckbox,
+  wrapSelectionMarkdown: () => wrapSelectionMarkdown
 });
 module.exports = __toCommonJS(main_exports);
 var import_obsidian14 = require("obsidian");
@@ -2093,10 +2094,8 @@ function screenStops(contentHeight, viewport, overlap = DEFAULT_SCREEN_OVERLAP) 
   out.push(last);
   return out;
 }
-function mergeStops(screens, toggles, tolerance = 0) {
-  const tol = Math.max(0, Math.floor(tolerance));
-  const keep = screens.filter((s) => !toggles.some((t) => Math.abs(t.top - s.top) <= tol));
-  return [...toggles, ...keep].sort((a, b) => a.top - b.top);
+function isScreenStop(page) {
+  return !Number.isFinite(page) || page <= 0;
 }
 var DEFAULT_VIEWPORT_PCT = 0.9;
 var MIN_VIEWPORT_PCT = 0.5;
@@ -2161,6 +2160,11 @@ function describeScreenPlan(plan) {
 function screenMergeTolerance(screenPx) {
   return Math.max(1, Math.round(Math.max(1, screenPx) * 0.25));
 }
+function plannedScreenTops(plan, filtered, keptTops, fullyRendered, maxScroll) {
+  const selected = filtered ? filterScreenStops(plan.stops, keptTops, plan.screenPx, fullyRendered) : plan.stops;
+  const limit = Math.max(0, maxScroll);
+  return [...new Set(selected.map((top) => Math.min(top, limit)))];
+}
 
 // src/full-render.ts
 var NO_FULL_RENDER = { renderer: null, previous: false, forced: false };
@@ -2198,8 +2202,125 @@ function restoreFullRender(handle) {
   return true;
 }
 
+// src/screen-run.ts
+var SCREEN_KEY_PREFIX = "screen:";
+var MAX_GAP_SCREEN_STOPS = 400;
+function gapScreenStops(toggleStops, stepPx, maxScroll, tolerance, screenHeight = stepPx) {
+  const out = [];
+  const step = Math.floor(stepPx);
+  const tol = Math.max(0, tolerance);
+  const end = Math.max(0, Math.floor(maxScroll));
+  if (!Number.isFinite(step) || step < 1 || step <= tol || !Number.isFinite(end) || end <= 0)
+    return out;
+  const anchors = [...toggleStops].filter((s) => Number.isFinite(s.top)).sort((a, b) => a.top - b.top).filter((s, i, arr) => i === 0 || Math.abs(s.top - arr[i - 1].top) > tol);
+  const segments = [];
+  let start = 0;
+  let anchor = "^";
+  for (const a of anchors) {
+    const top = Math.max(0, Math.min(end, a.top));
+    segments.push({ start, end: top, anchor });
+    start = top;
+    anchor = a.key;
+  }
+  segments.push({ start, end, anchor });
+  const push = (top, key) => {
+    if (out.length >= MAX_GAP_SCREEN_STOPS)
+      return;
+    out.push({
+      page: -(out.length + 1),
+      top,
+      height: screenHeight,
+      index: 0,
+      key,
+      identity: key
+    });
+  };
+  for (const seg of segments) {
+    if (seg.end - seg.start <= tol)
+      continue;
+    let n = 1;
+    let last = seg.start;
+    for (let top = seg.start + step; top < seg.end - tol; top += step, n++) {
+      push(top, `${SCREEN_KEY_PREFIX}${seg.anchor}:${n}`);
+      last = top;
+    }
+    if (seg.end === end && end - last > tol)
+      push(end, `${SCREEN_KEY_PREFIX}${seg.anchor}:end`);
+  }
+  return out;
+}
+function stopHoldMs(stop, holdSeconds, screenDwellMs) {
+  const screen = Math.max(0, screenDwellMs);
+  if (isScreenStop(stop.page) || stop.index > 0)
+    return screen;
+  return Math.max(0, holdSeconds) * 1e3;
+}
+function isContinuationStop(stop) {
+  return !isScreenStop(stop.page) && stop.index > 0;
+}
+function screenStopLabel(stop, dwellMs) {
+  return `screen stop ${stop.key.replace(SCREEN_KEY_PREFIX, "")} @ ${Math.round(stop.top)} \xB7 ${(dwellMs / 1e3).toFixed(1)}s`;
+}
+function keepOpenAtDwellEnd(targets, visited, open, pos, dir) {
+  if (!open)
+    return false;
+  const bottom = open.top + Math.max(0, open.height);
+  for (const t of targets) {
+    if (visited.has(t.key))
+      continue;
+    const ahead = dir < 0 ? t.top < pos - 1 : t.top > pos + 1;
+    if (!ahead)
+      continue;
+    const sameToggle = !isScreenStop(t.page) && t.index > 0 && (open.identity && t.identity === open.identity || !open.identity && open.page !== void 0 && t.page === open.page);
+    if (sameToggle)
+      return true;
+    if (isScreenStop(t.page) && t.top > open.top && t.top < bottom)
+      return true;
+  }
+  return false;
+}
+function waitFor(ready, opts = {}) {
+  var _a, _b, _c, _d;
+  const every = Math.max(1, (_a = opts.everyMs) != null ? _a : 50);
+  const timeout = Math.max(0, (_b = opts.timeoutMs) != null ? _b : 2500);
+  const schedule = (_c = opts.setTimeout) != null ? _c : (fn, ms3) => setTimeout(fn, ms3);
+  const now = (_d = opts.now) != null ? _d : () => Date.now();
+  const started = now();
+  return new Promise((resolve) => {
+    const tick2 = () => {
+      let ok = false;
+      try {
+        ok = ready();
+      } catch (e) {
+        ok = false;
+      }
+      if (ok)
+        return resolve(true);
+      if (now() - started >= timeout)
+        return resolve(false);
+      schedule(tick2, every);
+    };
+    tick2();
+  });
+}
+function answersNotice(open, r) {
+  const verb = open ? "Opened" : "Closed";
+  const noun = (n) => `${n} answer${n === 1 ? "" : "s"}`;
+  if (r.rendered === 0)
+    return "No answer toggles in this note.";
+  if (r.total > r.rendered) {
+    return `${verb} ${noun(r.rendered)} \u2014 ${r.total - r.rendered} more not rendered yet; scroll down and tap again.`;
+  }
+  if (r.changed === 0)
+    return `All ${noun(r.rendered)} already ${open ? "open" : "closed"}.`;
+  return `${verb} ${noun(r.changed)}${r.changed < r.rendered ? ` (${r.rendered - r.changed} already ${open ? "open" : "closed"})` : ""}.`;
+}
+function answersNoticeIsImportant(r) {
+  return r.rendered === 0 || r.total > r.rendered;
+}
+
 // src/source-toggles.ts
-var CALLOUT_RE = /^[ \t]*(?:>[ \t]*)+\[!([^\]\n]+)\][+-]?/gm;
+var CALLOUT_RE = /^[ \t]*(?:>[ \t]*)+\[!([^\]\n]+)\]([+-])?/gm;
 var DETAILS_RE = /<details[\s>]/gi;
 function withoutFences(text) {
   return text.replace(/^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[ \t]*$/gm, "");
@@ -2208,12 +2329,16 @@ function scanSourceToggles(text) {
   var _a, _b;
   const src = withoutFences(String(text != null ? text : ""));
   const kinds = [];
-  for (const m of src.matchAll(CALLOUT_RE))
+  let foldable = 0;
+  for (const m of src.matchAll(CALLOUT_RE)) {
     kinds.push(kindOf(m[1]));
+    if (m[2])
+      foldable++;
+  }
   const details = (_b = (_a = src.match(DETAILS_RE)) == null ? void 0 : _a.length) != null ? _b : 0;
   for (let i = 0; i < details; i++)
     kinds.push("other");
-  return { kinds, total: kinds.length };
+  return { kinds, total: kinds.length, foldable: foldable + details };
 }
 function sourceMatchCount(text, filter = []) {
   const { kinds } = scanSourceToggles(text);
@@ -2751,6 +2876,14 @@ function scanToggleEls(root, keep) {
 }
 function noteToggleCount(root) {
   return root.querySelectorAll(TOGGLE_SELECTOR).length;
+}
+function isFoldableToggle(el2) {
+  if (el2.tagName.toLowerCase() === "details")
+    return true;
+  return el2.classList.contains("is-collapsible") || el2.classList.contains("is-collapsed") || !!el2.querySelector(":scope > .callout-title .callout-fold");
+}
+function foldableToggleEls(root) {
+  return Array.from(root.querySelectorAll(TOGGLE_SELECTOR)).filter(isFoldableToggle);
 }
 function toggleTypeOf(el2) {
   var _a;
@@ -4033,7 +4166,7 @@ function pickStops(targets, prevPos, pos, dir, visited, doneIdentities = /* @__P
   const reopens = (t) => doneIdentities.has(identityOf(t)) && (t.index === 0 || activeIdentity != null && identityOf(t) !== activeIdentity);
   const crossed = crossedTargets(targets, prevPos, pos, dir).filter((t) => unvisited(t) && !reopens(t));
   const missed = targets.filter(
-    (t) => unvisited(t) && !doneIdentities.has(identityOf(t)) && !crossed.some((c) => c.key === t.key) && (dir < 0 ? t.top > pos + 1 : t.top < pos - 1)
+    (t) => unvisited(t) && t.page >= 0 && !doneIdentities.has(identityOf(t)) && !crossed.some((c) => c.key === t.key) && (dir < 0 ? t.top > pos + 1 : t.top < pos - 1)
   );
   const queue = [...missed, ...crossed].sort((a, b) => dir < 0 ? b.top - a.top : a.top - b.top);
   return { stop: queue[0], missed, queue };
@@ -5295,20 +5428,53 @@ function describeError(err) {
         return "The research workspace is out of credits. Top up in the dashboard, then try again.";
       case "network":
         return `Could not reach the research bridge: ${err.message}`;
+      case "timeout":
+        return err.message;
       default:
         return err.message;
     }
   }
   return err instanceof Error ? err.message : String(err);
 }
+var DEFAULT_TIMEOUTS_MS = Object.freeze({
+  health: 15e3,
+  search: 75e3,
+  perplexity: 75e3,
+  extract: 9e4,
+  answer: 3e5,
+  factcheck: 3e5,
+  recall: 36e4,
+  tasks: 3e4
+});
+function timeoutMessage(op, ms3) {
+  const secs = Math.round(ms3 / 1e3);
+  const what = {
+    health: "The bridge health check",
+    search: "Web search",
+    perplexity: "Perplexity search",
+    extract: "Reading the page",
+    answer: "The researched answer",
+    factcheck: "Fact-checking",
+    recall: "Recall card generation",
+    tasks: "Deep research status"
+  };
+  return `${what[op]} timed out after ${secs}s. Check the connection, then try again \u2014 or ask a narrower question.`;
+}
 var ResearchClient = class {
   constructor(opts) {
-    var _a, _b;
+    var _a, _b, _c, _d, _e;
     this.base = normalizeBridgeUrl(opts.bridgeUrl);
     this.key = opts.pluginKey.trim();
     this.transport = opts.transport;
     this.cache = (_a = opts.cache) != null ? _a : null;
     this.clientVersion = (_b = opts.clientVersion) != null ? _b : "obsidian-notion-toggle";
+    this.timeouts = { ...DEFAULT_TIMEOUTS_MS, ...(_c = opts.timeoutsMs) != null ? _c : {} };
+    this.schedule = (_d = opts.setTimeout) != null ? _d : (fn, ms3) => setTimeout(fn, ms3);
+    this.cancel = (_e = opts.clearTimeout) != null ? _e : (h) => clearTimeout(h);
+  }
+  /** The ceiling this client applies to `op` (ms). */
+  timeoutFor(op) {
+    return this.timeouts[op];
   }
   get configured() {
     return this.base.length > 0 && this.key.length > 0;
@@ -5317,31 +5483,35 @@ var ResearchClient = class {
     return `${this.base}/api/public/research${path.startsWith("/") ? path : `/${path}`}`;
   }
   health() {
-    return this.request("GET", "/health");
+    return this.request("health", "GET", "/health");
   }
   search(req) {
-    return this.cached("search", req, () => this.request("POST", "/search", req));
+    return this.cached("search", req, () => this.request("search", "POST", "/search", req));
   }
   perplexity(req) {
-    return this.cached("perplexity", req, () => this.request("POST", "/perplexity", req));
+    return this.cached("perplexity", req, () => this.request("perplexity", "POST", "/perplexity", req));
   }
   extract(req) {
-    return this.cached("extract", req, () => this.request("POST", "/extract", req));
+    return this.cached(
+      "extract",
+      req,
+      () => this.request("extract", "POST", "/extract", req)
+    );
   }
   answer(req) {
-    return this.request("POST", "/answer", req);
+    return this.request("answer", "POST", "/answer", req);
   }
   factCheck(req) {
-    return this.request("POST", "/factcheck", req);
+    return this.request("factcheck", "POST", "/factcheck", req);
   }
   recall(req) {
-    return this.request("POST", "/recall", req);
+    return this.request("recall", "POST", "/recall", req);
   }
   createTask(req) {
-    return this.request("POST", "/tasks", req);
+    return this.request("tasks", "POST", "/tasks", req);
   }
   pollTask(runId) {
-    return this.request("GET", `/tasks/${encodeURIComponent(runId)}`);
+    return this.request("tasks", "GET", `/tasks/${encodeURIComponent(runId)}`);
   }
   listTasks(opts = {}) {
     const params = new URLSearchParams();
@@ -5350,7 +5520,7 @@ var ResearchClient = class {
     if (opts.includeResult)
       params.set("include", "result");
     const qs = params.toString();
-    return this.request("GET", `/tasks${qs ? `?${qs}` : ""}`);
+    return this.request("tasks", "GET", `/tasks${qs ? `?${qs}` : ""}`);
   }
   async cached(op, body, run) {
     if (!this.cache)
@@ -5363,13 +5533,13 @@ var ResearchClient = class {
     this.cache.set(key, fresh);
     return fresh;
   }
-  async request(method, path, body) {
+  async request(op, method, path, body) {
     var _a, _b, _c, _d, _e, _f;
     if (!this.configured)
       throw new ResearchError("not_configured", "Research bridge is not configured");
     let res;
     try {
-      res = await this.transport({
+      res = await this.withTimeout(op, this.transport({
         url: this.endpoint(path),
         method,
         headers: {
@@ -5379,8 +5549,10 @@ var ResearchClient = class {
           "X-Client": this.clientVersion
         },
         body: body === void 0 ? void 0 : JSON.stringify(body)
-      });
+      }));
     } catch (err) {
+      if (err instanceof ResearchError)
+        throw err;
       throw new ResearchError("network", err instanceof Error ? err.message : String(err));
     }
     const parsed = parseJson(res.text);
@@ -5393,6 +5565,37 @@ var ResearchClient = class {
     const code = (_b = (_a = errBody == null ? void 0 : errBody.error) == null ? void 0 : _a.code) != null ? _b : codeForStatus(res.status);
     const message = (_d = (_c = errBody == null ? void 0 : errBody.error) == null ? void 0 : _c.message) != null ? _d : `Bridge request failed (${res.status})`;
     throw new ResearchError(code, message, res.status, (_f = (_e = errBody == null ? void 0 : errBody.error) == null ? void 0 : _e.retryAfterSec) != null ? _f : null);
+  }
+  /** Race `work` against the op's ceiling; a loss becomes a `timeout` ResearchError (status 0 — nothing came back). */
+  withTimeout(op, work) {
+    const ms3 = this.timeoutFor(op);
+    if (!(ms3 > 0) || !Number.isFinite(ms3))
+      return work;
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const handle = this.schedule(() => {
+        if (settled)
+          return;
+        settled = true;
+        reject(new ResearchError("timeout", timeoutMessage(op, ms3), 0));
+      }, ms3);
+      work.then(
+        (value) => {
+          if (settled)
+            return;
+          settled = true;
+          this.cancel(handle);
+          resolve(value);
+        },
+        (err) => {
+          if (settled)
+            return;
+          settled = true;
+          this.cancel(handle);
+          reject(err);
+        }
+      );
+    });
   }
 };
 function parseJson(text) {
@@ -8493,6 +8696,19 @@ function questionBlockPlan(kind, opts, lineHasText) {
     ch: head[head.length - 1].length
   };
 }
+function wrapSelectionMarkdown(selection, type, fold, bold) {
+  const lines = selection.split("\n");
+  const at = lines.findIndex((l) => l.trim().length > 0);
+  if (at < 0)
+    return null;
+  const title = bold(lines[at].trim());
+  const bodyLines2 = lines.slice(at + 1);
+  while (bodyLines2.length > 0 && bodyLines2[0].trim().length === 0)
+    bodyLines2.shift();
+  const body = bodyLines2.length > 0 ? "\n" + bodyLines2.map((l) => `> ${l}`.replace(/>\s+$/, ">")).join("\n") : "";
+  return `> [!${type}]${fold} ${title}${body}
+`;
+}
 
 // main.ts
 function nowMs() {
@@ -9166,6 +9382,8 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
       this.app.workspace.on("active-leaf-change", () => {
         bumpActivity();
         this.evaluateAttention();
+        if (!this.scrollRunning && !this.quizState)
+          this.endFullRender();
       })
     );
     this.registerEvent(
@@ -9453,9 +9671,9 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
         new import_obsidian14.Notice("Nothing to wrap \u2014 select the question and answer first.");
         return;
       }
-      const title2 = this.maybeBold(line.trim());
+      const title = this.maybeBold(line.trim());
       editor.replaceRange(
-        `> [!${type}]${fold} ${title2}
+        `> [!${type}]${fold} ${title}
 > 
 `,
         { line: editor.getCursor().line, ch: 0 },
@@ -9463,27 +9681,12 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
       );
       return;
     }
-    const lines = selection.split("\n");
-    let titleLine = "";
-    let bodyStart = 0;
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].trim().length > 0) {
-        titleLine = lines[i].trim();
-        bodyStart = i + 1;
-        break;
-      }
-    }
-    if (titleLine.length === 0) {
+    const wrapped = wrapSelectionMarkdown(selection, type, fold, (t) => this.maybeBold(t));
+    if (!wrapped) {
       new import_obsidian14.Notice("Selection is empty.");
       return;
     }
-    const title = this.maybeBold(titleLine);
-    const bodyLines2 = lines.slice(bodyStart);
-    while (bodyLines2.length > 0 && bodyLines2[0].trim().length === 0)
-      bodyLines2.shift();
-    const body = bodyLines2.length > 0 ? "\n" + bodyLines2.map((l) => `> ${l}`.replace(/>\s+$/, ">")).join("\n") : "";
-    editor.replaceSelection(`> [!${type}]${fold} ${title}${body}
-`);
+    editor.replaceSelection(wrapped);
   }
   /** Cycle the toggle at the cursor through red → yellow → green. */
   cycleColorAtCursor(editor) {
@@ -10062,27 +10265,34 @@ ${row}`, { line: cursor.line, ch: line.length });
    * v1.4.3 — open (or close) every answer toggle in the active note in one go.
    * Works during a quiz too: the quiz's own classes are updated so the run
    * does not fight the reader.
+   * v1.7.1 — Obsidian renders Reading View lazily, so only the first screenful
+   * used to flip. Now the full render is forced first, the DOM is given time
+   * to catch up with the source, nested toggles are included, and the notice
+   * says "N of M" honestly whenever the note is still only partly rendered.
    */
-  setAllAnswersOpen(open) {
+  async setAllAnswersOpen(open) {
     const container = this.findViewContainer();
     if (!container) {
       new import_obsidian14.Notice("Open a note first.");
       return;
     }
-    const stops = this.collectStops(container);
-    let n = 0;
-    for (const s of stops) {
-      if (!s.el)
-        continue;
+    const src = scanSourceToggles(this.noteSource());
+    if (this.beginFullRender())
+      await waitFor(() => noteToggleCount(container) >= src.total);
+    const els = foldableToggleEls(container);
+    let changed = 0;
+    for (const el2 of els) {
       if (this.quizState)
-        setQuizVisible(s.el, open);
+        setQuizVisible(el2, open);
+      else if (this.isToggleOpen(el2) === open)
+        continue;
       else
-        this.setToggleOpen(s.el, open);
-      n++;
+        this.setToggleOpen(el2, open);
+      changed++;
     }
-    if (!this.settings.scrollQuiet) {
-      new import_obsidian14.Notice(`${open ? "Opened" : "Closed"} ${n} answer toggle${n === 1 ? "" : "s"}.`);
-    }
+    const result = { changed, rendered: els.length, total: src.foldable };
+    if (!this.settings.scrollQuiet || answersNoticeIsImportant(result))
+      new import_obsidian14.Notice(answersNotice(open, result));
   }
   /** Re-apply the quiz answer rule after the "keep answers open" switch flips. */
   refreshQuizAnswerVisibility() {
@@ -10212,10 +10422,9 @@ ${row}`, { line: cursor.line, ch: line.length });
    */
   screenPlanTops(container, keptTops) {
     var _a;
-    const plan = this.screenPlanFor(container);
-    const selected = ((_a = this.settings.scrollFilter) != null ? _a : []).length > 0 ? filterScreenStops(plan.stops, keptTops, plan.screenPx, this.renderedFully()) : plan.stops;
-    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
-    return [...new Set(selected.map((top) => Math.min(top, maxScroll)))];
+    const filtered = ((_a = this.settings.scrollFilter) != null ? _a : []).length > 0;
+    const maxScroll = container.scrollHeight - container.clientHeight;
+    return plannedScreenTops(this.screenPlanFor(container), filtered, keptTops, this.renderedFully(), maxScroll);
   }
   /**
    * v1.1.1 — build the plan: colour filter first, then the pause-at mode
@@ -10233,15 +10442,9 @@ ${row}`, { line: cursor.line, ch: line.length });
     const toggleStops = buildModeStops(items, cfg, container.clientHeight, this.settings.scrollChunkTall);
     const advanceBy = (_a = this.settings.scrollAdvanceBy) != null ? _a : "toggles";
     const keptTops = kept.map((s) => s.top);
-    if (advanceBy === "screens") {
-      return this.screenPlanTops(container, keptTops).map((top, part) => ({
-        index: -1,
-        top,
-        color: "other",
-        ordinal: 0,
-        part
-      }));
-    }
+    const screenEntry = (top, part) => ({ index: -1, top, color: "other", ordinal: 0, part });
+    if (advanceBy === "screens")
+      return this.screenPlanTops(container, keptTops).map(screenEntry);
     const ordered = orderModeStops(toggleStops, cfg, this.settings.scrollReverse);
     const togglePlan = ordered.flatMap((ms3) => {
       const src = byOrdinal.get(ms3.ordinal);
@@ -10259,14 +10462,14 @@ ${row}`, { line: cursor.line, ch: line.length });
     });
     if (advanceBy !== "both")
       return togglePlan;
-    const screenPlan2 = this.screenPlanTops(container, keptTops).map((top, part) => ({
-      index: -1,
-      top,
-      color: "other",
-      ordinal: 0,
-      part
-    }));
-    return [...togglePlan, ...screenPlan2].sort((a, b) => a.top - b.top);
+    const plan = this.screenPlanFor(container);
+    const gaps = gapScreenStops(
+      togglePlan.map((s) => ({ top: s.top, key: `${s.identity}:${s.part}` })),
+      plan.stepPx,
+      Math.max(0, container.scrollHeight - container.clientHeight),
+      screenMergeTolerance(plan.screenPx)
+    );
+    return [...togglePlan, ...gaps.map((g, i) => screenEntry(g.top, i))].sort((a, b) => a.top - b.top);
   }
   /** Rebuild the shuffle route from this note's FSRS memory. */
   async rebuildShuffleRoute(notify = true) {
@@ -10376,35 +10579,31 @@ ${deckSummary(
     this.scrollModeSnapshot = null;
     this.scrollModeLeaf = null;
   }
+  /** Start again shortly unless a run began meanwhile; `counted` retries are rate-limited. */
+  retryStart(delayMs, counted = false) {
+    if (counted) {
+      if (this.scrollRetryPending)
+        return;
+      this.scrollRetryPending = true;
+      this.scrollRenderRetries += 1;
+    }
+    window.setTimeout(() => {
+      if (counted)
+        this.scrollRetryPending = false;
+      if (!this.scrollRunning && this.scrollPlan.length === 0)
+        this.startAutoScroll();
+    }, delayMs);
+  }
   startAutoScroll() {
     var _a, _b;
-    if (this.ensureReadingMode()) {
-      window.setTimeout(() => {
-        if (!this.scrollRunning && this.scrollPlan.length === 0)
-          this.startAutoScroll();
-      }, 180);
-      return;
-    }
-    if (this.beginFullRender()) {
-      window.setTimeout(() => {
-        if (!this.scrollRunning && this.scrollPlan.length === 0)
-          this.startAutoScroll();
-      }, 220);
-      return;
-    }
+    if (this.ensureReadingMode())
+      return this.retryStart(180);
+    if (this.beginFullRender())
+      return this.retryStart(220);
     const container = this.findScrollContainer();
     if (!container) {
       if (shouldWaitForScrollable(!!this.findViewContainer(), this.sourceHasToggles(), this.scrollRenderRetries)) {
-        if (!this.scrollRetryPending) {
-          this.scrollRetryPending = true;
-          this.scrollRenderRetries += 1;
-          window.setTimeout(() => {
-            this.scrollRetryPending = false;
-            if (!this.scrollRunning && this.scrollPlan.length === 0)
-              this.startAutoScroll();
-          }, 350);
-        }
-        return;
+        return this.retryStart(350, true);
       }
       new import_obsidian14.Notice(this.findViewContainer() ? MSG_NO_SCROLLER : "Open a note first.", 8e3);
       this.endFullRender();
@@ -10421,16 +10620,7 @@ ${deckSummary(
       const inSource = this.sourceMatchCount(this.settings.scrollFilter);
       const stillRendering = inSource > 0 && !this.renderedFully();
       if ((stillRendering || !anyToggle) && this.sourceHasToggles() && this.scrollRenderRetries < 4) {
-        if (!this.scrollRetryPending) {
-          this.scrollRetryPending = true;
-          this.scrollRenderRetries += 1;
-          window.setTimeout(() => {
-            this.scrollRetryPending = false;
-            if (!this.scrollRunning && this.scrollPlan.length === 0)
-              this.startAutoScroll();
-          }, 350);
-        }
-        return;
+        return this.retryStart(350, true);
       }
       this.scrollRenderRetries = 0;
       if (anyToggle || this.sourceHasToggles()) {
@@ -10808,6 +10998,7 @@ ${deckSummary(
       const advanceBy = (_c = this.settings.scrollAdvanceBy) != null ? _c : "toggles";
       const derived = this.screenPlanFor(container);
       const screenVh = derived.screenPx;
+      const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
       const screenTargets = this.screenPlanTops(container, this.scrollBoxes.map((b) => b.top)).map((top, index) => ({
         page: -(index + 1),
         top,
@@ -10816,7 +11007,7 @@ ${deckSummary(
         key: `screen:${index}`,
         identity: `screen:${index}`
       }));
-      const targets = advanceBy === "screens" ? screenTargets : advanceBy === "both" ? mergeStops(screenTargets, toggleTargets, screenMergeTolerance(screenVh)) : toggleTargets;
+      const targets = advanceBy === "screens" ? screenTargets : advanceBy === "both" ? [...toggleTargets, ...gapScreenStops(toggleTargets, derived.stepPx, maxScroll, screenMergeTolerance(screenVh), screenVh)].sort((a, b) => a.top - b.top) : toggleTargets;
       this.scrollTargets = targets;
       this.scrollPlan = targets.map((t) => ({
         index: t.page > 0 ? t.page - 1 : -1,
@@ -10864,10 +11055,43 @@ ${deckSummary(
     return strays.length;
   }
   /**
+   * v1.7.1 — a screen stop is a pacing mark, not a toggle: it never opens,
+   * closes or re-counts anything. It simply earns its own dwell.
+   */
+  parkOnScreen(stop, dwellMs) {
+    this.scrollLastEvent = screenStopLabel(stop, dwellMs);
+    this.scrollThinkMs = 0;
+    return true;
+  }
+  /**
+   * v1.7.1 — "Close them when leaving" waits until the open toggle really is
+   * left behind: its continuation chunks and any screen stop inside its answer
+   * must be read first. A tall answer used to fold after its first screenful.
+   */
+  closeOpenToggleIfLeaving(container) {
+    const el2 = this.scrollOpenEl;
+    if (!el2 || !this.settings.scrollAutoClose)
+      return;
+    const cfg = this.dwellCfg();
+    let stillReading = this.scrollRouteStop > 0;
+    if (!isRouteMode(cfg)) {
+      this.measureScrollBoxes(container);
+      const active = this.scrollActiveIdentity;
+      const box = this.scrollBoxes.find((b) => active ? b.identity === active : b.page === this.scrollOpenOrdinal);
+      stillReading = keepOpenAtDwellEnd(this.currentTargets(container, cfg), this.scrollVisited, box, this.scrollPos, this.scrollDir);
+    }
+    if (stillReading)
+      return;
+    this.setToggleOpen(el2, false);
+    this.scrollOpenEl = null;
+  }
+  /**
    * Open the toggle for `ordinal`. Returns false when nothing could be opened —
    * the caller must then keep gliding instead of holding an empty stop.
+   * v1.7.1 — `continuation` = a later screenful of the toggle that is already
+   * open: nothing is re-opened and the think countdown does not run again.
    */
-  parkOnToggle(ordinal, now, identity) {
+  parkOnToggle(ordinal, now, identity, continuation = false) {
     const res = resolveParkTarget({
       identity,
       ordinal,
@@ -10889,6 +11113,11 @@ ${deckSummary(
       this.scrollThinkMs = 0;
       this.scrollActiveIdentity = nextActiveIdentity(identity, false);
       return false;
+    }
+    if (continuation && this.scrollOpenEl === el2 && this.isToggleOpen(el2)) {
+      this.scrollLastEvent = `continue toggle ${ordinal} (next screenful)`;
+      this.scrollThinkMs = 0;
+      return true;
     }
     if (this.scrollOpenEl && this.scrollOpenEl !== el2 && this.settings.scrollAutoClose) {
       this.thinkGate.clear();
@@ -11028,10 +11257,7 @@ ${deckSummary(
       this.scrollDwellUntil = 0;
       this.closeScrollVisit();
       this.thinkGate.clear();
-      if (this.scrollOpenEl && this.settings.scrollAutoClose) {
-        this.setToggleOpen(this.scrollOpenEl, false);
-        this.scrollOpenEl = null;
-      }
+      this.closeOpenToggleIfLeaving(container);
       this.renderScrollBar();
     }
     const max = container.scrollHeight - container.clientHeight;
@@ -11070,10 +11296,11 @@ ${deckSummary(
         if (routeTarget != null && waypointReached(prevPos, this.scrollPos, routeTarget)) {
           this.scrollPos = routeTarget;
           container.scrollTop = Math.floor(routeTarget);
-          const holdMs = routeTarget != null && this.scrollRouteStop < routeStops.length ? clampScreenDwellMs(this.settings.scrollScreenDwellMs) : cfg.seconds * 1e3;
+          const continuation = this.scrollRouteStop > 0;
+          const holdMs = continuation ? clampScreenDwellMs(this.settings.scrollScreenDwellMs) : cfg.seconds * 1e3;
           const ordinal = cfg.route[this.scrollRouteIdx % cfg.route.length];
           this.scrollLastEvent = `waypointReached toggle ${ordinal} @ ${Math.round(routeTarget)}`;
-          const parked = this.parkOnToggle(ordinal, ts, (_a = this.scrollBoxes.find((box) => box.page === ordinal)) == null ? void 0 : _a.identity);
+          const parked = this.parkOnToggle(ordinal, ts, (_a = this.scrollBoxes.find((box) => box.page === ordinal)) == null ? void 0 : _a.identity, continuation);
           this.scrollDwellUntil = dwellPlan(ts, holdMs, this.scrollThinkMs, parked).dwellUntil;
           if (this.scrollRouteStop < routeStops.length - 1) {
             this.scrollRouteStop += 1;
@@ -11125,8 +11352,9 @@ ${deckSummary(
           container.scrollTop = Math.floor(stop.top);
           this.scrollAt = targets.findIndex((t) => t.key === stop.key);
           this.scrollLastEvent = `crossedTarget ${stop.key} @ ${Math.round(stop.top)}`;
-          const parked = this.parkOnToggle(stop.page, ts, stop.identity);
-          this.scrollDwellUntil = dwellPlan(ts, cfg.seconds * 1e3, this.scrollThinkMs, parked).dwellUntil;
+          const holdMs = stopHoldMs(stop, cfg.seconds, clampScreenDwellMs(this.settings.scrollScreenDwellMs));
+          const parked = isScreenStop(stop.page) ? this.parkOnScreen(stop, holdMs) : this.parkOnToggle(stop.page, ts, stop.identity, isContinuationStop(stop));
+          this.scrollDwellUntil = dwellPlan(ts, holdMs, this.scrollThinkMs, parked).dwellUntil;
           this.renderScrollBar();
           this.endScrollFrame(ts);
           return;

@@ -88,9 +88,13 @@ export function pickStops(
     (t.index === 0 || (activeIdentity != null && identityOf(t) !== activeIdentity));
   const crossed = crossedTargets(targets, prevPos, pos, dir).filter((t) => unvisited(t) && !reopens(t));
 
+  // v1.7.1 — screen stops (negative page) are pure pacing marks: a screenful
+  // the reader already scrolled past is *read*, so it is never rescued
+  // backwards. Only real toggles are.
   const missed = targets.filter(
     (t) =>
       unvisited(t) &&
+      t.page >= 0 &&
       !doneIdentities.has(identityOf(t)) &&
       !crossed.some((c) => c.key === t.key) &&
       (dir < 0 ? t.top > pos + 1 : t.top < pos - 1)

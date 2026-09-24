@@ -71,6 +71,26 @@ export function noteToggleCount(root: ParentNode): number {
   return root.querySelectorAll(TOGGLE_SELECTOR).length;
 }
 
+/** Can this toggle fold at all? Plain (non-foldable) callouts are left alone. */
+export function isFoldableToggle(el: HTMLElement): boolean {
+  if (el.tagName.toLowerCase() === "details") return true;
+  return (
+    el.classList.contains("is-collapsible") ||
+    el.classList.contains("is-collapsed") ||
+    !!el.querySelector(":scope > .callout-title .callout-fold")
+  );
+}
+
+/**
+ * v1.7.1 — every *foldable* toggle in `root`, nested ones included, in
+ * document order. "Open all / Close all" acts on this list: an answer nested
+ * inside a plain note callout used to be skipped because the outermost-only
+ * scan handed the parent back instead.
+ */
+export function foldableToggleEls(root: ParentNode): HTMLElement[] {
+  return (Array.from(root.querySelectorAll(TOGGLE_SELECTOR)) as HTMLElement[]).filter(isFoldableToggle);
+}
+
 
 
 /** Callout type / class string used for the colour filter. */

@@ -134,8 +134,9 @@ import {
   type PageBox,
   type ScrollMode,
 } from "./src/scrollmode";
-import { screenStops, mergeStops as mergeScreenStops, filterScreenStops, usableViewport, clampScreenDwellMs, clampViewportPct, isScreenStop, screenPlan as deriveScreenPlan, describeScreenPlan, screenMergeTolerance, type ScreenPlan } from "./src/screen-stops";
+import { plannedScreenTops, clampScreenDwellMs, clampViewportPct, isScreenStop, screenPlan as deriveScreenPlan, describeScreenPlan, screenMergeTolerance, type ScreenPlan } from "./src/screen-stops";
 import { ensureFullRender, restoreFullRender, type FullRenderHandle } from "./src/full-render";
+import { gapScreenStops, stopHoldMs, isContinuationStop, screenStopLabel, keepOpenAtDwellEnd, waitFor, answersNotice, answersNoticeIsImportant } from "./src/screen-run";
 import { isFullyRendered, sourceKindCounts, sourceMatchCount, scanSourceToggles } from "./src/source-toggles";
 import {
   buildShuffleOrder,
@@ -172,6 +173,7 @@ import {
 } from "./src/quiz";
 import {
   collectToggleEls,
+  foldableToggleEls,
   noteToggleCount,
   scanToggleEls,
   isToggleOpen as isToggleOpenDom,
@@ -262,6 +264,7 @@ import {
   midLineEnterInsert,
   newTogglePlan,
   questionBlockPlan,
+  wrapSelectionMarkdown,
   type ToggleFormat,
 } from "./src/editor-blocks";
 export * from "./src/editor-blocks";
@@ -999,6 +1002,9 @@ export default class NotionTogglePlugin extends Plugin {
       this.app.workspace.on("active-leaf-change", () => {
         bumpActivity();
         this.evaluateAttention();
+        // v1.7.1 — "Open all" forces the full render for the note; give lazy
+        // rendering back when the reader moves on (a run releases its own).
+        if (!this.scrollRunning && !this.quizState) this.endFullRender();
       })
     );
     /* ---------- v1.0.8: keep the recall schedule in sync with the vault ---------- */
@@ -1285,28 +1291,12 @@ export default class NotionTogglePlugin extends Plugin {
       );
       return;
     }
-    const lines = selection.split("\n");
-    let titleLine = "";
-    let bodyStart = 0;
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].trim().length > 0) {
-        titleLine = lines[i].trim();
-        bodyStart = i + 1;
-        break;
-      }
-    }
-    if (titleLine.length === 0) {
+    const wrapped = wrapSelectionMarkdown(selection, type, fold, (t) => this.maybeBold(t));
+    if (!wrapped) {
       new Notice("Selection is empty.");
       return;
     }
-    const title = this.maybeBold(titleLine);
-    const bodyLines = lines.slice(bodyStart);
-    while (bodyLines.length > 0 && bodyLines[0].trim().length === 0) bodyLines.shift();
-    const body =
-      bodyLines.length > 0
-        ? "\n" + bodyLines.map((l) => `> ${l}`.replace(/>\s+$/, ">")).join("\n")
-        : "";
-    editor.replaceSelection(`> [!${type}]${fold} ${title}${body}\n`);
+    editor.replaceSelection(wrapped);
   }
   /** Cycle the toggle at the cursor through red → yellow → green. */
   cycleColorAtCursor(editor: Editor) {
@@ -1869,24 +1859,31 @@ export default class NotionTogglePlugin extends Plugin {
    * v1.4.3 — open (or close) every answer toggle in the active note in one go.
    * Works during a quiz too: the quiz's own classes are updated so the run
    * does not fight the reader.
+   * v1.7.1 — Obsidian renders Reading View lazily, so only the first screenful
+   * used to flip. Now the full render is forced first, the DOM is given time
+   * to catch up with the source, nested toggles are included, and the notice
+   * says "N of M" honestly whenever the note is still only partly rendered.
    */
-  setAllAnswersOpen(open: boolean) {
+  async setAllAnswersOpen(open: boolean) {
     const container = this.findViewContainer();
     if (!container) {
       new Notice("Open a note first.");
       return;
     }
-    const stops = this.collectStops(container) as (ToggleStop & { el?: HTMLElement })[];
-    let n = 0;
-    for (const s of stops) {
-      if (!s.el) continue;
-      if (this.quizState) setQuizVisible(s.el, open);
-      else this.setToggleOpen(s.el, open);
-      n++;
+    // Wait for *every* callout the source declares; report against the ones
+    // that can fold (a plain `> [!note]` has no arrow and is never "missing").
+    const src = scanSourceToggles(this.noteSource());
+    if (this.beginFullRender()) await waitFor(() => noteToggleCount(container) >= src.total);
+    const els = foldableToggleEls(container);
+    let changed = 0;
+    for (const el of els) {
+      if (this.quizState) setQuizVisible(el, open);
+      else if (this.isToggleOpen(el) === open) continue;
+      else this.setToggleOpen(el, open);
+      changed++;
     }
-    if (!this.settings.scrollQuiet) {
-      new Notice(`${open ? "Opened" : "Closed"} ${n} answer toggle${n === 1 ? "" : "s"}.`);
-    }
+    const result = { changed, rendered: els.length, total: src.foldable };
+    if (!this.settings.scrollQuiet || answersNoticeIsImportant(result)) new Notice(answersNotice(open, result));
   }
   /** Re-apply the quiz answer rule after the "keep answers open" switch flips. */
   refreshQuizAnswerVisibility() {
@@ -2001,14 +1998,9 @@ export default class NotionTogglePlugin extends Plugin {
    * so a half-rendered note can no longer drop screens that do hold a match.
    */
   private screenPlanTops(container: HTMLElement, keptTops: number[]): number[] {
-    const plan = this.screenPlanFor(container);
-    const selected = (this.settings.scrollFilter ?? []).length > 0
-      ? filterScreenStops(plan.stops, keptTops, plan.screenPx, this.renderedFully())
-      : plan.stops;
-    // The logical screen can be shorter than the physical viewport, but the
-    // browser can never scroll beyond its real max position.
-    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
-    return [...new Set(selected.map((top) => Math.min(top, maxScroll)))];
+    const filtered = (this.settings.scrollFilter ?? []).length > 0;
+    const maxScroll = container.scrollHeight - container.clientHeight;
+    return plannedScreenTops(this.screenPlanFor(container), filtered, keptTops, this.renderedFully(), maxScroll);
   }
   /**
    * v1.1.1 — build the plan: colour filter first, then the pause-at mode
@@ -2031,15 +2023,9 @@ export default class NotionTogglePlugin extends Plugin {
     const toggleStops = buildModeStops(items, cfg, container.clientHeight, this.settings.scrollChunkTall);
     const advanceBy = this.settings.scrollAdvanceBy ?? "toggles";
     const keptTops = kept.map((s) => s.top);
-    if (advanceBy === "screens") {
-      return this.screenPlanTops(container, keptTops).map((top, part) => ({
-        index: -1,
-        top,
-        color: "other",
-        ordinal: 0,
-        part,
-      } as ToggleStop & { el?: HTMLElement; ordinal: number; part: number }));
-    }
+    const screenEntry = (top: number, part: number) =>
+      ({ index: -1, top, color: "other", ordinal: 0, part } as ToggleStop & { el?: HTMLElement; ordinal: number; part: number });
+    if (advanceBy === "screens") return this.screenPlanTops(container, keptTops).map(screenEntry);
     const ordered = orderModeStops(toggleStops, cfg, this.settings.scrollReverse);
     const togglePlan = ordered.flatMap((ms) => {
       const src = byOrdinal.get(ms.ordinal);
@@ -2053,14 +2039,16 @@ export default class NotionTogglePlugin extends Plugin {
       } as ToggleStop & { el: HTMLElement; ordinal: number; part: number }];
     });
     if (advanceBy !== "both") return togglePlan;
-    const screenPlan = this.screenPlanTops(container, keptTops).map((top, part) => ({
-      index: -1,
-      top,
-      color: "other",
-      ordinal: 0,
-      part,
-    } as ToggleStop & { el?: HTMLElement; ordinal: number; part: number }));
-    return [...togglePlan, ...screenPlan].sort((a, b) => a.top - b.top);
+    // v1.7.1 — screens fill the gaps *between* toggle stops instead of laying a
+    // global grid over them (which doubled up next to toggles and shadowed them).
+    const plan = this.screenPlanFor(container);
+    const gaps = gapScreenStops(
+      togglePlan.map((s) => ({ top: s.top, key: `${s.identity}:${s.part}` })),
+      plan.stepPx,
+      Math.max(0, container.scrollHeight - container.clientHeight),
+      screenMergeTolerance(plan.screenPx)
+    );
+    return [...togglePlan, ...gaps.map((g, i) => screenEntry(g.top, i))].sort((a, b) => a.top - b.top);
   }
   /** Rebuild the shuffle route from this note's FSRS memory. */
   async rebuildShuffleRoute(notify = true) {
@@ -2160,34 +2148,28 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollModeSnapshot = null;
     this.scrollModeLeaf = null;
   }
+  /** Start again shortly unless a run began meanwhile; `counted` retries are rate-limited. */
+  private retryStart(delayMs: number, counted = false): void {
+    if (counted) {
+      if (this.scrollRetryPending) return;
+      this.scrollRetryPending = true;
+      this.scrollRenderRetries += 1;
+    }
+    window.setTimeout(() => {
+      if (counted) this.scrollRetryPending = false;
+      if (!this.scrollRunning && this.scrollPlan.length === 0) this.startAutoScroll();
+    }, delayMs);
+  }
   startAutoScroll() {
     // Reading View needs a repaint before stops can be measured.
-    if (this.ensureReadingMode()) {
-      window.setTimeout(() => {
-        if (!this.scrollRunning && this.scrollPlan.length === 0) this.startAutoScroll();
-      }, 180);
-      return;
-    }
+    if (this.ensureReadingMode()) return this.retryStart(180);
     // v1.5.4 — and the *whole* note must be rendered, not just the screenful
     // Obsidian keeps alive: otherwise the plan is built from a partial DOM.
-    if (this.beginFullRender()) {
-      window.setTimeout(() => {
-        if (!this.scrollRunning && this.scrollPlan.length === 0) this.startAutoScroll();
-      }, 220);
-      return;
-    }
+    if (this.beginFullRender()) return this.retryStart(220);
     const container = this.findScrollContainer();
     if (!container) {
       if (shouldWaitForScrollable(!!this.findViewContainer(), this.sourceHasToggles(), this.scrollRenderRetries)) {
-        if (!this.scrollRetryPending) {
-          this.scrollRetryPending = true;
-          this.scrollRenderRetries += 1;
-          window.setTimeout(() => {
-            this.scrollRetryPending = false;
-            if (!this.scrollRunning && this.scrollPlan.length === 0) this.startAutoScroll();
-          }, 350);
-        }
-        return;
+        return this.retryStart(350, true);
       }
       new Notice(this.findViewContainer() ? MSG_NO_SCROLLER : "Open a note first.", 8000);
       this.endFullRender();
@@ -2207,15 +2189,7 @@ export default class NotionTogglePlugin extends Plugin {
       const inSource = this.sourceMatchCount(this.settings.scrollFilter);
       const stillRendering = inSource > 0 && !this.renderedFully();
       if ((stillRendering || !anyToggle) && this.sourceHasToggles() && this.scrollRenderRetries < 4) {
-        if (!this.scrollRetryPending) {
-          this.scrollRetryPending = true;
-          this.scrollRenderRetries += 1;
-          window.setTimeout(() => {
-            this.scrollRetryPending = false;
-            if (!this.scrollRunning && this.scrollPlan.length === 0) this.startAutoScroll();
-          }, 350);
-        }
-        return;
+        return this.retryStart(350, true);
       }
       this.scrollRenderRetries = 0;
       if (anyToggle || this.sourceHasToggles()) {
@@ -2598,15 +2572,18 @@ export default class NotionTogglePlugin extends Plugin {
       const advanceBy = this.settings.scrollAdvanceBy ?? "toggles";
       const derived = this.screenPlanFor(container);
       const screenVh = derived.screenPx;
+      const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
       const screenTargets = this.screenPlanTops(container, this.scrollBoxes.map((b) => b.top)).map((top, index) => ({
         page: -(index + 1), top, height: screenVh, index: 0, key: `screen:${index}`, identity: `screen:${index}`,
       }));
+      // v1.7.1 — "both": screen stops fill the gaps between (anchored) toggle
+      // stops with keys derived from the neighbouring toggle, so a re-measure
+      // never double-pauses and never shadows a toggle stop.
       const targets = advanceBy === "screens"
         ? screenTargets
         : advanceBy === "both"
-          // v1.5.4 — a screen stop within a quarter screen of a toggle stop is
-          // the same view; drop it so "both" never double-pauses.
-          ? mergeScreenStops(screenTargets, toggleTargets, screenMergeTolerance(screenVh))
+          ? [...toggleTargets, ...gapScreenStops(toggleTargets, derived.stepPx, maxScroll, screenMergeTolerance(screenVh), screenVh)]
+              .sort((a, b) => a.top - b.top)
           : toggleTargets;
       this.scrollTargets = targets;
       this.scrollPlan = targets.map((t) => ({
@@ -2655,10 +2632,41 @@ export default class NotionTogglePlugin extends Plugin {
     return strays.length;
   }
   /**
+   * v1.7.1 — a screen stop is a pacing mark, not a toggle: it never opens,
+   * closes or re-counts anything. It simply earns its own dwell.
+   */
+  private parkOnScreen(stop: DwellTarget, dwellMs: number): boolean {
+    this.scrollLastEvent = screenStopLabel(stop, dwellMs);
+    this.scrollThinkMs = 0;
+    return true;
+  }
+  /**
+   * v1.7.1 — "Close them when leaving" waits until the open toggle really is
+   * left behind: its continuation chunks and any screen stop inside its answer
+   * must be read first. A tall answer used to fold after its first screenful.
+   */
+  private closeOpenToggleIfLeaving(container: HTMLElement): void {
+    const el = this.scrollOpenEl;
+    if (!el || !this.settings.scrollAutoClose) return;
+    const cfg = this.dwellCfg();
+    let stillReading = this.scrollRouteStop > 0;
+    if (!isRouteMode(cfg)) {
+      this.measureScrollBoxes(container); // the answer is open now: fresh heights, fresh chunk stops
+      const active = this.scrollActiveIdentity;
+      const box = this.scrollBoxes.find((b) => (active ? b.identity === active : b.page === this.scrollOpenOrdinal));
+      stillReading = keepOpenAtDwellEnd(this.currentTargets(container, cfg), this.scrollVisited, box, this.scrollPos, this.scrollDir as 1 | -1);
+    }
+    if (stillReading) return;
+    this.setToggleOpen(el, false);
+    this.scrollOpenEl = null;
+  }
+  /**
    * Open the toggle for `ordinal`. Returns false when nothing could be opened —
    * the caller must then keep gliding instead of holding an empty stop.
+   * v1.7.1 — `continuation` = a later screenful of the toggle that is already
+   * open: nothing is re-opened and the think countdown does not run again.
    */
-  private parkOnToggle(ordinal: number, now: number, identity?: string): boolean {
+  private parkOnToggle(ordinal: number, now: number, identity?: string, continuation = false): boolean {
     // v1.6.1 — identity first, then a hard re-check against reality: the
     // element must still be in the document *and* its own live colour must pass
     // the filter. Obsidian can replace a lazy Reading View section between the
@@ -2688,6 +2696,11 @@ export default class NotionTogglePlugin extends Plugin {
       this.scrollThinkMs = 0;
       this.scrollActiveIdentity = nextActiveIdentity(identity, false);
       return false;
+    }
+    if (continuation && this.scrollOpenEl === el && this.isToggleOpen(el)) {
+      this.scrollLastEvent = `continue toggle ${ordinal} (next screenful)`;
+      this.scrollThinkMs = 0;
+      return true;
     }
     if (this.scrollOpenEl && this.scrollOpenEl !== el && this.settings.scrollAutoClose) {
       this.thinkGate.clear();
@@ -2819,10 +2832,7 @@ export default class NotionTogglePlugin extends Plugin {
       this.scrollDwellUntil = 0;
       this.closeScrollVisit();
       this.thinkGate.clear();
-      if (this.scrollOpenEl && this.settings.scrollAutoClose) {
-        this.setToggleOpen(this.scrollOpenEl, false);
-        this.scrollOpenEl = null;
-      }
+      this.closeOpenToggleIfLeaving(container);
       this.renderScrollBar();
     }
     const max = container.scrollHeight - container.clientHeight;
@@ -2866,12 +2876,14 @@ export default class NotionTogglePlugin extends Plugin {
         if (routeTarget != null && waypointReached(prevPos, this.scrollPos, routeTarget)) {
           this.scrollPos = routeTarget;
           container.scrollTop = Math.floor(routeTarget);
-          const holdMs = routeTarget != null && this.scrollRouteStop < routeStops.length
-            ? clampScreenDwellMs(this.settings.scrollScreenDwellMs)
-            : cfg.seconds * 1000;
+          // v1.7.1 — the waypoint's first stop gets the toggle hold; every
+          // later screenful of it gets the screen dwell (it used to be the
+          // screen dwell for all of them, so "Hold" never applied in route mode).
+          const continuation = this.scrollRouteStop > 0;
+          const holdMs = continuation ? clampScreenDwellMs(this.settings.scrollScreenDwellMs) : cfg.seconds * 1000;
           const ordinal = cfg.route[this.scrollRouteIdx % cfg.route.length];
           this.scrollLastEvent = `waypointReached toggle ${ordinal} @ ${Math.round(routeTarget)}`;
-          const parked = this.parkOnToggle(ordinal, ts, this.scrollBoxes.find((box) => box.page === ordinal)?.identity);
+          const parked = this.parkOnToggle(ordinal, ts, this.scrollBoxes.find((box) => box.page === ordinal)?.identity, continuation);
           // v1.5.9 — think time is extra. v1.6.2 — a refused park never holds.
           this.scrollDwellUntil = dwellPlan(ts, holdMs, this.scrollThinkMs, parked).dwellUntil;
 
@@ -2933,11 +2945,17 @@ export default class NotionTogglePlugin extends Plugin {
           container.scrollTop = Math.floor(stop.top);
           this.scrollAt = targets.findIndex((t) => t.key === stop.key);
           this.scrollLastEvent = `crossedTarget ${stop.key} @ ${Math.round(stop.top)}`;
-          const parked = this.parkOnToggle(stop.page, ts, stop.identity);
+          // v1.7.1 — screen stops and continuation chunks hold for the screen
+          // dwell and never touch the open toggle; a toggle's first stop holds
+          // for "Hold" (+ think time).
+          const holdMs = stopHoldMs(stop, cfg.seconds, clampScreenDwellMs(this.settings.scrollScreenDwellMs));
+          const parked = isScreenStop(stop.page)
+            ? this.parkOnScreen(stop, holdMs)
+            : this.parkOnToggle(stop.page, ts, stop.identity, isContinuationStop(stop));
           // v1.5.9 — think time is extra. v1.6.2 — a stop that could not be
           // opened (filtered out, re-rendered, or gone) glides on immediately
           // instead of standing still for hold + think.
-          this.scrollDwellUntil = dwellPlan(ts, cfg.seconds * 1000, this.scrollThinkMs, parked).dwellUntil;
+          this.scrollDwellUntil = dwellPlan(ts, holdMs, this.scrollThinkMs, parked).dwellUntil;
 
           this.renderScrollBar();
           this.endScrollFrame(ts);

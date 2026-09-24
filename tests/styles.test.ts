@@ -93,7 +93,8 @@ describe("v1.5.9 think gate + distraction-free run", () => {
     const focus = css.slice(css.indexOf("body.ntt-focus-run.is-mobile"));
     expect(focus).toContain("var(--ntt-focus-bottom-gap)");
     // v1.6.2 — the token itself must still resolve to the real inset.
-    expect(css).toContain("--ntt-focus-bottom-gap: env(safe-area-inset-bottom);");
+    // v1.7.1 — Obsidian's own inset first (Android reports env() as 0).
+    expect(css).toContain("--ntt-focus-bottom-gap: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));");
   });
 });
 
@@ -101,9 +102,32 @@ describe("v1.6.0 — focus run keeps the system status bar off the question", ()
   const css = readFileSync("styles.css", "utf8");
 
   it("adds a top safe-area gap when Obsidian's header is hidden", () => {
-    const block = css.slice(css.indexOf("body.ntt-focus-run.is-mobile .markdown-preview-view"));
+    const block = css.slice(css.indexOf("body.ntt-focus-run.is-mobile .view-content"));
     expect(block).toContain("padding-top: var(--ntt-focus-top-gap)");
-    expect(css).toContain("--ntt-focus-top-gap: max(env(safe-area-inset-top), 24px);");
+    // v1.7.1 — Obsidian's own inset, no floor.
+    expect(css).toContain("--ntt-focus-top-gap: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));");
+  });
+
+  // v1.7.1 — the "white strip at the top": a 24px floor on a gap that Android
+  // always reported as 0 became a permanent blank band above the note, and it
+  // was applied to two nested elements so the first question sat 48px down.
+  it("has no fixed floor on the top gap and applies it to one element only", () => {
+    const token = css.match(/--ntt-focus-top-gap:\s*([^;]+);/)?.[1] ?? "";
+    expect(token).not.toMatch(/max\(|[1-9]\d*px/); // no `max(..., 24px)` floor — only a 0px fallback
+    expect(token).toContain("var(--safe-area-inset-top");
+    const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+    const topRules = [...bare.matchAll(/([^{}]+)\{[^}]*padding-top:\s*var\(--ntt-focus-top-gap\)[^}]*\}/g)];
+    expect(topRules.length).toBe(1);
+    const selectors = topRules[0][1].split(",").map((s) => s.trim()).filter(Boolean);
+    expect(selectors).toEqual(["body.ntt-focus-run.is-mobile .view-content"]);
+    for (const sel of selectors) expect(sel).not.toMatch(/markdown-preview-view|markdown-reading-view/);
+  });
+
+  it("puts the bottom gap on the scroller only, so the last line can scroll clear", () => {
+    const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+    const rules = [...bare.matchAll(/([^{}]+)\{[^}]*padding-bottom:\s*var\(--ntt-focus-bottom-gap\)[^}]*\}/g)];
+    expect(rules.length).toBe(1);
+    expect(rules[0][1].trim()).toBe("body.ntt-focus-run.is-mobile .markdown-preview-view");
   });
 
   it("hides the tab header / titlebar too, so nothing blinks mid-run", () => {

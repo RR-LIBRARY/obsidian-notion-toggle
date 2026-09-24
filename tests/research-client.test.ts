@@ -162,3 +162,123 @@ describe("input helpers", () => {
     expect(clipped.trimEnd().endsWith("para one")).toBe(true);
   });
 });
+
+/* ---------- v1.7.1 — timeouts: a stalled bridge must fail loudly, not spin ---------- */
+import { DEFAULT_TIMEOUTS_MS, timeoutMessage } from "../src/research/client";
+
+function fakeTimers() {
+  let now = 0;
+  const queue: { at: number; fn: () => void; id: number }[] = [];
+  let seq = 0;
+  const cleared = new Set<number>();
+  return {
+    setTimeout: (fn: () => void, ms: number) => {
+      const id = ++seq;
+      queue.push({ at: now + ms, fn, id });
+      queue.sort((a, b) => a.at - b.at);
+      return id;
+    },
+    clearTimeout: (h: unknown) => {
+      cleared.add(h as number);
+    },
+    cleared,
+    async advance(ms: number) {
+      const until = now + ms;
+      while (queue.length && queue[0].at <= until) {
+        const next = queue.shift()!;
+        now = next.at;
+        if (!cleared.has(next.id)) next.fn();
+        await Promise.resolve();
+        await Promise.resolve();
+      }
+      now = until;
+    },
+  };
+}
+
+describe("request timeouts (v1.7.1)", () => {
+  test("defaults are generous for answers and short for lookups", () => {
+    expect(DEFAULT_TIMEOUTS_MS.health).toBeLessThan(DEFAULT_TIMEOUTS_MS.search);
+    expect(DEFAULT_TIMEOUTS_MS.search).toBeLessThan(DEFAULT_TIMEOUTS_MS.answer);
+    expect(DEFAULT_TIMEOUTS_MS.recall).toBeGreaterThanOrEqual(DEFAULT_TIMEOUTS_MS.answer);
+    const client = new ResearchClient({ bridgeUrl: "b.example", pluginKey: "k", transport: async () => ({ status: 200, text: "{}" }) });
+    expect(client.timeoutFor("search")).toBe(DEFAULT_TIMEOUTS_MS.search);
+  });
+
+  test("a transport that never answers becomes a 'timeout' error with a readable message", async () => {
+    const timers = fakeTimers();
+    const client = new ResearchClient({
+      bridgeUrl: "b.example",
+      pluginKey: "k",
+      transport: () => new Promise(() => {}), // hangs forever, like a stalled mobile socket
+      timeoutsMs: { search: 300 },
+      setTimeout: timers.setTimeout,
+      clearTimeout: timers.clearTimeout,
+    });
+    const pending = client.search({ query: "sickle cell" }).catch((e) => e);
+    await timers.advance(299);
+    await timers.advance(1);
+    const err = await pending;
+    expect(err).toBeInstanceOf(ResearchError);
+    expect(err.code).toBe("timeout");
+    expect(err.status).toBe(0);
+    expect(err.message).toBe(timeoutMessage("search", 300));
+    expect(describeError(err)).toContain("Web search timed out after 0s");
+  });
+
+  test("a response that arrives in time cancels the timer and is returned as-is", async () => {
+    const timers = fakeTimers();
+    const client = new ResearchClient({
+      bridgeUrl: "b.example",
+      pluginKey: "k",
+      transport: async () => ({ status: 200, text: JSON.stringify({ ok: true, version: "1", providers: { parallel: true, perplexity: true, ai: true } }) }),
+      timeoutsMs: { health: 1000 },
+      setTimeout: timers.setTimeout,
+      clearTimeout: timers.clearTimeout,
+    });
+    const res = await client.health();
+    expect(res.ok).toBe(true);
+    expect(timers.cleared.size).toBe(1);
+  });
+
+  test("a transport error that arrives before the ceiling still surfaces as 'network' (not timeout)", async () => {
+    const timers = fakeTimers();
+    const client = new ResearchClient({
+      bridgeUrl: "b.example",
+      pluginKey: "k",
+      transport: async () => { throw new Error("ECONNRESET"); },
+      timeoutsMs: { health: 1000 },
+      setTimeout: timers.setTimeout,
+      clearTimeout: timers.clearTimeout,
+    });
+    const err = await client.health().catch((e) => e);
+    expect(err.code).toBe("network");
+    expect(err.message).toBe("ECONNRESET");
+  });
+
+  test("every operation names itself in the timeout copy", () => {
+    for (const op of Object.keys(DEFAULT_TIMEOUTS_MS) as Array<keyof typeof DEFAULT_TIMEOUTS_MS>) {
+      const msg = timeoutMessage(op, DEFAULT_TIMEOUTS_MS[op]);
+      expect(msg).toContain("timed out after");
+      expect(msg).toContain("try again");
+    }
+    expect(timeoutMessage("answer", 300_000)).toContain("300s");
+    // minutes, not seconds, for anything a model writes
+    expect(DEFAULT_TIMEOUTS_MS.answer).toBeGreaterThanOrEqual(300_000);
+    expect(DEFAULT_TIMEOUTS_MS.recall).toBeGreaterThanOrEqual(300_000);
+  });
+
+  test("a zero / non-finite ceiling disables the timer for that op", async () => {
+    const timers = fakeTimers();
+    const client = new ResearchClient({
+      bridgeUrl: "b.example",
+      pluginKey: "k",
+      transport: async () => ({ status: 200, text: "{}" }),
+      timeoutsMs: { health: 0 },
+      setTimeout: timers.setTimeout,
+      clearTimeout: timers.clearTimeout,
+    });
+    await client.health();
+    expect(timers.cleared.size).toBe(0);
+  });
+});

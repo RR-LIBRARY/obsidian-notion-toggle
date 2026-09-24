@@ -110,7 +110,10 @@ export async function aiChat(
   const lovableKey = requireEnv("LOVABLE_API_KEY");
   let response: Response;
   try {
-    // No artificial timeout: generation takes as long as the model needs.
+    // No artificial timeout: generation takes as long as the model needs; a
+    // deadline here would discard work that still completes (and bills). The
+    // plugin side keeps its own minutes-long ceiling purely so the panel can
+    // stop spinning and say so.
     response = await fetch(AI_GATEWAY_URL, {
       method: "POST",
       headers: { Authorization: `Bearer ${lovableKey}`, "Content-Type": "application/json" },
@@ -130,7 +133,12 @@ export async function aiChat(
     console.error(`[bridge] ai gateway failed [${response.status}]: ${text.slice(0, 800)}`);
     throw providerFailure("Lovable AI", response.status, text, response.headers.get("Retry-After"));
   }
-  const parsed = JSON.parse(text) as { choices?: Array<{ message?: { content?: string } }> };
+  let parsed: { choices?: Array<{ message?: { content?: string } }> };
+  try {
+    parsed = JSON.parse(text) as typeof parsed;
+  } catch {
+    throw new BridgeError("provider_error", "The AI gateway returned a non-JSON body", { status: 502 });
+  }
   const content = parsed.choices?.[0]?.message?.content;
   if (!content) throw new BridgeError("provider_error", "The AI model returned an empty answer", { status: 502 });
   return content;
