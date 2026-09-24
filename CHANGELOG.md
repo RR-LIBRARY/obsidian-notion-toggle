@@ -2,6 +2,18 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.7.4 — 2026-09-25 — Top padding diagnostic
+
+### Added
+- **Command: "Diagnose top padding (theme / snippets)".** Walks from the note up to the window, measures every top padding / margin / border, finds the CSS rules that set them and says who owns each pixel: Obsidian (its own status-bar inset or header), Notion Toggle, or the active theme / a CSS snippet. The report shows the verdict ("OK" or "N px extra top gap"), a table per element, the matching rules, and which theme / snippets to switch off to test. "Copy report" puts it on the clipboard for a bug report.
+
+### Internal
+- New pure `src/padding-diagnose.ts` (`analyzeTopGap`, `formatGapReport`, `px`, `declaresTopGap`) and the UI shell `src/padding-diagnose-view.ts` (declared Obsidian shell). `main.ts` only registers it (3495 lines).
+- New `tests/padding-diagnose.test.ts` (7 tests).
+
+### Verified
+- 1110 tests, typecheck and release build pass. See `AUDIT-sheet-1.7.4.md`.
+
 ## 1.7.3 — 2026-09-25 — Autoscroll: no status-bar strip, Open all stays out of the run's way
 
 ### Fixed

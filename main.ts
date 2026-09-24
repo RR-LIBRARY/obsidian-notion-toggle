@@ -230,6 +230,7 @@ import {
 import { CALLOUT_TYPES, TOGGLE_COLORS, calloutForColor } from "./src/toggle-colors";
 import { countKinds, type KindCount } from "./src/callout-stats";
 import { registerCalloutCommands } from "./src/callout-commands";
+import { registerPaddingDiagnostic } from "./src/padding-diagnose-view";
 import { NotionToggleSettingTab } from "./src/settings-tab";
 import {
   ColorPickerModal,
@@ -1151,6 +1152,7 @@ export default class NotionTogglePlugin extends Plugin {
       )
     );
     registerCalloutCommands(this);
+    registerPaddingDiagnostic(this);
     // v1.7.0 — web research: side panel, commands, ribbon, background runs.
     installResearch(this);
     this.addSettingTab(new NotionToggleSettingTab(this.app, this));

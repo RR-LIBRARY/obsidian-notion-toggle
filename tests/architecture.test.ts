@@ -77,6 +77,8 @@ const OBSIDIAN_SHELLS = new Set([
   "src/stats-panel.ts",
   // v1.5.9 — shared think-time rows for both the settings tab and the sheet.
   "src/think-settings.ts",
+  // v1.7.4 — top-padding diagnostic modal.
+  "src/padding-diagnose-view.ts",
 ]);
 
 describe("module size budget (v1.3.3)", () => {
