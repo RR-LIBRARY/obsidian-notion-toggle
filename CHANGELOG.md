@@ -2,6 +2,15 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.7.6 — 2026-09-24 — Autoscroll sheet: full feature audit + Hindi guide
+
+### Added
+- **`AUTOSCROLL-SHEET-GUIDE.md`** — Hindi guide to every Autoscroll sheet option (35 items, in on-screen order): what it does, how to use it, tips, FAQ. Linked from README.
+- **`tests/sheet-features.test.ts`** (12 tests) — opens the real sheet and checks every row is present in order and wired (switches save, Open/Close all, Advance by, overlap/viewport sliders, More buttons, floating button returns on close).
+
+### Notes
+- No behaviour change. "Direction" and "Reverse direction ↑" are the same setting (documented).
+
 ## 1.7.5 — 2026-09-25 — Autoscroll sheet: no floating button, pause time per screen
 
 ### Changed
