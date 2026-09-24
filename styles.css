@@ -1412,6 +1412,17 @@ body.ntt-reduced-motion .ntt-rp-dot.is-running {
   flex-direction: column;
   gap: 8px;
 }
+/* Background runs sit above the results and never grow past their content;
+   results take the remaining height so a long history scrolls with the leaf. */
+.ntt-rp-runs {
+  flex: 0 0 auto;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.ntt-rp-results {
+  flex: 1 1 auto;
+  min-height: 0;
+}
 .ntt-rp-section-title {
   display: flex;
   align-items: center;

@@ -2,9 +2,9 @@
 
 Notion-style collapsible toggles for Obsidian, plus a recall workflow built on top of them: traffic-light grading, a floating Pomodoro timer, and SM-2 spaced repetition. You never type `<details>`, `<summary>` or `>` brackets by hand.
 
-Works on desktop and mobile. Version 1.6.2.
+Works on desktop and mobile. Version 1.7.0.
 
-Full guide: **[MANUAL.md](MANUAL.md)** — install/enable, **every setting explained one by one** (Toggle basics, Recall timer, Focus guard, Minimal mode, Auto-scroll revision, Quiz mode), commands list for the mobile toolbar, ready-made presets, debug overlay, stats panel and troubleshooting.
+Full guide: **[MANUAL.md](MANUAL.md)** — install/enable, **every setting explained one by one** (Toggle basics, Recall timer, Focus guard, Minimal mode, Auto-scroll revision, Quiz mode, Web research), commands list for the mobile toolbar, ready-made presets, debug overlay, stats panel and troubleshooting.
 
 ## Install
 
@@ -71,6 +71,22 @@ The trailing `-` starts the toggle collapsed, which is what makes active recall 
 - **Floating recall timer** — draggable Pomodoro widget with presets (Classic 25/5, Deep 50/10, Quick recall 15/3, Custom), session counter, compact mode, phase notices with 🔴/🟡/🟢 counts and a **🔴 Jump** button, auto-collapse of answers on session start, idle and attention-aware auto-pause, and safe-area/orientation handling on mobile.
 - **Spaced repetition (SM-2)** — grade a note *Again / Hard / Good / Easy* and the next recall date is computed for you (ease 1.3–2.7, interval up to 365 days). The widget shows *Next recall: 6 days (Sat)* and the status bar shows how many notes are due.
 
+## Web research (1.7.0)
+
+Research without leaving the note. A **Research** side panel (ribbon icon or *Research: open panel*) and eight commands send a question, a claim, keywords, links or the note itself to your own **research bridge** — a small web app you run — and insert the result as ordinary toggles in your usual style, so they take part in autoscroll, quiz and spaced repetition like anything else.
+
+| Mode | What comes back |
+|---|---|
+| **Ask the web** | A short answer with numbered citations `[1]` and a Sources list. |
+| **Fact-check** | Verdict (supported / refuted / mixed / unverifiable), confidence, correction — as a coloured callout. |
+| **Web search** | One toggle per source with excerpts and the link. |
+| **Quick search** | A fast list of links (Perplexity). |
+| **Read link** | One or more URLs (pages or PDFs) read into toggles. |
+| **Recall toggles** | 3–20 question toggles (Q&A, MCQ or cloze) from a topic, a link, pasted text or the whole note. |
+| **Deep research** | Long-form report / key facts / compare / timeline / literature summary that runs in the background; a notice with **Insert** appears when it is ready, and unfinished runs survive restarts. |
+
+Setup: publish the bridge (see `backup/` in this repo or the bridge dashboard), create a key under **Dashboard → Keys**, then paste the bridge URL and the `ntr_…` key into *Settings → Web research* and press **Test**. The key is hashed on the bridge — the plaintext is never stored server-side. Repeat searches within 15 minutes are served from an on-device cache without spending credits.
+
 ## Conversion
 
 - **Convert `<details>` blocks to callouts** — migrates a whole HTML note to native foldable callouts in one command (verified on a 179-block note).
@@ -103,7 +119,7 @@ A timed, Telegram-quiz style run through the toggles of the current note:
 
 ## Settings
 
-Callout type, collapsed by default, auto-bold the question, auto-continue on Enter, toggle format (`callout` / `details`), auto-numbering, colour palette, MCQ option count, Match row count, auto Answer line, the full Pomodoro block, minimal command names, the **Recall schedule** section, the **Auto-scroll revision** section, and the **Quiz mode** section.
+Callout type, collapsed by default, auto-bold the question, auto-continue on Enter, toggle format (`callout` / `details`), auto-numbering, colour palette, MCQ option count, Match row count, auto Answer line, the full Pomodoro block, minimal command names, the **Recall schedule** section, the **Auto-scroll revision** section, the **Quiz mode** section, and the **Web research** section (bridge URL, plugin key, insert style, search mode, effort, recall count/style, answer language, deep-research shape, cache, background runs).
 
 ### Recall schedule maintenance (new in 1.0.8)
 
@@ -119,15 +135,16 @@ Schedules are stored per note path, so the plugin now keeps them in sync with th
 ```bash
 cd obsidian-toggle-plugin
 bun install
-bun test         # 159 pure tests
+bun test         # 1037 tests
 bun run typecheck
 bun run build    # regenerates main.js
 ```
 
-Logic lives in pure modules — `src/smart.ts`, `src/naming.ts`, `src/timer.ts`, `src/timer-ui.ts`, `src/srs.ts`, `src/maintenance.ts`, `src/autoscroll.ts`, `src/quiz.ts` — so behaviour is tested without the Obsidian API.
+Logic lives in pure modules — `src/smart.ts`, `src/naming.ts`, `src/timer.ts`, `src/timer-ui.ts`, `src/srs.ts`, `src/maintenance.ts`, `src/autoscroll.ts`, `src/quiz.ts`, and the self-contained `src/research/` folder (client, cache, runs, formatters) — so behaviour is tested without the Obsidian API. The research bridge's source is snapshotted under `backup/`; `AUDIT-v1.7.0.md` records what changed in this release and how it was verified.
 
 ## Changelog highlights
 
+- **1.7.0** — web research: side panel + 8 commands (ask the web with citations, fact-check, web search, quick search, read links, recall toggles, background deep research), a self-hosted research bridge with per-user keys, usage log and a 15-minute cache, results inserted as your usual toggles. See `CHANGELOG.md`.
 - **1.1.0** — quiz mode: per-question countdown, automatic answer reveal, auto-close, auto-next, floating quiz HUD, per-question `⏱30` override.
 - **1.0.9** — auto-scroll revision with auto-open/auto-close toggles, reverse direction, speed control and colour filter.
 - **1.0.8** — schedule follows renames/moves and is pruned on delete, Recall schedule settings section, Obsidian-native modal/settings headings, CSS classes instead of inline styles, MIT LICENSE, `versions.json`.

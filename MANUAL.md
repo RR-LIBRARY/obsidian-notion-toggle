@@ -1,4 +1,6 @@
-# Notion Toggle — Poora Manual (v1.5.5)
+# Notion Toggle — Poora Manual (v1.7.0)
+
+> **v1.7.0 (web research)** — note chhode bina research. Naya **Research** side panel (ribbon icon) aur 8 commands: *Ask the web* (citations ke saath jawab), *Fact-check*, *Web search*, *Quick search*, *Read link*, *Recall toggles* (topic / link / text / poore note se sawaal), aur background me chalne wala *Deep research*. Result aapke usual toggle style me insert hota hai, isliye autoscroll, quiz aur SRS me waise hi kaam karta hai. Setup + har setting → section **15**.
 
 > **v1.5.5 (fix release)** — filter picker ke counts ab note ke **source** se aate hain, live DOM se nahi. Pehle Reading View ki lazy rendering ki wajah se 71-toggle note par "12 toggles · 🟢 6 · 🟡 5 · 🔴 1" dikhta tha aur baaki filters khali (grey) lagte the. Ab poora breakdown (14🔴 / 37🟡 / 20🟢 + note/tip/question…) har scroll position par sahi hai, koi filter toggle miss nahi hota. Saath hi answer band hone (revert) par bhi 140ms smooth collapse — pehle sirf khulna smooth tha, band hona snap karta tha (wahi blink lagta tha).
 
@@ -53,7 +55,7 @@ Mobile par bhi wahi folder path chalta hai (file manager ya vault sync se).
 Sab kuch `.obsidian/plugins/notion-toggle/data.json` me save hota hai.
 Autoscroll ka **speed / direction / hold** har note ke liye alag bhi yaad rehta hai.
 
-### 1.4 Settings page ka map (6 sections)
+### 1.4 Settings page ka map (7 sections)
 
 1. Toggle basics (heading nahi hai — page ke top par)
 2. **Recall timer (Pomodoro)**
@@ -61,6 +63,7 @@ Autoscroll ka **speed / direction / hold** har note ke liye alag bhi yaad rehta 
 4. **Minimal mode & spaced repetition**
 5. **Auto-scroll revision**
 6. **Quiz mode**
+7. **Web research (v1.7.0)** — section 15
 
 Plan persistence, plan toast aur one-tap resume (v1.4.3) → section **6.3**.
 
@@ -851,3 +854,63 @@ sach me filter hote hain — isi note par 10 second me verify kar sakte hain.
 Quiz/autoscroll reveal ab 120ms ka minimal fade + 2px slide hai (fold animation
 band hi rehti hai, kyunki wahi flicker karti thi). `prefers-reduced-motion`
 respect hota hai — us case me instant reveal.
+
+## 15. v1.7.0 — Web research (Research panel + bridge)
+
+### 15.1 Ye kya hai
+
+Plugin khud internet par nahi jaata — wo aapke **research bridge** se baat karta hai. Bridge ek chhota web app hai (is repo ke `backup/` folder me uska source hai) jo Parallel (search, extract, deep research) aur Perplexity (quick links) ko call karta hai, har request ko aapki key se pehchanta hai, aur results 15 minute cache karta hai. Aapki API keys plugin me kabhi nahi aati — sirf `ntr_…` plugin key aati hai, jiska bridge par sirf hash store hota hai.
+
+### 15.2 Setup (ek baar)
+
+1. Bridge kholo (publish kiya hua URL) → **Sign in** → **Dashboard → Keys → New key**. Key ek hi baar dikhti hai, copy kar lo.
+2. Obsidian → Settings → Notion Toggle → **Web research (v1.7.0)**:
+   - **Bridge URL** — bridge ka address (`https://…lovable.app`). Path/slash apne aap hat jaata hai.
+   - **Plugin key** — `ntr_` se shuru. Aankh (👁) button se dikhta/chhupta hai. Galat shape ki key save to hoti hai par flag ho jaati hai.
+   - **Connection → Test** — key ka naam aur providers (Parallel / Perplexity / AI) ka health batata hai. Fail ho to wahin wajah likhi milegi.
+
+### 15.3 Panel
+
+Ribbon me **Research** icon, ya command **Research: open panel**. Upar status (Connected / Not set up), phir composer:
+
+- **Mode dropdown** — Ask the web · Fact-check · Web search · Quick search · Read link · Recall toggles.
+- **Use selection** — note me select kiya text composer me le aata hai.
+- **Deep…** — background deep research ka dialog (shape + processor chuno).
+- **Go** button mode ke hisaab se *Ask / Check / Search / Read / Generate* bolta hai.
+
+Neeche **Background runs** (running / ready / failed, *Insert*, *Copy*, *Check now*, *Dismiss*) aur **Results** history (max 30, newest first; har card par *Insert*, *Copy*; upar *Clear* se poori history saaf).
+
+### 15.4 Commands (mobile toolbar me add karne layak)
+
+| Command | Kya karta hai |
+|---|---|
+| Research: open panel | Panel kholta hai (right sidebar; mobile par main leaf) |
+| Research: ask the web (cited answer) | Selection ya prompt → `[1]` citations wala jawab + Sources |
+| Research: fact-check selection | Selected claim → verdict callout (supported/refuted/mixed/unverifiable) |
+| Research: web search → source toggles | Keywords → har source ka apna toggle |
+| Research: quick search (links) | Perplexity se tez links ki list |
+| Research: read link(s) into toggles | URL/PDF ka content toggles me |
+| Research: recall toggles from selection / note | Selection, link ya poore note se 3–20 sawaal |
+| Research: deep research (background) | Lambi report background me; ready hone par notice + Insert |
+| Research: insert latest finished deep research | Sabse nayi ready report cursor par |
+
+### 15.5 Settings ek-ek karke
+
+- **Insert as** — *Toggle* (aapka callout type / collapsed / bold style) ya *Markdown* (plain). Default: Toggle.
+- **Insert where** — cursor line ke neeche, ya note ke end me. Default: cursor.
+- **Sources list** — answers / fact-check / recall ke neeche numbered Sources. Default: ON.
+- **Search mode** — Turbo / Fast / Basic / Advanced (Parallel). Fast lagbhag sab ke liye sahi. Default: Fast.
+- **Answer effort** — Low / Medium / High (Ask the web + fact-check). Default: Low.
+- **Recall toggles per request** — 3–20. Default: 8.
+- **Recall style** — Question → answer / Multiple choice / Fill in the blank. Default: Q&A.
+- **Answer language** — khali = sawaal ki bhasha. e.g. Hindi, Hinglish.
+- **Deep research default shape** — Research report / Key facts / Compare options / Timeline / Literature summary.
+- **On-device cache** — 15 minute me same query dobara → turant, credits nahi lagte. Default: ON.
+- **Background runs** — kitne chal rahe / ready / yaad hain (max 20); *Forget finished* button khatam hue runs bhula deta hai.
+
+### 15.6 Troubleshooting
+
+- **"Research is not configured"** → URL + key bharo, Test dabao.
+- **"The plugin key was rejected"** → dashboard me key revoke to nahi hui? Nayi banao aur paste karo.
+- **Deep research failed: "Run not found on the bridge"** → bridge ne run bhula diya (bahut purana, ya bridge ka database reset hua); dobara start karo.
+- **Insert kuch nahi karta** → koi markdown note khula hona chahiye; panel result ko us note me daalta hai jahan se pucha tha, warna focused note me.

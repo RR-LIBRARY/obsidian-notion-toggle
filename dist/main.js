@@ -82,7 +82,8 @@ var POMODORO_PRESETS = [
 ];
 function resolvePreset(settings, presetId) {
   const preset = POMODORO_PRESETS.find((p) => p.id === presetId);
-  if (!preset || preset.id === "custom") return { ...settings, preset: presetId };
+  if (!preset || preset.id === "custom")
+    return { ...settings, preset: presetId };
   return {
     ...settings,
     preset: preset.id,
@@ -93,7 +94,8 @@ function resolvePreset(settings, presetId) {
   };
 }
 function clampMinutes(value, fallback) {
-  if (!Number.isFinite(value)) return fallback;
+  if (!Number.isFinite(value))
+    return fallback;
   return Math.max(1, Math.min(180, Math.round(value)));
 }
 function phaseDuration(phase, s) {
@@ -123,9 +125,11 @@ function formatTime(ms3) {
   return h > 0 ? `${h}:${pad(m)}:${pad(sec2)}` : `${pad(m)}:${pad(sec2)}`;
 }
 function tick(state, elapsed, s) {
-  if (!state.running || elapsed <= 0) return { state, phaseEnded: false };
+  if (!state.running || elapsed <= 0)
+    return { state, phaseEnded: false };
   const remaining = state.remaining - elapsed;
-  if (remaining > 0) return { state: { ...state, remaining }, phaseEnded: false };
+  if (remaining > 0)
+    return { state: { ...state, remaining }, phaseEnded: false };
   const endedPhase = state.phase;
   const next = nextPhase(state, s);
   return { state: next, phaseEnded: true, endedPhase };
@@ -165,16 +169,20 @@ function scanRecallStats(doc) {
   lines.forEach((line, i) => {
     const m = line.match(HEADER_ANY);
     if (!m) {
-      if (/<summary>/.test(line)) stats.total += 1;
+      if (/<summary>/.test(line))
+        stats.total += 1;
       return;
     }
     stats.total += 1;
     const type = m[1].toLowerCase();
     if (type === "recall-red") {
       stats.red += 1;
-      if (stats.firstRedLine < 0) stats.firstRedLine = i;
-    } else if (type === "recall-yellow") stats.yellow += 1;
-    else if (type === "recall-green") stats.green += 1;
+      if (stats.firstRedLine < 0)
+        stats.firstRedLine = i;
+    } else if (type === "recall-yellow")
+      stats.yellow += 1;
+    else if (type === "recall-green")
+      stats.green += 1;
   });
   return stats;
 }
@@ -185,22 +193,28 @@ function collapseAllToggles(doc) {
 }
 function shouldAutoPause(input) {
   const { state, enabled, visible, onSessionNote, pinned } = input;
-  if (!enabled || !state.running) return null;
-  if (!visible) return "hidden";
-  if (pinned && !onSessionNote) return "other-note";
+  if (!enabled || !state.running)
+    return null;
+  if (!visible)
+    return "hidden";
+  if (pinned && !onSessionNote)
+    return "other-note";
   return null;
 }
 function isIdle(lastActivityAt, now, idleMinutes) {
   const minutes = Number.isFinite(idleMinutes) ? idleMinutes : 0;
-  if (minutes <= 0) return false;
+  if (minutes <= 0)
+    return false;
   return now - lastActivityAt >= minutes * 6e4;
 }
 function pauseForInactivity(state) {
-  if (!state.running) return state;
+  if (!state.running)
+    return state;
   return { ...state, running: false, autoPaused: true };
 }
 function resumeAfterAutoPause(state) {
-  if (!state.autoPaused) return state;
+  if (!state.autoPaused)
+    return state;
   return { ...state, running: true, autoPaused: false };
 }
 function stopSession(state, s) {
@@ -215,12 +229,15 @@ function stopSummary(state) {
   return `Session stopped \u2014 ${state.totalFocusSessions} focus ${plural} \xB7 ${state.totalFocusMinutes}m total`;
 }
 function autoPauseNotice(reason2) {
-  if (reason2 === "hidden") return "\u231B Timer paused \u2014 you left the app.";
-  if (reason2 === "other-note") return "\u231B Timer paused \u2014 go back to your session note.";
+  if (reason2 === "hidden")
+    return "\u231B Timer paused \u2014 you left the app.";
+  if (reason2 === "other-note")
+    return "\u231B Timer paused \u2014 go back to your session note.";
   return "\u231B Timer paused \u2014 no activity.";
 }
 function shouldAutoResume(input) {
-  if (!input.autoResume || !input.autoPaused || !input.visible) return false;
+  if (!input.autoResume || !input.autoPaused || !input.visible)
+    return false;
   return !input.pinned || input.onSessionNote;
 }
 
@@ -351,7 +368,8 @@ var TimerWidget = class {
     let dragging = false;
     const down = (e) => {
       var _a, _b;
-      if (((_a = e.target) == null ? void 0 : _a.tagName) === "BUTTON") return;
+      if (((_a = e.target) == null ? void 0 : _a.tagName) === "BUTTON")
+        return;
       dragging = true;
       startX = e.clientX;
       startY = e.clientY;
@@ -362,12 +380,14 @@ var TimerWidget = class {
       (_b = handle.setPointerCapture) == null ? void 0 : _b.call(handle, e.pointerId);
     };
     const move = (e) => {
-      if (!dragging) return;
+      if (!dragging)
+        return;
       e.preventDefault();
       this.place(originX + (e.clientX - startX), originY + (e.clientY - startY), false);
     };
     const up = () => {
-      if (!dragging) return;
+      if (!dragging)
+        return;
       dragging = false;
       this.root.classList.remove("is-dragging");
       const rect = this.root.getBoundingClientRect();
@@ -420,13 +440,15 @@ var TimerWidget = class {
     this.root.classList.add("ntt-flash");
   }
   destroy() {
-    for (const fn of this.cleanups) fn();
+    for (const fn of this.cleanups)
+      fn();
     this.cleanups = [];
     this.root.remove();
   }
 };
 function clamp(value, min, max) {
-  if (!Number.isFinite(value)) return min;
+  if (!Number.isFinite(value))
+    return min;
   return Math.max(min, Math.min(max, value));
 }
 function div(parent, cls) {
@@ -481,10 +503,14 @@ function isResearchCommand(id) {
   return id.startsWith(RESEARCH_PREFIX);
 }
 function commandName(id, legacyName, minimal) {
-  if (isPrimary(id)) return PRIMARY_NAMES[id];
-  if (!minimal) return legacyName;
-  if (isResearchCommand(id)) return legacyName;
-  if (legacyName.startsWith("Advanced: ")) return legacyName;
+  if (isPrimary(id))
+    return PRIMARY_NAMES[id];
+  if (!minimal)
+    return legacyName;
+  if (isResearchCommand(id))
+    return legacyName;
+  if (legacyName.startsWith("Advanced: "))
+    return legacyName;
   return `Advanced: ${legacyName}`;
 }
 
@@ -493,10 +519,14 @@ var MCQ_OPTION = /^>\s*-\s*\[[ xX]\]/;
 var TABLE_ROW = /^>\s*\|.*\|/;
 var ANSWER_LINE = /^>\s*(\*\*)?(Answer|Answers|Ans)\b/i;
 function smartAction(ctx) {
-  if (ctx.selection.trim().length > 0) return "wrap-selection";
-  if (MCQ_OPTION.test(ctx.line)) return "mcq-option";
-  if (TABLE_ROW.test(ctx.line)) return "match-row";
-  if (ctx.insideToggle && ANSWER_LINE.test(ctx.line)) return "answer-key";
+  if (ctx.selection.trim().length > 0)
+    return "wrap-selection";
+  if (MCQ_OPTION.test(ctx.line))
+    return "mcq-option";
+  if (TABLE_ROW.test(ctx.line))
+    return "match-row";
+  if (ctx.insideToggle && ANSWER_LINE.test(ctx.line))
+    return "answer-key";
   return "new-toggle";
 }
 function smartActionLabel(action) {
@@ -546,7 +576,8 @@ function newCard() {
   };
 }
 function clampEase(ease) {
-  if (!Number.isFinite(ease)) return 2.5;
+  if (!Number.isFinite(ease))
+    return 2.5;
   return Math.max(MIN_EASE, Math.min(MAX_EASE, Math.round(ease * 100) / 100));
 }
 function startOfDay(now) {
@@ -565,11 +596,16 @@ function gradeCard(card, grade, now) {
     interval = 1;
   } else {
     repetitions += 1;
-    if (repetitions === 1) interval = 1;
-    else if (repetitions === 2) interval = 6;
-    else interval = Math.round(interval * ease);
-    if (grade === "hard") interval = Math.max(1, Math.round(interval * 0.8));
-    if (grade === "easy") interval = Math.round(interval * 1.3);
+    if (repetitions === 1)
+      interval = 1;
+    else if (repetitions === 2)
+      interval = 6;
+    else
+      interval = Math.round(interval * ease);
+    if (grade === "hard")
+      interval = Math.max(1, Math.round(interval * 0.8));
+    if (grade === "easy")
+      interval = Math.round(interval * 1.3);
   }
   interval = Math.max(1, Math.min(365, interval));
   return {
@@ -582,26 +618,32 @@ function gradeCard(card, grade, now) {
   };
 }
 function isDue(card, now) {
-  if (!card || !card.lastReviewed) return true;
+  if (!card || !card.lastReviewed)
+    return true;
   return card.due <= startOfDay(now) + DAY_MS - 1;
 }
 function daysUntilDue(card, now) {
-  if (!card || !card.lastReviewed) return 0;
+  if (!card || !card.lastReviewed)
+    return 0;
   return Math.round((startOfDay(card.due) - startOfDay(now)) / DAY_MS);
 }
 var WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 function nextDueLabel(card, now) {
-  if (!card || !card.lastReviewed) return "Not scheduled yet \u2014 grade to start";
+  if (!card || !card.lastReviewed)
+    return "Not scheduled yet \u2014 grade to start";
   const days = daysUntilDue(card, now);
-  if (days <= 0) return "Due today";
+  if (days <= 0)
+    return "Due today";
   const day = WEEKDAYS[new Date(card.due).getDay()];
-  if (days === 1) return `Next recall: tomorrow (${day})`;
+  if (days === 1)
+    return `Next recall: tomorrow (${day})`;
   return `Next recall: ${days} days (${day})`;
 }
 function dueCount(cards, now) {
   let n = 0;
   for (const key of Object.keys(cards != null ? cards : {})) {
-    if (isDue(cards[key], now)) n += 1;
+    if (isDue(cards[key], now))
+      n += 1;
   }
   return n;
 }
@@ -613,16 +655,21 @@ function dueNotes(cards, now) {
 }
 function suggestGrade(stats) {
   const graded = stats.red + stats.yellow + stats.green;
-  if (!graded) return "good";
+  if (!graded)
+    return "good";
   const redShare = stats.red / graded;
-  if (redShare >= 0.5) return "again";
-  if (redShare > 0 || stats.yellow / graded >= 0.4) return "hard";
-  if (stats.green === graded) return "easy";
+  if (redShare >= 0.5)
+    return "again";
+  if (redShare > 0 || stats.yellow / graded >= 0.4)
+    return "hard";
+  if (stats.green === graded)
+    return "easy";
   return "good";
 }
 function dueSummary(cards, now) {
   const n = dueCount(cards, now);
-  if (!n) return "";
+  if (!n)
+    return "";
   return ` \xB7 \u23ED ${n} due`;
 }
 
@@ -685,22 +732,29 @@ var isPage = (n) => Number.isFinite(n) && n > 0 && n < MAX_PAGE_NUMBER;
 var parsePageList = (raw) => {
   const out = /* @__PURE__ */ new Set();
   for (const token of String(raw != null ? raw : "").split(/[^0-9]+/)) {
-    if (!token) continue;
+    if (!token)
+      continue;
     const n = parseInt(token, 10);
-    if (isPage(n)) out.add(n);
-    if (out.size >= MAX_LIST_LENGTH) break;
+    if (isPage(n))
+      out.add(n);
+    if (out.size >= MAX_LIST_LENGTH)
+      break;
   }
   return Array.from(out).sort((a, b) => a - b);
 };
 var parseRouteList = (raw) => {
   const out = [];
   for (const token of String(raw != null ? raw : "").split(/[^0-9]+/)) {
-    if (!token) continue;
+    if (!token)
+      continue;
     const n = parseInt(token, 10);
-    if (!isPage(n)) continue;
-    if (out.length && out[out.length - 1] === n) continue;
+    if (!isPage(n))
+      continue;
+    if (out.length && out[out.length - 1] === n)
+      continue;
     out.push(n);
-    if (out.length >= MAX_LIST_LENGTH) break;
+    if (out.length >= MAX_LIST_LENGTH)
+      break;
   }
   return out;
 };
@@ -723,9 +777,12 @@ var normalizeDwell = (v) => ({
   shuffleTo: normalizeBound(v == null ? void 0 : v.shuffleTo)
 });
 var matchesParity = (cfg, page) => {
-  if (cfg.parity === "all") return true;
-  if (cfg.parity === "custom") return cfg.pages.includes(page);
-  if (cfg.parity === "route" || cfg.parity === "shuffle") return cfg.route.includes(page);
+  if (cfg.parity === "all")
+    return true;
+  if (cfg.parity === "custom")
+    return cfg.pages.includes(page);
+  if (cfg.parity === "route" || cfg.parity === "shuffle")
+    return cfg.route.includes(page);
   return cfg.parity === "odd" ? page % 2 === 1 : page % 2 === 0;
 };
 var isRouteMode = (cfg) => cfg.enabled && cfg.seconds > 0 && (cfg.parity === "route" || cfg.parity === "shuffle") && cfg.route.length > 0;
@@ -734,11 +791,13 @@ var A4_STOP_OVERLAP = 0.08;
 function pageStops(pageTop, pageHeight, viewportHeight) {
   const h = Number(pageHeight) || 0;
   const vh = Number(viewportHeight) || 0;
-  if (!(h > 0) || !(vh > 0) || h <= vh + 4) return [pageTop];
+  if (!(h > 0) || !(vh > 0) || h <= vh + 4)
+    return [pageTop];
   const step = Math.max(40, vh * (1 - A4_STOP_OVERLAP));
   const lastOffset = h - vh;
   const out = [];
-  for (let o = 0; o < lastOffset - 1; o += step) out.push(pageTop + o);
+  for (let o = 0; o < lastOffset - 1; o += step)
+    out.push(pageTop + o);
   out.push(pageTop + lastOffset);
   return out;
 }
@@ -746,7 +805,8 @@ function dwellTargets(boxes, cfg, viewportHeight) {
   var _a;
   const out = [];
   for (const box of boxes) {
-    if (!matchesParity(cfg, box.page)) continue;
+    if (!matchesParity(cfg, box.page))
+      continue;
     const identity = (_a = box.identity) != null ? _a : String(box.page);
     if (!cfg.a4) {
       out.push({ page: box.page, top: box.top, index: 0, key: `${identity}:0`, identity });
@@ -781,7 +841,8 @@ var SPEED_MULTIPLIERS = [
 var BASE_SPEED = 60;
 function clampDwellSeconds2(value, fallback) {
   const n = Number(value);
-  if (!Number.isFinite(n)) return fallback != null ? fallback : DEFAULT_DWELL.seconds;
+  if (!Number.isFinite(n))
+    return fallback != null ? fallback : DEFAULT_DWELL.seconds;
   return clampDwellSeconds(n);
 }
 function nearestSpeedMultiplier(mult) {
@@ -805,13 +866,17 @@ function multiplierFromSpeed(px2) {
 }
 function formatDwell(seconds) {
   const s = clampDwellSeconds2(seconds);
-  if (s >= 3600) return `${Math.round(s / 3600)}h`;
-  if (s >= 60) return s % 60 === 0 ? `${s / 60}m` : `${Math.floor(s / 60)}m ${s % 60}s`;
+  if (s >= 3600)
+    return `${Math.round(s / 3600)}h`;
+  if (s >= 60)
+    return s % 60 === 0 ? `${s / 60}m` : `${Math.floor(s / 60)}m ${s % 60}s`;
   return `${s}s`;
 }
 function effectiveMode(cfg) {
-  if (cfg.mode === "custom" && cfg.picks.length === 0) return "all";
-  if ((cfg.mode === "route" || cfg.mode === "shuffle") && cfg.route.length === 0) return "all";
+  if (cfg.mode === "custom" && cfg.picks.length === 0)
+    return "all";
+  if ((cfg.mode === "route" || cfg.mode === "shuffle") && cfg.route.length === 0)
+    return "all";
   return cfg.mode;
 }
 function toDwellSettings(cfg, seconds = DEFAULT_DWELL.seconds, a4 = true) {
@@ -834,9 +899,11 @@ function parsePicks(raw) {
     (_m, a, b) => {
       const lo = Math.min(Number(a), Number(b));
       const hi = Math.max(Number(a), Number(b));
-      if (hi - lo > MAX_LIST_LENGTH) return `${lo},${hi}`;
+      if (hi - lo > MAX_LIST_LENGTH)
+        return `${lo},${hi}`;
       const out = [];
-      for (let n = lo; n <= hi; n += 1) out.push(n);
+      for (let n = lo; n <= hi; n += 1)
+        out.push(n);
       return out.join(",");
     }
   );
@@ -847,7 +914,8 @@ function inShuffleRange(cfg, ordinal) {
   var _a, _b;
   const from = Math.max(0, Math.floor((_a = cfg.shuffleFrom) != null ? _a : 0));
   const to = Math.max(0, Math.floor((_b = cfg.shuffleTo) != null ? _b : 0));
-  if (!from && !to) return true;
+  if (!from && !to)
+    return true;
   const lo = from || 1;
   const hi = to || Number.MAX_SAFE_INTEGER;
   return ordinal >= Math.min(lo, hi) && ordinal <= Math.max(lo, hi);
@@ -859,7 +927,8 @@ function buildModeStops(items, cfg, viewport, chunkTall) {
     toDwellSettings(cfg, DEFAULT_DWELL.seconds, chunkTall),
     viewport
   ).map((t) => ({ ordinal: t.page, top: t.top, part: t.index, key: t.key }));
-  if (effectiveMode(cfg) !== "shuffle") return stops;
+  if (effectiveMode(cfg) !== "shuffle")
+    return stops;
   return stops.filter((s) => inShuffleRange(cfg, s.ordinal));
 }
 function orderModeStops(stops, cfg, reverse) {
@@ -874,9 +943,11 @@ function orderModeStops(stops, cfg, reverse) {
     }
     const out = [];
     for (const ordinal of cfg.route) {
-      if (mode === "shuffle" && !inShuffleRange(cfg, ordinal)) continue;
+      if (mode === "shuffle" && !inShuffleRange(cfg, ordinal))
+        continue;
       const list = byOrdinal.get(ordinal);
-      if (list) out.push(...list);
+      if (list)
+        out.push(...list);
     }
     return out;
   }
@@ -917,7 +988,8 @@ function modeIcon(mode) {
 }
 function legDirection(target, pos, current) {
   const delta = target - pos;
-  if (Math.abs(delta) <= 0.5) return current;
+  if (Math.abs(delta) <= 0.5)
+    return current;
   return delta > 0 ? 1 : -1;
 }
 function advancePosition(pos, perFrame, dt, dir, max) {
@@ -925,13 +997,17 @@ function advancePosition(pos, perFrame, dt, dir, max) {
 }
 function seedStartOffset(scrollTop, max, reverse) {
   const top = Math.max(0, Math.min(Math.max(0, max), scrollTop));
-  if (max <= 2) return top;
-  if (reverse && top <= 1) return max;
-  if (!reverse && top >= max - 1) return 0;
+  if (max <= 2)
+    return top;
+  if (reverse && top <= 1)
+    return max;
+  if (!reverse && top >= max - 1)
+    return 0;
   return top;
 }
 function finishedAtEdge(pos, max, dir, movedPx) {
-  if (movedPx <= 1) return false;
+  if (movedPx <= 1)
+    return false;
   return dir < 0 ? pos <= 1 : pos >= max - 1;
 }
 function frameFactor(deltaMs) {
@@ -992,12 +1068,14 @@ var SPEED_MIN = 1;
 var SPEED_MAX = 1200;
 var SPEED_STEP = 20;
 function clampSpeed(px2) {
-  if (!Number.isFinite(px2)) return DEFAULT_AUTOSCROLL.scrollSpeed;
+  if (!Number.isFinite(px2))
+    return DEFAULT_AUTOSCROLL.scrollSpeed;
   const rounded = Math.round(px2 * 100) / 100;
   return Math.min(SPEED_MAX, Math.max(SPEED_MIN, rounded));
 }
 function clampHold(seconds) {
-  if (!Number.isFinite(seconds)) return DEFAULT_AUTOSCROLL.scrollHold;
+  if (!Number.isFinite(seconds))
+    return DEFAULT_AUTOSCROLL.scrollHold;
   return Math.min(DWELL_MAX, Math.max(0, Math.round(seconds)));
 }
 var CALLOUT_KINDS = [
@@ -1034,14 +1112,20 @@ var KIND_WORD_ALIASES = {
 var GRADED_COLORS = ["red", "yellow", "green"];
 function kindOf(calloutType) {
   const t = (calloutType != null ? calloutType : "").toLowerCase();
-  if (t.includes("recall-red")) return "red";
-  if (t.includes("recall-yellow")) return "yellow";
-  if (t.includes("recall-green")) return "green";
+  if (t.includes("recall-red"))
+    return "red";
+  if (t.includes("recall-yellow"))
+    return "yellow";
+  if (t.includes("recall-green"))
+    return "green";
   const words = t.split(/[^a-z]+/).filter(Boolean);
-  for (const kind of CALLOUT_KINDS) if (words.includes(kind)) return kind;
+  for (const kind of CALLOUT_KINDS)
+    if (words.includes(kind))
+      return kind;
   for (const word of words) {
     const alias = KIND_WORD_ALIASES[word];
-    if (alias) return alias;
+    if (alias)
+      return alias;
   }
   return "other";
 }
@@ -1049,8 +1133,10 @@ function isUngraded(color) {
   return !GRADED_COLORS.includes(color);
 }
 function matchesFilter(color, filter) {
-  if (!filter || filter.length === 0) return true;
-  if (filter.includes(color)) return true;
+  if (!filter || filter.length === 0)
+    return true;
+  if (filter.includes(color))
+    return true;
   return filter.includes("other") && isUngraded(color);
 }
 function planStops(stops, filter, reverse) {
@@ -1059,9 +1145,11 @@ function planStops(stops, filter, reverse) {
   return reverse ? sorted.reverse() : sorted;
 }
 function firstStopFrom(plan, scrollTop, reverse) {
-  if (plan.length === 0) return -1;
+  if (plan.length === 0)
+    return -1;
   const hit = plan.findIndex((s) => reverse ? s.top <= scrollTop : s.top >= scrollTop);
-  if (hit >= 0) return hit;
+  if (hit >= 0)
+    return hit;
   return reverse ? plan.length - 1 : 0;
 }
 var STOP_ANCHORS = {
@@ -1107,7 +1195,8 @@ var KIND_ORDER = [
 ];
 var UNGRADED_COLORS = KIND_ORDER.filter(isUngraded);
 function normalizeFilter(filter) {
-  if (!filter || filter.length === 0) return [];
+  if (!filter || filter.length === 0)
+    return [];
   return KIND_ORDER.filter((c) => filter.includes(c));
 }
 function sameFilter(a, b) {
@@ -1118,8 +1207,10 @@ function sameFilter(a, b) {
 function colorCounts(colors) {
   const out = { red: 0, yellow: 0, green: 0, other: 0 };
   for (const c of colors) {
-    if (c === "red" || c === "yellow" || c === "green") out[c] += 1;
-    else out.other += 1;
+    if (c === "red" || c === "yellow" || c === "green")
+      out[c] += 1;
+    else
+      out.other += 1;
   }
   return out;
 }
@@ -1144,9 +1235,11 @@ var COLOR_ICON = {
   other: "\u26AA"
 };
 function filterLabel(filter) {
-  if (!filter || filter.length === 0) return "all toggles";
+  if (!filter || filter.length === 0)
+    return "all toggles";
   const norm = normalizeFilter(filter);
-  if (norm.length === 1 && norm[0] === "other") return "\u26AA notes (!note / !tip)";
+  if (norm.length === 1 && norm[0] === "other")
+    return "\u26AA notes (!note / !tip)";
   return norm.map((c) => COLOR_ICON[c]).join(" ");
 }
 function sessionLabel(s, stops) {
@@ -1158,7 +1251,8 @@ function sessionLabel(s, stops) {
 
 // src/filter-sync.ts
 function effectiveQuizFilter(s) {
-  if (!s.quizUseColorFilter) return [];
+  if (!s.quizUseColorFilter)
+    return [];
   return normalizeFilter(s.quizFilter.length ? s.quizFilter : s.scrollFilter);
 }
 function applyScrollFilter(s, filter) {
@@ -1191,13 +1285,15 @@ function withMode(leafState, viewState, mode) {
 }
 function enterReadingMode(leaf, view, opts) {
   var _a;
-  if (!needsReadingMode(view.getMode(), opts.forceReading)) return opts.existing;
+  if (!needsReadingMode(view.getMode(), opts.forceReading))
+    return opts.existing;
   const snapshot = (_a = opts.existing) != null ? _a : snapshotMode(view.getMode(), opts.restoreMode);
   leaf.setViewState(withMode(leaf.getViewState(), view.getState(), "preview"), { history: false });
   return snapshot;
 }
 function exitReadingMode(leaf, view, snapshot) {
-  if (!(snapshot == null ? void 0 : snapshot.shouldRestore) || !leaf || !view) return false;
+  if (!(snapshot == null ? void 0 : snapshot.shouldRestore) || !leaf || !view)
+    return false;
   leaf.setViewState(withMode(leaf.getViewState(), view.getState(), snapshot.mode), { history: false });
   return true;
 }
@@ -1282,12 +1378,15 @@ function debugLines(f) {
   }
   lines.push(`event ${f.lastEvent || "\u2014"}`);
   lines.push(`grade ${f.lastGrade || "\u2014"}`);
-  if (f.thinkPhase) lines.push(`think ${f.thinkPhase}`);
+  if (f.thinkPhase)
+    lines.push(`think ${f.thinkPhase}`);
   if (f.timing && f.timing.length) {
     lines.push("\u2014 timings \u2014");
-    for (const t of f.timing) lines.push(t);
+    for (const t of f.timing)
+      lines.push(t);
   }
-  if (f.progress) lines.push(f.progress);
+  if (f.progress)
+    lines.push(f.progress);
   return lines;
 }
 var ScrollDebugOverlay = class {
@@ -1296,14 +1395,16 @@ var ScrollDebugOverlay = class {
     this.body = null;
   }
   mount(parent) {
-    if (this.root) return;
+    if (this.root)
+      return;
     const root = parent.createDiv({ cls: "notion-toggle-scroll-debug" });
     root.createDiv({ cls: "notion-toggle-scroll-debug-title", text: "autoscroll debug" });
     this.body = root.createDiv({ cls: "notion-toggle-scroll-debug-body" });
     this.root = root;
   }
   update(frame) {
-    if (!this.body) return;
+    if (!this.body)
+      return;
     this.body.empty();
     for (const line of debugLines(frame)) {
       this.body.createDiv({ text: line });
@@ -1391,7 +1492,8 @@ function calloutTypeOfLine(line) {
 }
 function nextTrafficColor(current) {
   const idx = TRAFFIC_CYCLE.indexOf(current.trim());
-  if (idx < 0) return TRAFFIC_CYCLE[0];
+  if (idx < 0)
+    return TRAFFIC_CYCLE[0];
   return TRAFFIC_CYCLE[(idx + 1) % TRAFFIC_CYCLE.length];
 }
 function recolorHeaderLine(line, callout) {
@@ -1469,7 +1571,8 @@ var HOLD_MOVE_TOLERANCE_PX = 12;
 var HOLD_IGNORE_SELECTOR = ".ntt-fab-wrap, .ntt-scroll-bar, .modal, .modal-container, .menu, .notice, button, a, input, textarea, select";
 function isIgnoredHoldTarget(target) {
   const el2 = target;
-  if (!el2 || typeof el2.closest !== "function") return false;
+  if (!el2 || typeof el2.closest !== "function")
+    return false;
   return !!el2.closest(HOLD_IGNORE_SELECTOR);
 }
 function movedTooFar(dx, dy, tolerance = HOLD_MOVE_TOLERANCE_PX) {
@@ -1486,8 +1589,10 @@ var HoldPause = class {
     this.doc = null;
     this.down = (e) => {
       var _a;
-      if (!this.cb.isActive()) return;
-      if (isIgnoredHoldTarget(e.target)) return;
+      if (!this.cb.isActive())
+        return;
+      if (isIgnoredHoldTarget(e.target))
+        return;
       this.startX = e.clientX;
       this.startY = e.clientY;
       this.cancel();
@@ -1498,18 +1603,22 @@ var HoldPause = class {
       }, (_a = this.cb.holdMs) != null ? _a : HOLD_PAUSE_MS);
     };
     this.move = (e) => {
-      if (this.timer === null) return;
-      if (movedTooFar(e.clientX - this.startX, e.clientY - this.startY)) this.cancel();
+      if (this.timer === null)
+        return;
+      if (movedTooFar(e.clientX - this.startX, e.clientY - this.startY))
+        this.cancel();
     };
     this.up = () => {
       this.cancel();
-      if (!this.held) return;
+      if (!this.held)
+        return;
       this.held = false;
       this.cb.onRelease();
     };
   }
   attach(doc = document) {
-    if (this.attached) return;
+    if (this.attached)
+      return;
     this.attached = true;
     doc.addEventListener("pointerdown", this.down, true);
     doc.addEventListener("pointermove", this.move, true);
@@ -1520,7 +1629,8 @@ var HoldPause = class {
   }
   detach() {
     var _a;
-    if (!this.attached) return;
+    if (!this.attached)
+      return;
     this.attached = false;
     const doc = (_a = this.doc) != null ? _a : document;
     doc.removeEventListener("pointerdown", this.down, true);
@@ -1561,7 +1671,8 @@ function isProgrammaticScroll(now = Date.now()) {
 var SVG_NS = "http://www.w3.org/2000/svg";
 function svgEl(tag, attrs) {
   const el2 = document.createElementNS(SVG_NS, tag);
-  for (const [k, v] of Object.entries(attrs)) el2.setAttribute(k, v);
+  for (const [k, v] of Object.entries(attrs))
+    el2.setAttribute(k, v);
   return el2;
 }
 function buildLayersIcon(reverse = false, running = false) {
@@ -1577,8 +1688,10 @@ function buildLayersIcon(reverse = false, running = false) {
     "stroke-linejoin": "round"
   });
   svg.classList.add("ntt-fab-layers");
-  if (reverse) svg.classList.add("is-reverse");
-  if (running) svg.classList.add("is-stepping");
+  if (reverse)
+    svg.classList.add("is-reverse");
+  if (running)
+    svg.classList.add("is-stepping");
   const plate = svgEl("path", { d: "M12 2.6 21.2 8 12 13.4 2.8 8Z" });
   plate.classList.add("ntt-layer", "ntt-layer-1");
   const mid = svgEl("path", { d: "M3 12.1 12 17.3 21 12.1" });
@@ -1607,7 +1720,8 @@ var ScrollFab = class {
     this.running = false;
     this.wake = () => this.show();
     this.wakeScroll = () => {
-      if (isProgrammaticScroll()) return;
+      if (isProgrammaticScroll())
+        return;
       this.show();
     };
     this.wrap = document.createElement("div");
@@ -1632,8 +1746,10 @@ var ScrollFab = class {
     this.root.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        if (e.shiftKey) this.cb.onLongPress();
-        else this.cb.onTap();
+        if (e.shiftKey)
+          this.cb.onLongPress();
+        else
+          this.cb.onTap();
         this.show();
       }
     });
@@ -1651,7 +1767,8 @@ var ScrollFab = class {
       }, FAB_LONG_PRESS_MS);
     });
     this.root.addEventListener("pointermove", (e) => {
-      if (this.pressTimer === null) return;
+      if (this.pressTimer === null)
+        return;
       const dx = Math.abs(e.clientX - this.startX);
       const dy = Math.abs(e.clientY - this.startY);
       if (dx > FAB_MOVE_TOLERANCE_PX || dy > FAB_MOVE_TOLERANCE_PX) {
@@ -1689,7 +1806,8 @@ var ScrollFab = class {
   }
   /** v1.4.2 — direction indicator: the chevron flips while reverse is on. */
   setReverse(reverse) {
-    if (this.reverse === reverse) return;
+    if (this.reverse === reverse)
+      return;
     this.reverse = reverse;
     this.setRunning(this.running);
   }
@@ -1722,7 +1840,8 @@ var ScrollFab = class {
   arm() {
     var _a;
     this.clearHide();
-    if (this.pinned) return;
+    if (this.pinned)
+      return;
     this.hideTimer = window.setTimeout(() => {
       this.hideTimer = null;
       this.wrap.classList.add("is-hidden");
@@ -1769,14 +1888,17 @@ function canScroll(el2) {
 }
 function isVisible(el2) {
   const h = el2;
-  if (!h) return false;
+  if (!h)
+    return false;
   return h.offsetParent !== null;
 }
 function viewScrollCandidates(root, contentEl) {
   const out = [];
   for (const scope of [root, contentEl]) {
-    if (!scope) continue;
-    for (const sel of VIEW_SCROLLER_SELECTORS) out.push(scope.querySelector(sel));
+    if (!scope)
+      continue;
+    for (const sel of VIEW_SCROLLER_SELECTORS)
+      out.push(scope.querySelector(sel));
   }
   out.push(root, contentEl);
   return dedupe(out);
@@ -1785,7 +1907,8 @@ function documentScrollCandidates(doc) {
   const out = [];
   const leaf = doc.querySelector(".workspace-leaf.mod-active");
   for (const scope of [leaf, doc]) {
-    if (!scope) continue;
+    if (!scope)
+      continue;
     for (const sel of VIEW_SCROLLER_SELECTORS) {
       out.push(...Array.from(scope.querySelectorAll(sel)));
     }
@@ -1794,15 +1917,22 @@ function documentScrollCandidates(doc) {
   return dedupe(out);
 }
 function pickScrollContainer(candidates) {
-  for (const el2 of candidates) if (canScroll(el2) && isVisible(el2)) return el2;
-  for (const el2 of candidates) if (canScroll(el2)) return el2;
+  for (const el2 of candidates)
+    if (canScroll(el2) && isVisible(el2))
+      return el2;
+  for (const el2 of candidates)
+    if (canScroll(el2))
+      return el2;
   return null;
 }
 function pickAnyContainer(candidates) {
   var _a;
   const scroller = pickScrollContainer(candidates);
-  if (scroller) return scroller;
-  for (const el2 of candidates) if (isVisible(el2)) return el2;
+  if (scroller)
+    return scroller;
+  for (const el2 of candidates)
+    if (isVisible(el2))
+      return el2;
   return (_a = candidates.find(Boolean)) != null ? _a : null;
 }
 function shouldWaitForScrollable(hasView, sourceHasToggles, retries) {
@@ -1812,7 +1942,8 @@ function dedupe(list) {
   const seen = /* @__PURE__ */ new Set();
   const out = [];
   for (const el2 of list) {
-    if (!el2 || seen.has(el2)) continue;
+    if (!el2 || seen.has(el2))
+      continue;
     seen.add(el2);
     out.push(el2);
   }
@@ -1908,8 +2039,10 @@ var TOOLBAR_STEPS = [
 ];
 function toggleGuideDone(done, id) {
   const set = new Set(done);
-  if (set.has(id)) set.delete(id);
-  else set.add(id);
+  if (set.has(id))
+    set.delete(id);
+  else
+    set.add(id);
   return TOOLBAR_COMMANDS.filter((c) => set.has(c.id)).map((c) => c.id);
 }
 function guideProgress(done) {
@@ -1942,13 +2075,15 @@ function normalizeAdvanceBy(value) {
 }
 function clampScreenOverlap(value) {
   const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) return 0;
+  if (!Number.isFinite(n) || n <= 0)
+    return 0;
   return Math.min(MAX_SCREEN_OVERLAP, Math.round(n * 100) / 100);
 }
 function screenStops(contentHeight, viewport, overlap = DEFAULT_SCREEN_OVERLAP) {
   const vh = Math.max(1, Math.floor(Number.isFinite(Number(viewport)) ? Number(viewport) : 0));
   const height = Math.max(0, Math.floor(Number.isFinite(Number(contentHeight)) ? Number(contentHeight) : 0));
-  if (height <= vh) return [0];
+  if (height <= vh)
+    return [0];
   const step = Math.max(1, Math.round(vh * (1 - clampScreenOverlap(overlap))));
   const last = height - vh;
   const out = [];
@@ -1970,13 +2105,15 @@ var MIN_SCREEN_DWELL_MS = 250;
 var MAX_SCREEN_DWELL_MS = 12e4;
 function clampViewportPct(value) {
   const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) return DEFAULT_VIEWPORT_PCT;
+  if (!Number.isFinite(n) || n <= 0)
+    return DEFAULT_VIEWPORT_PCT;
   const pct2 = n > 1 ? n / 100 : n;
   return Math.min(1, Math.max(MIN_VIEWPORT_PCT, Math.round(pct2 * 100) / 100));
 }
 function clampScreenDwellMs(value) {
   const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) return DEFAULT_SCREEN_DWELL_MS;
+  if (!Number.isFinite(n) || n <= 0)
+    return DEFAULT_SCREEN_DWELL_MS;
   return Math.min(MAX_SCREEN_DWELL_MS, Math.max(MIN_SCREEN_DWELL_MS, Math.round(n)));
 }
 function usableViewport(clientHeight, pct2 = DEFAULT_VIEWPORT_PCT) {
@@ -1985,9 +2122,11 @@ function usableViewport(clientHeight, pct2 = DEFAULT_VIEWPORT_PCT) {
   return Math.max(1, Math.floor(vh * clampViewportPct(pct2)));
 }
 function filterScreenStops(stops, toggleTops, viewport, prune = true) {
-  if (!prune) return stops;
+  if (!prune)
+    return stops;
   const tops = toggleTops.filter((t) => Number.isFinite(t));
-  if (tops.length === 0) return stops;
+  if (tops.length === 0)
+    return stops;
   const vh = Math.max(1, Math.floor(viewport));
   const kept = stops.filter((top) => tops.some((t) => t >= top && t < top + vh));
   return kept;
@@ -2033,9 +2172,11 @@ function rendererOf(view) {
 function ensureFullRender(view) {
   var _a;
   const renderer = rendererOf(view);
-  if (!renderer || typeof renderer.showAll !== "boolean") return NO_FULL_RENDER;
+  if (!renderer || typeof renderer.showAll !== "boolean")
+    return NO_FULL_RENDER;
   const previous = renderer.showAll;
-  if (previous) return { renderer, previous, forced: false };
+  if (previous)
+    return { renderer, previous, forced: false };
   try {
     renderer.showAll = true;
     (_a = renderer.rerender) == null ? void 0 : _a.call(renderer, true);
@@ -2046,7 +2187,8 @@ function ensureFullRender(view) {
 }
 function restoreFullRender(handle) {
   var _a, _b;
-  if (!(handle == null ? void 0 : handle.forced) || !handle.renderer) return false;
+  if (!(handle == null ? void 0 : handle.forced) || !handle.renderer)
+    return false;
   try {
     handle.renderer.showAll = handle.previous;
     (_b = (_a = handle.renderer).rerender) == null ? void 0 : _b.call(_a, true);
@@ -2066,24 +2208,29 @@ function scanSourceToggles(text) {
   var _a, _b;
   const src = withoutFences(String(text != null ? text : ""));
   const kinds = [];
-  for (const m of src.matchAll(CALLOUT_RE)) kinds.push(kindOf(m[1]));
+  for (const m of src.matchAll(CALLOUT_RE))
+    kinds.push(kindOf(m[1]));
   const details = (_b = (_a = src.match(DETAILS_RE)) == null ? void 0 : _a.length) != null ? _b : 0;
-  for (let i = 0; i < details; i++) kinds.push("other");
+  for (let i = 0; i < details; i++)
+    kinds.push("other");
   return { kinds, total: kinds.length };
 }
 function sourceMatchCount(text, filter = []) {
   const { kinds } = scanSourceToggles(text);
-  if (!filter || filter.length === 0) return kinds.length;
+  if (!filter || filter.length === 0)
+    return kinds.length;
   return kinds.filter((k) => matchesFilter(k, filter)).length;
 }
 function sourceKindCounts(text) {
   var _a;
   const out = {};
-  for (const kind of scanSourceToggles(text).kinds) out[kind] = ((_a = out[kind]) != null ? _a : 0) + 1;
+  for (const kind of scanSourceToggles(text).kinds)
+    out[kind] = ((_a = out[kind]) != null ? _a : 0) + 1;
   return out;
 }
 function isFullyRendered(domCount, sourceTotal) {
-  if (!Number.isFinite(sourceTotal) || sourceTotal <= 0) return true;
+  if (!Number.isFinite(sourceTotal) || sourceTotal <= 0)
+    return true;
   return Number(domCount) >= sourceTotal;
 }
 
@@ -2125,7 +2272,8 @@ var newCard2 = (page) => ({
 var isNewCard = (c) => !c.lastReviewedAt || c.stability <= 0;
 var elapsedDays = (card, now) => Math.max(0, (now - card.lastReviewedAt) / MS_PER_DAY);
 function retrievability(card, now) {
-  if (isNewCard(card)) return 0;
+  if (isNewCard(card))
+    return 0;
   const t = elapsedDays(card, now);
   return clamp2(Math.pow(1 + FACTOR * (t / card.stability), DECAY), 0, 1);
 }
@@ -2167,11 +2315,16 @@ function reviewCard(card, grade, now) {
   };
 }
 function inferGrade(ratio, revisited = false) {
-  if (revisited) return 1;
-  if (!Number.isFinite(ratio) || ratio <= 0) return 3;
-  if (ratio >= 2) return 1;
-  if (ratio >= 1.3) return 2;
-  if (ratio >= 0.7) return 3;
+  if (revisited)
+    return 1;
+  if (!Number.isFinite(ratio) || ratio <= 0)
+    return 3;
+  if (ratio >= 2)
+    return 1;
+  if (ratio >= 1.3)
+    return 2;
+  if (ratio >= 0.7)
+    return 3;
   return 4;
 }
 function seededRandom(seed) {
@@ -2201,8 +2354,10 @@ function interleave(pages, gap = 3) {
   return out;
 }
 function weave(a, b, mix) {
-  if (mix <= 0 || !b.length) return [...a, ...b];
-  if (mix >= 1 || !a.length) return [...b, ...a];
+  if (mix <= 0 || !b.length)
+    return [...a, ...b];
+  if (mix >= 1 || !a.length)
+    return [...b, ...a];
   const out = [];
   let ia = 0;
   let ib = 0;
@@ -2231,10 +2386,12 @@ function buildShuffleRoute(cards, totalPages, opts = {}) {
     Math.max(1, Math.floor(totalPages || 0)),
     opts.to && opts.to > 0 ? Math.floor(opts.to) : Number.MAX_SAFE_INTEGER
   );
-  if (!(hi >= lo)) return [];
+  if (!(hi >= lo))
+    return [];
   const byPage = new Map(cards.map((c) => [c.page, c]));
   const deck = [];
-  for (let p = lo; p <= hi; p++) deck.push((_g = byPage.get(p)) != null ? _g : newCard2(p));
+  for (let p = lo; p <= hi; p++)
+    deck.push((_g = byPage.get(p)) != null ? _g : newCard2(p));
   const dueAll = deck.filter((c) => isDue2(c, now, retention));
   const leeches = dueAll.filter((c) => c.lapses >= leechThreshold);
   const due = dueAll.filter((c) => c.lapses < leechThreshold);
@@ -2278,8 +2435,10 @@ function deckStats(cards, totalPages, opts = {}) {
     }
     seen++;
     sum += retrievability(c, now);
-    if (isDue2(c, now, retention)) dueCount2++;
-    if (c.lapses >= leechThreshold) leechCount++;
+    if (isDue2(c, now, retention))
+      dueCount2++;
+    if (c.lapses >= leechThreshold)
+      leechCount++;
   }
   return {
     total,
@@ -2302,7 +2461,8 @@ function forecastDue(cards, totalPages, days = 7, opts = {}) {
   const out = new Array(Math.max(1, days)).fill(0);
   for (let p = lo; p <= hi; p++) {
     const c = byPage.get(p);
-    if (!c || isNewCard(c)) continue;
+    if (!c || isNewCard(c))
+      continue;
     for (let d = 0; d < out.length; d++) {
       const at = now + d * MS_PER_DAY;
       const wasDue = d > 0 && isDue2(c, now + (d - 1) * MS_PER_DAY, retention);
@@ -2319,12 +2479,15 @@ function forecastDue(cards, totalPages, days = 7, opts = {}) {
 var MAX_DECK_PAGES = 500;
 var isFinitePositive = (n) => typeof n === "number" && Number.isFinite(n) && n > 0;
 function normalizeDeck(raw) {
-  if (!Array.isArray(raw)) return [];
+  if (!Array.isArray(raw))
+    return [];
   const out = [];
   for (const item of raw) {
-    if (!item || typeof item !== "object") continue;
+    if (!item || typeof item !== "object")
+      continue;
     const c = item;
-    if (!isFinitePositive(c.page)) continue;
+    if (!isFinitePositive(c.page))
+      continue;
     out.push({
       page: Math.floor(c.page),
       difficulty: Number.isFinite(c.difficulty) ? Math.max(0, Math.min(10, c.difficulty)) : 0,
@@ -2333,33 +2496,40 @@ function normalizeDeck(raw) {
       reps: Number.isFinite(c.reps) ? Math.max(0, Math.floor(c.reps)) : 0,
       lapses: Number.isFinite(c.lapses) ? Math.max(0, Math.floor(c.lapses)) : 0
     });
-    if (out.length >= MAX_DECK_PAGES) break;
+    if (out.length >= MAX_DECK_PAGES)
+      break;
   }
   return out;
 }
 function loadDeck(store, key) {
-  if (!store || !key) return [];
+  if (!store || !key)
+    return [];
   return normalizeDeck(store[key]);
 }
 function saveDeck(store, key, cards) {
   const next = { ...store != null ? store : {} };
-  if (!key) return next;
+  if (!key)
+    return next;
   next[key] = cards.slice(0, MAX_DECK_PAGES);
   return next;
 }
 function resetDeck(store, key) {
   const next = { ...store != null ? store : {} };
-  if (key) delete next[key];
+  if (key)
+    delete next[key];
   return next;
 }
 function recordReview(store, key, page, grade, now = Date.now()) {
-  if (!key || !isFinitePositive(page)) return [];
+  if (!key || !isFinitePositive(page))
+    return [];
   const deck = loadDeck(store, key);
   const idx = deck.findIndex((c) => c.page === page);
   const current = idx >= 0 ? deck[idx] : newCard2(Math.floor(page));
   const next = reviewCard(current, grade, now);
-  if (idx >= 0) deck[idx] = next;
-  else deck.push(next);
+  if (idx >= 0)
+    deck[idx] = next;
+  else
+    deck.push(next);
   return deck;
 }
 
@@ -2388,19 +2558,23 @@ var QUIZ_SECONDS_MAX = 43200;
 var QUIZ_PRESETS = [10, 30, 60, 300, 900, 3600];
 var REVEAL_SECONDS_MAX = 3600;
 function clampQuizSeconds(seconds) {
-  if (!Number.isFinite(seconds)) return DEFAULT_QUIZ.quizSeconds;
+  if (!Number.isFinite(seconds))
+    return DEFAULT_QUIZ.quizSeconds;
   return Math.min(QUIZ_SECONDS_MAX, Math.max(QUIZ_SECONDS_MIN, Math.round(seconds)));
 }
 function clampRevealSeconds(seconds) {
-  if (!Number.isFinite(seconds)) return DEFAULT_QUIZ.quizRevealSeconds;
+  if (!Number.isFinite(seconds))
+    return DEFAULT_QUIZ.quizRevealSeconds;
   return Math.min(REVEAL_SECONDS_MAX, Math.max(1, Math.round(seconds)));
 }
 function formatQuizSeconds(seconds) {
   const s = Math.max(0, Math.round(seconds));
-  if (s < 60) return `${s}s`;
+  if (s < 60)
+    return `${s}s`;
   const h = Math.floor(s / 3600);
   const m = Math.floor(s % 3600 / 60);
-  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  if (h > 0)
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
   const remS = s % 60;
   return remS > 0 ? `${m}m ${remS}s` : `${m}m`;
 }
@@ -2420,7 +2594,8 @@ function parseQuestionSeconds(title, fallback) {
   ];
   for (const re of patterns) {
     const m = text.match(re);
-    if (m) return clampQuizSeconds(Number(m[1]) * unitMultiplier(m[2]));
+    if (m)
+      return clampQuizSeconds(Number(m[1]) * unitMultiplier(m[2]));
   }
   return clampQuizSeconds(fallback);
 }
@@ -2499,7 +2674,8 @@ function advance(state, titles, s) {
   };
 }
 function revealNow(state, s) {
-  if (state.phase !== "question") return { state, event: null };
+  if (state.phase !== "question")
+    return { state, event: null };
   return {
     state: {
       ...state,
@@ -2511,7 +2687,8 @@ function revealNow(state, s) {
   };
 }
 function skipQuestion(state, titles, s) {
-  if (state.phase === "done") return { state, event: null };
+  if (state.phase === "done")
+    return { state, event: null };
   return advance({ ...state, answered: state.answered + 1 }, titles, s);
 }
 function pauseQuiz(state) {
@@ -2521,14 +2698,17 @@ function resumeQuiz(state) {
   return state.phase === "done" ? state : { ...state, running: true };
 }
 function quizProgressLabel(state) {
-  if (state.total === 0) return "Q 0/0";
+  if (state.total === 0)
+    return "Q 0/0";
   const shown = state.phase === "done" ? state.total : Math.min(state.at + 1, state.total);
   return `Q ${shown}/${state.total}`;
 }
 function quizPhaseRatio(state, titles, s) {
-  if (state.phase === "done") return 0;
+  if (state.phase === "done")
+    return 0;
   const total = state.phase === "reveal" ? clampRevealSeconds(s.quizRevealSeconds) * 1e3 : questionMs(titles[state.at], s);
-  if (!(total > 0)) return 0;
+  if (!(total > 0))
+    return 0;
   return Math.min(1, Math.max(0, state.remaining / total));
 }
 function quizSummary(state) {
@@ -2577,7 +2757,8 @@ function toggleTypeOf(el2) {
   return (_a = el2.getAttribute("data-callout")) != null ? _a : el2.className || (el2.tagName.toLowerCase() === "details" ? "details" : "");
 }
 function isToggleOpen(el2) {
-  if (el2.tagName.toLowerCase() === "details") return el2.open;
+  if (el2.tagName.toLowerCase() === "details")
+    return el2.open;
   return !el2.classList.contains("is-collapsed");
 }
 function setToggleOpen(el2, open) {
@@ -2585,10 +2766,12 @@ function setToggleOpen(el2, open) {
     el2.open = open;
     return;
   }
-  if (isToggleOpen(el2) === open) return;
+  if (isToggleOpen(el2) === open)
+    return;
   const title = el2.querySelector(".callout-title");
   title == null ? void 0 : title.click();
-  if (isToggleOpen(el2) !== open) el2.classList.toggle("is-collapsed", !open);
+  if (isToggleOpen(el2) !== open)
+    el2.classList.toggle("is-collapsed", !open);
 }
 function toggleTitleOf(el2) {
   var _a, _b, _c, _d, _e, _f;
@@ -2602,7 +2785,8 @@ function toggleTitleOf(el2) {
 var SVG_NS2 = "http://www.w3.org/2000/svg";
 function svgEl2(tag, attrs) {
   const el2 = document.createElementNS(SVG_NS2, tag);
-  for (const [k, v] of Object.entries(attrs)) el2.setAttribute(k, v);
+  for (const [k, v] of Object.entries(attrs))
+    el2.setAttribute(k, v);
   return el2;
 }
 function buildQuizIcon(kind) {
@@ -2713,7 +2897,8 @@ function paintQuizHud(input) {
 var RING_RADIUS = 8;
 var RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 function clampRatio(ratio) {
-  if (!Number.isFinite(ratio)) return 0;
+  if (!Number.isFinite(ratio))
+    return 0;
   return Math.min(1, Math.max(0, ratio));
 }
 function ringOffset(ratio) {
@@ -2724,7 +2909,8 @@ function formatRingTime(ms3) {
   const h = Math.floor(total / 3600);
   const m = Math.floor(total % 3600 / 60);
   const s = total % 60;
-  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  if (h > 0)
+    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 function strictTitleRowOf(el2) {
@@ -2777,7 +2963,8 @@ var QuizRing = class {
       this.root.remove();
       return false;
     }
-    if (this.root.parentElement !== row) row.appendChild(this.root);
+    if (this.root.parentElement !== row)
+      row.appendChild(this.root);
     return true;
   }
   render(d) {
@@ -2854,7 +3041,8 @@ var QuizBoard = class {
     return this.rings.size;
   }
   destroy() {
-    for (const ring of this.rings.values()) ring.destroy();
+    for (const ring of this.rings.values())
+      ring.destroy();
     this.rings.clear();
   }
 };
@@ -2880,25 +3068,31 @@ function setQuizVisible(el2, visible) {
   const content = el2.querySelector(".callout-content");
   if (content) {
     const height = Math.max(content.scrollHeight, content.getBoundingClientRect().height);
-    if (height > 0) content.style.setProperty("--ntt-reveal-height", `${height}px`);
+    if (height > 0)
+      content.style.setProperty("--ntt-reveal-height", `${height}px`);
   }
   el2.classList.toggle(QUIZ_SHOWN_CLASS, visible);
   el2.classList.toggle(QUIZ_HIDDEN_CLASS, !visible);
 }
 function applyQuizVisibilityClasses(els, index, revealed, closeOthers) {
   els.forEach((el2, i) => {
-    if (!el2) return;
-    if (i === index) setQuizVisible(el2, revealed);
-    else if (closeOthers) setQuizVisible(el2, false);
+    if (!el2)
+      return;
+    if (i === index)
+      setQuizVisible(el2, revealed);
+    else if (closeOthers)
+      setQuizVisible(el2, false);
   });
 }
 function clearQuizVisibility(els, snapshot = []) {
   els.forEach((el2, i) => {
     var _a, _b;
-    if (!el2) return;
+    if (!el2)
+      return;
     el2.classList.remove(QUIZ_HIDDEN_CLASS, QUIZ_SHOWN_CLASS);
     (_a = el2.querySelector(".callout-content")) == null ? void 0 : _a.style.removeProperty("--ntt-reveal-height");
-    if (isDetails(el2)) el2.open = !!((_b = snapshot[i]) == null ? void 0 : _b.open);
+    if (isDetails(el2))
+      el2.open = !!((_b = snapshot[i]) == null ? void 0 : _b.open);
   });
 }
 
@@ -2909,27 +3103,35 @@ function needsHeal(els) {
 function healQuizEls(current, titles, fresh, titleOf) {
   const used = /* @__PURE__ */ new Set();
   const norm = (s) => s.replace(/\s+/g, " ").trim();
-  for (const el2 of current) if (el2 && el2.isConnected) used.add(el2);
+  for (const el2 of current)
+    if (el2 && el2.isConnected)
+      used.add(el2);
   const sameCount = fresh.length === current.length;
   return current.map((el2, i) => {
     var _a;
-    if (el2 && el2.isConnected) return el2;
+    if (el2 && el2.isConnected)
+      return el2;
     const want = norm((_a = titles[i]) != null ? _a : "");
     const hit = want ? fresh.find((f) => !used.has(f) && norm(titleOf(f)) === want) : void 0;
     const chosen = hit != null ? hit : sameCount && fresh[i] && !used.has(fresh[i]) ? fresh[i] : void 0;
-    if (chosen) used.add(chosen);
+    if (chosen)
+      used.add(chosen);
     return chosen != null ? chosen : el2;
   });
 }
 function revealLanded(el2) {
   var _a;
-  if (!el2.isConnected) return false;
-  if (el2.tagName.toLowerCase() === "details") return el2.open;
+  if (!el2.isConnected)
+    return false;
+  if (el2.tagName.toLowerCase() === "details")
+    return el2.open;
   const content = el2.querySelector(".callout-content");
-  if (!content) return false;
+  if (!content)
+    return false;
   const view = (_a = el2.ownerDocument) == null ? void 0 : _a.defaultView;
   if (view && typeof view.getComputedStyle === "function") {
-    if (view.getComputedStyle(content).display === "none") return false;
+    if (view.getComputedStyle(content).display === "none")
+      return false;
   }
   return true;
 }
@@ -2950,13 +3152,17 @@ var DEFAULT_THINK = {
 };
 function isIconImage(icon) {
   const v = (icon != null ? icon : "").trim();
-  if (!v) return false;
-  if (/^data:image\//i.test(v)) return true;
-  if (!/^(https?:|app:|file:|\/|\.{0,2}\/)/i.test(v) && !v.includes("/")) return false;
+  if (!v)
+    return false;
+  if (/^data:image\//i.test(v))
+    return true;
+  if (!/^(https?:|app:|file:|\/|\.{0,2}\/)/i.test(v) && !v.includes("/"))
+    return false;
   return /\.(png|gif|svg|webp|jpe?g)(\?.*)?$/i.test(v);
 }
 function clampThinkSeconds(seconds) {
-  if (!Number.isFinite(seconds)) return DEFAULT_THINK.scrollThinkSeconds;
+  if (!Number.isFinite(seconds))
+    return DEFAULT_THINK.scrollThinkSeconds;
   return Math.min(THINK_SECONDS_MAX, Math.max(THINK_SECONDS_MIN, Math.round(seconds)));
 }
 function unitMultiplier2(unit) {
@@ -2975,19 +3181,22 @@ function parseThinkSeconds(title, fallback) {
   ];
   for (const re of patterns) {
     const m = text.match(re);
-    if (m) return clampThinkSeconds(Number(m[1]) * unitMultiplier2(m[2]));
+    if (m)
+      return clampThinkSeconds(Number(m[1]) * unitMultiplier2(m[2]));
   }
   return clampThinkSeconds(fallback);
 }
 function thinkMsFor(title, s) {
-  if (!s.scrollThinkEnabled) return 0;
+  if (!s.scrollThinkEnabled)
+    return 0;
   return parseThinkSeconds(title, s.scrollThinkSeconds) * 1e3;
 }
 function thinkCountdownLabel(msLeft, icon = "\u{1F914}") {
   const face = isIconImage(icon) ? "" : (icon != null ? icon : "").trim() || "\u{1F914}";
   const lead = face ? `${face} ` : "";
   const secs = Math.max(0, Math.ceil(msLeft / 1e3));
-  if (secs < 60) return `${lead}${secs}`;
+  if (secs < 60)
+    return `${lead}${secs}`;
   const m = Math.floor(secs / 60);
   const rest = secs % 60;
   return rest ? `${lead}${m}m ${rest}` : `${lead}${m}m`;
@@ -3005,7 +3214,8 @@ function titleTextOf(el2) {
 }
 function isInteractiveTarget(target) {
   const el2 = target;
-  if (!el2 || typeof el2.closest !== "function") return false;
+  if (!el2 || typeof el2.closest !== "function")
+    return false;
   return !!el2.closest(
     "a, button, input, select, textarea, [contenteditable='true'], .internal-link, .external-link, .tag, .footnote-link"
   );
@@ -3043,7 +3253,8 @@ var ThinkGate = class {
   begin(el2, s, now) {
     var _a, _b;
     this.release();
-    if (!el2) return 0;
+    if (!el2)
+      return 0;
     const ms3 = thinkMsFor(titleTextOf(el2), s);
     if (ms3 <= 0) {
       setThinkHidden(el2, false);
@@ -3056,7 +3267,8 @@ var ThinkGate = class {
     this.paint(ms3);
     const row = (_b = titleRowOf(el2)) != null ? _b : el2;
     this.onTap = (ev) => {
-      if (isInteractiveTarget(ev.target)) return;
+      if (isInteractiveTarget(ev.target))
+        return;
       this.revealNow();
     };
     row.addEventListener("click", this.onTap, { capture: true });
@@ -3064,7 +3276,8 @@ var ThinkGate = class {
   }
   /** Advance the gate. Returns true on the frame the answer is released. */
   tick(now) {
-    if (!this.el || this.until <= 0) return false;
+    if (!this.el || this.until <= 0)
+      return false;
     const left = this.until - now;
     if (left > 0) {
       this.paint(left);
@@ -3076,7 +3289,8 @@ var ThinkGate = class {
   /** Reveal the answer right now (timer end, or a tap on the question). */
   revealNow() {
     const el2 = this.el;
-    if (!el2) return;
+    if (!el2)
+      return;
     setThinkHidden(el2, false);
     this.detach();
     this.until = 0;
@@ -3095,19 +3309,23 @@ var ThinkGate = class {
   clear() {
     const el2 = this.el;
     this.release();
-    if (el2) clearThinkMarks(el2);
+    if (el2)
+      clearThinkMarks(el2);
   }
   /** Phase label for the debug overlay / screen-maths readout. */
   phaseLabel(now) {
-    if (!this.thinking) return "answer";
+    if (!this.thinking)
+      return "answer";
     return `think ${Math.max(0, Math.ceil((this.until - now) / 1e3))}s`;
   }
   paint(msLeft) {
     var _a, _b;
     const el2 = this.el;
-    if (!el2) return;
+    if (!el2)
+      return;
     const label = thinkCountdownLabel(msLeft, this.icon);
-    if (label === this.lastLabel && ((_a = this.badge) == null ? void 0 : _a.isConnected)) return;
+    if (label === this.lastLabel && ((_a = this.badge) == null ? void 0 : _a.isConnected))
+      return;
     this.lastLabel = label;
     if (!this.badge || !this.badge.isConnected) {
       const row = (_b = titleRowOf(el2)) != null ? _b : el2;
@@ -3129,8 +3347,10 @@ var ThinkGate = class {
       row.appendChild(badge);
       this.badge = badge;
     }
-    if (this.text) this.text.textContent = label;
-    else this.badge.textContent = label;
+    if (this.text)
+      this.text.textContent = label;
+    else
+      this.badge.textContent = label;
   }
   detach() {
     var _a;
@@ -3153,10 +3373,12 @@ var ThinkGate = class {
 var EMPTY_THINK_SCOPE = { seconds: null, enabled: null, icon: null };
 function frontmatterBlock(source) {
   const text = source != null ? source : "";
-  if (!/^\uFEFF?---\r?\n/.test(text)) return "";
+  if (!/^\uFEFF?---\r?\n/.test(text))
+    return "";
   const rest = text.replace(/^\uFEFF/, "").slice(4);
   const end = rest.search(/\r?\n---\s*(\r?\n|$)/);
-  if (end < 0) return "";
+  if (end < 0)
+    return "";
   return rest.slice(0, end);
 }
 function unitSeconds(value, unit) {
@@ -3165,11 +3387,15 @@ function unitSeconds(value, unit) {
 }
 function parseThinkValue(raw) {
   const v = (raw != null ? raw : "").trim().replace(/^["']|["']$/g, "").toLowerCase();
-  if (!v) return null;
-  if (v === "off" || v === "false" || v === "no" || v === "none") return 0;
-  if (v === "on" || v === "true" || v === "yes") return null;
+  if (!v)
+    return null;
+  if (v === "off" || v === "false" || v === "no" || v === "none")
+    return 0;
+  if (v === "on" || v === "true" || v === "yes")
+    return null;
   const m = v.match(/^(\d{1,5})\s*([smh])?$/);
-  if (!m) return null;
+  if (!m)
+    return null;
   const secs = unitSeconds(Number(m[1]), m[2]);
   return Math.min(THINK_SECONDS_MAX, Math.max(0, Math.round(secs)));
 }
@@ -3177,15 +3403,18 @@ function fieldOf(block, keys) {
   var _a, _b;
   for (const line of block.split(/\r?\n/)) {
     const m = line.match(/^\s*([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
-    if (!m) continue;
+    if (!m)
+      continue;
     const key = ((_a = m[1]) != null ? _a : "").toLowerCase();
-    if (keys.includes(key)) return ((_b = m[2]) != null ? _b : "").trim();
+    if (keys.includes(key))
+      return ((_b = m[2]) != null ? _b : "").trim();
   }
   return null;
 }
 function noteThinkScope(source) {
   const block = frontmatterBlock(source);
-  if (!block) return EMPTY_THINK_SCOPE;
+  if (!block)
+    return EMPTY_THINK_SCOPE;
   const rawThink = fieldOf(block, ["think", "think-time", "think_time", "thinktime"]);
   const rawIcon = fieldOf(block, ["think-icon", "think_icon", "thinkicon"]);
   const seconds = parseThinkValue(rawThink);
@@ -3193,9 +3422,12 @@ function noteThinkScope(source) {
   let enabled = null;
   if (rawThink !== null) {
     const flag = rawThink.trim().toLowerCase();
-    if (flag === "off" || flag === "false" || flag === "no" || flag === "none") enabled = false;
-    else if (seconds === 0) enabled = false;
-    else if (seconds !== null || flag === "on" || flag === "true" || flag === "yes") enabled = true;
+    if (flag === "off" || flag === "false" || flag === "no" || flag === "none")
+      enabled = false;
+    else if (seconds === 0)
+      enabled = false;
+    else if (seconds !== null || flag === "on" || flag === "true" || flag === "yes")
+      enabled = true;
   }
   return { seconds, enabled, icon };
 }
@@ -3220,7 +3452,8 @@ var LABEL = {
 };
 var ms = (n) => `${Math.round(n)}ms`;
 function thinkTimingLines(events, limit = 6) {
-  if (events.length === 0) return ["timing \u2014"];
+  if (events.length === 0)
+    return ["timing \u2014"];
   const base = events[0].at;
   const shown = events.slice(-limit);
   const out = [];
@@ -3245,13 +3478,16 @@ var ThinkTimeline = class {
     this.events = [];
   }
   mark(phase, ordinal, at, note) {
-    if (!this.enabled) return;
+    if (!this.enabled)
+      return;
     if (phase === "tick") {
       const last = [...this.events].reverse().find((e) => e.phase === "tick" && e.ordinal === ordinal);
-      if (last && at - last.at < 1e3) return;
+      if (last && at - last.at < 1e3)
+        return;
     }
     this.events.push({ phase, ordinal, at, note });
-    if (this.events.length > this.cap) this.events = this.events.slice(-this.cap);
+    if (this.events.length > this.cap)
+      this.events = this.events.slice(-this.cap);
   }
   all() {
     return [...this.events];
@@ -3272,23 +3508,29 @@ function resolveParkTarget(lookup) {
   const byId = identity ? byIdentity.get(identity) : void 0;
   const el2 = (_a = byId != null ? byId : byOrdinal.get(ordinal)) != null ? _a : null;
   const reason2 = byId ? "identity" : el2 ? "ordinal" : "missing";
-  if (!el2) return { el: null, reason: "missing", color: null };
-  if (!connected(el2, isConnected)) return { el: null, reason: "detached", color: null };
+  if (!el2)
+    return { el: null, reason: "missing", color: null };
+  if (!connected(el2, isConnected))
+    return { el: null, reason: "detached", color: null };
   const color = colorOf2(el2);
-  if (!colorAllowed(color, filter)) return { el: null, reason: "filtered-out", color };
+  if (!colorAllowed(color, filter))
+    return { el: null, reason: "filtered-out", color };
   return { el: el2, reason: reason2, color };
 }
 function strayOpenToggles(scan, filter, keep) {
-  if (filter.length === 0) return [];
+  if (filter.length === 0)
+    return [];
   return scan.filter((s) => s.open && s.el !== keep && !colorAllowed(s.color, filter)).map((s) => s.el);
 }
 function parkSkipLabel(res, ordinal) {
   var _a;
-  if (res.el) return "";
+  if (res.el)
+    return "";
   if (res.reason === "filtered-out") {
     return `filter guard: skipped toggle ${ordinal} (${(_a = res.color) != null ? _a : "?"} not in filter)`;
   }
-  if (res.reason === "detached") return `filter guard: toggle ${ordinal} was re-rendered`;
+  if (res.reason === "detached")
+    return `filter guard: toggle ${ordinal} was re-rendered`;
   return `filter guard: toggle ${ordinal} not in the filtered plan`;
 }
 
@@ -3297,11 +3539,13 @@ function isRefusedPark(reason2) {
   return reason2 === "missing" || reason2 === "detached" || reason2 === "filtered-out";
 }
 function nextActiveIdentity(identity, parked) {
-  if (!parked) return null;
+  if (!parked)
+    return null;
   return identity && identity.length > 0 ? identity : null;
 }
 function dwellPlan(now, holdMs, thinkMs, parked) {
-  if (!parked) return { dwellUntil: 0, thinkMs: 0 };
+  if (!parked)
+    return { dwellUntil: 0, thinkMs: 0 };
   const hold = Math.max(0, Number.isFinite(holdMs) ? holdMs : 0);
   const think = Math.max(0, Number.isFinite(thinkMs) ? thinkMs : 0);
   return { dwellUntil: now + hold + think, thinkMs: think };
@@ -3311,23 +3555,29 @@ function dwellPlan(now, holdMs, thinkMs, parked) {
 var SETTINGS_VERSION = 2;
 var isRecord = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 function sanitizeMemory(v) {
-  if (!isRecord(v)) return {};
+  if (!isRecord(v))
+    return {};
   const out = {};
   for (const [path, cards] of Object.entries(v)) {
-    if (!path || !Array.isArray(cards)) continue;
+    if (!path || !Array.isArray(cards))
+      continue;
     const kept = cards.filter(isRecord);
-    if (kept.length) out[path] = kept;
+    if (kept.length)
+      out[path] = kept;
   }
   return out;
 }
 function sanitizePerNote(v) {
-  if (!isRecord(v)) return {};
+  if (!isRecord(v))
+    return {};
   const out = {};
   for (const [path, entry] of Object.entries(v)) {
-    if (!path || !isRecord(entry)) continue;
+    if (!path || !isRecord(entry))
+      continue;
     const speed = Number(entry["speed"]);
     const hold = Number(entry["hold"]);
-    if (!Number.isFinite(speed) || !Number.isFinite(hold)) continue;
+    if (!Number.isFinite(speed) || !Number.isFinite(hold))
+      continue;
     out[path] = { speed, reverse: !!entry["reverse"], hold };
   }
   return out;
@@ -3339,7 +3589,8 @@ function migrateSettings(raw) {
   if (from < 2) {
     settings.scrollMemory = sanitizeMemory(settings.scrollMemory);
     settings.scrollPerNote = sanitizePerNote(settings.scrollPerNote);
-    if (!isRecord(settings.srs)) settings.srs = {};
+    if (!isRecord(settings.srs))
+      settings.srs = {};
     changed = true;
   }
   if (settings.settingsVersion !== SETTINGS_VERSION) {
@@ -3370,13 +3621,17 @@ var KIND_ALIASES = {
   cite: "quote"
 };
 function parseFilterParam(raw) {
-  if (raw == null) return void 0;
+  if (raw == null)
+    return void 0;
   const text = raw.trim().toLowerCase();
-  if (!text || text === "all" || text === "default" || text === "any") return [];
-  if (text === "graded") return normalizeFilter(["red", "yellow", "green"]);
+  if (!text || text === "all" || text === "default" || text === "any")
+    return [];
+  if (text === "graded")
+    return normalizeFilter(["red", "yellow", "green"]);
   if (text === "notes" || text === "ungraded" || text === "plain" || text === "other")
     return normalizeFilter(["other"]);
-  if (text === "callouts" || text === "types") return normalizeFilter(UNGRADED_COLORS);
+  if (text === "callouts" || text === "types")
+    return normalizeFilter(UNGRADED_COLORS);
   if (text === "everything" || text === "graded+notes")
     return normalizeFilter(["red", "yellow", "green", "other"]);
   const picked = text.split(/[,+ ]+/).map((p) => p.trim()).map((p) => {
@@ -3388,16 +3643,21 @@ function parseFilterParam(raw) {
 function parseDeepLink(params) {
   var _a, _b;
   const action = ((_a = params["action"]) != null ? _a : "").trim().toLowerCase();
-  if (action !== "quiz" && action !== "autoscroll" && action !== "stop") return null;
+  if (action !== "quiz" && action !== "autoscroll" && action !== "stop")
+    return null;
   const link = { action };
   const file = (_b = params["file"]) == null ? void 0 : _b.trim();
-  if (file) link.file = file;
+  if (file)
+    link.file = file;
   const filter = parseFilterParam(params["filter"]);
-  if (filter) link.filter = filter;
+  if (filter)
+    link.filter = filter;
   const seconds = Number(params["seconds"]);
-  if (Number.isFinite(seconds) && seconds > 0) link.seconds = clampQuizSeconds(seconds);
+  if (Number.isFinite(seconds) && seconds > 0)
+    link.seconds = clampQuizSeconds(seconds);
   const speed = Number(params["speed"]);
-  if (Number.isFinite(speed) && speed > 0) link.speed = Math.min(600, Math.round(speed));
+  if (Number.isFinite(speed) && speed > 0)
+    link.speed = Math.min(600, Math.round(speed));
   return link;
 }
 
@@ -3405,7 +3665,8 @@ function parseDeepLink(params) {
 var round1 = (n) => Math.round(n * 10) / 10;
 function p95of(sorted) {
   var _a;
-  if (!sorted.length) return 0;
+  if (!sorted.length)
+    return 0;
   return (_a = sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * 0.95)))]) != null ? _a : 0;
 }
 var TimerAccuracy = class {
@@ -3421,11 +3682,13 @@ var TimerAccuracy = class {
     this.paused = 0;
   }
   addPause(ms3) {
-    if (Number.isFinite(ms3) && ms3 > 0) this.paused += ms3;
+    if (Number.isFinite(ms3) && ms3 > 0)
+      this.paused += ms3;
   }
   finish(now) {
     const o = this.open;
-    if (!o) return null;
+    if (!o)
+      return null;
     this.open = null;
     const actualMs = Math.max(0, now - o.startedAt - this.paused);
     this.paused = 0;
@@ -3438,7 +3701,8 @@ var TimerAccuracy = class {
       driftMs: Math.round(actualMs - o.scheduledMs)
     };
     this.items.push(item);
-    if (this.items.length > this.capacity) this.items.shift();
+    if (this.items.length > this.capacity)
+      this.items.shift();
     return item;
   }
   timings() {
@@ -3495,10 +3759,12 @@ var FreezeDetector = class {
       this.skip = false;
       return null;
     }
-    if (!Number.isFinite(gapMs) || gapMs <= this.expectedGap * this.factor) return null;
+    if (!Number.isFinite(gapMs) || gapMs <= this.expectedGap * this.factor)
+      return null;
     const ev = { ms: Math.round(gapMs), phase, at };
     this.events.push(ev);
-    if (this.events.length > this.capacity) this.events.shift();
+    if (this.events.length > this.capacity)
+      this.events.shift();
     return ev;
   }
   reset() {
@@ -3523,12 +3789,14 @@ function perfVerdict(r) {
     return `Smooth run \u2014 timer ${acc}% accurate, no freezes.`;
   }
   const parts = [];
-  if (acc < 98) parts.push(`timer ${acc}% accurate (${signed(r.timer.totalDriftMs)}ms over the run)`);
+  if (acc < 98)
+    parts.push(`timer ${acc}% accurate (${signed(r.timer.totalDriftMs)}ms over the run)`);
   if (r.freezes.count)
     parts.push(`${r.freezes.count} freeze${r.freezes.count === 1 ? "" : "s"}, longest ${r.freezes.longestMs}ms`);
   if (r.quizRender.score < 0.8)
     parts.push(`ring painting unevenly (${Math.round(r.quizRender.score * 100)}% stable)`);
-  if (r.skippedStops) parts.push(`${r.skippedStops} stop${r.skippedStops === 1 ? "" : "s"} recovered after a jump`);
+  if (r.skippedStops)
+    parts.push(`${r.skippedStops} stop${r.skippedStops === 1 ? "" : "s"} recovered after a jump`);
   const hint = r.freezes.count || r.quizRender.score < 0.8 ? " Try a shorter note, or turn the debug overlay off." : "";
   return `${parts.join("; ")}.${hint}`;
 }
@@ -3537,7 +3805,8 @@ function formatQuizReport(r) {
   const q = r.quizRender;
   const lat = (name, l) => `| ${name} | ${l.count} | ${ms2(l.mean)} | ${ms2(l.p95)} | ${ms2(l.max)} |`;
   const out = [`**${perfVerdict(r)}**`, "", "### Timer accuracy"];
-  if (!t.questions) out.push("No question finished yet \u2014 run a quiz to collect timings.");
+  if (!t.questions)
+    out.push("No question finished yet \u2014 run a quiz to collect timings.");
   else {
     out.push(
       `- Questions measured: **${t.questions}**`,
@@ -3552,10 +3821,12 @@ function formatQuizReport(r) {
       );
   }
   out.push("", "### Freezes");
-  if (!r.freezes.count) out.push("None detected \u2014 every tick arrived within 750ms.");
+  if (!r.freezes.count)
+    out.push("None detected \u2014 every tick arrived within 750ms.");
   else {
     out.push(`- Count: **${r.freezes.count}** \xB7 longest ${ms2(r.freezes.longestMs)} \xB7 total ${ms2(r.freezes.totalMs)}`);
-    for (const e of r.freezes.events.slice(-5)) out.push(`  - ${ms2(e.ms)} during *${e.phase}*`);
+    for (const e of r.freezes.events.slice(-5))
+      out.push(`  - ${ms2(e.ms)} during *${e.phase}*`);
   }
   out.push(
     "",
@@ -3586,9 +3857,11 @@ var Samples = class {
     this.seen = 0;
   }
   add(value) {
-    if (!Number.isFinite(value)) return;
+    if (!Number.isFinite(value))
+      return;
     this.seen++;
-    if (this.buf.length < this.capacity) this.buf.push(value);
+    if (this.buf.length < this.capacity)
+      this.buf.push(value);
     else {
       this.buf[this.next] = value;
       this.next = (this.next + 1) % this.capacity;
@@ -3607,7 +3880,8 @@ var Samples = class {
   }
   percentile(p) {
     var _a;
-    if (!this.buf.length) return 0;
+    if (!this.buf.length)
+      return 0;
     const sorted = [...this.buf].sort((a, b) => a - b);
     const idx = Math.min(
       sorted.length - 1,
@@ -3616,7 +3890,8 @@ var Samples = class {
     return (_a = sorted[idx]) != null ? _a : 0;
   }
   get mean() {
-    if (!this.buf.length) return 0;
+    if (!this.buf.length)
+      return 0;
     return this.buf.reduce((a, b) => a + b, 0) / this.buf.length;
   }
   get max() {
@@ -3633,13 +3908,15 @@ var RenderStability = class {
     this.dropped = 0;
   }
   mark(now) {
-    if (!Number.isFinite(now)) return;
+    if (!Number.isFinite(now))
+      return;
     this.paints++;
     if (this.last !== null) {
       const gap = now - this.last;
       if (gap >= 0) {
         this.gaps.add(gap);
-        if (gap > this.expectedGap * 2) this.dropped++;
+        if (gap > this.expectedGap * 2)
+          this.dropped++;
       }
     }
     this.last = now;
@@ -3707,7 +3984,8 @@ var Telemetry = class {
     this.skippedStops = 0;
   }
   noteSkipped(n = 1) {
-    if (n > 0) this.skippedStops += n;
+    if (n > 0)
+      this.skippedStops += n;
   }
   reset() {
     this.quizRender.reset();
@@ -3805,8 +4083,10 @@ async function appendPerfLog(host, body) {
 ${body}
 `;
   try {
-    if (await host.app.vault.adapter.exists(path)) await host.app.vault.adapter.append(path, entry);
-    else await host.app.vault.adapter.write(path, `# Autoscroll performance log
+    if (await host.app.vault.adapter.exists(path))
+      await host.app.vault.adapter.append(path, entry);
+    else
+      await host.app.vault.adapter.write(path, `# Autoscroll performance log
 ${entry}`);
   } catch (e) {
   }
@@ -3819,7 +4099,8 @@ async function exportPerfReport(host) {
   } catch (e) {
     new import_obsidian2.Notice(report.slice(0, 1200), 12e3);
   }
-  if (host.settings.perfLog) await appendPerfLog(host, report);
+  if (host.settings.perfLog)
+    await appendPerfLog(host, report);
 }
 var PerfReportModal = class extends import_obsidian2.Modal {
   constructor(host) {
@@ -3865,13 +4146,15 @@ function openPerfReport(host) {
 
 // src/maintenance.ts
 function renameCardKey(store, oldPath, newPath) {
-  if (oldPath === newPath) return { store, moved: false };
+  if (oldPath === newPath)
+    return { store, moved: false };
   if (!Object.prototype.hasOwnProperty.call(store, oldPath)) {
     return { store, moved: false };
   }
   const next = {};
   for (const [key, value] of Object.entries(store)) {
-    if (key === oldPath) continue;
+    if (key === oldPath)
+      continue;
     next[key] = value;
   }
   next[newPath] = store[oldPath];
@@ -3883,7 +4166,8 @@ function removeCardKey(store, path) {
   }
   const next = {};
   for (const [key, value] of Object.entries(store)) {
-    if (key !== path) next[key] = value;
+    if (key !== path)
+      next[key] = value;
   }
   return { store: next, removed: true };
 }
@@ -3892,14 +4176,18 @@ function pruneCards(store, existingPaths) {
   const next = {};
   const removed = [];
   for (const [key, value] of Object.entries(store)) {
-    if (alive.has(key)) next[key] = value;
-    else removed.push(key);
+    if (alive.has(key))
+      next[key] = value;
+    else
+      removed.push(key);
   }
   return { store: next, removed: removed.sort() };
 }
 function scheduleStoreSummary(count) {
-  if (count <= 0) return "No notes scheduled yet.";
-  if (count === 1) return "1 note scheduled.";
+  if (count <= 0)
+    return "No notes scheduled yet.";
+  if (count === 1)
+    return "1 note scheduled.";
   return `${count} notes scheduled.`;
 }
 
@@ -3972,14 +4260,16 @@ var REPORT_ORDER = [
   "other"
 ];
 function percentOf(count, total) {
-  if (!total || count <= 0) return 0;
+  if (!total || count <= 0)
+    return 0;
   return Math.round(count / total * 1e3) / 10;
 }
 function countKinds(kinds) {
   var _a;
   const total = kinds.length;
   const tally = /* @__PURE__ */ new Map();
-  for (const k of kinds) tally.set(k, ((_a = tally.get(k)) != null ? _a : 0) + 1);
+  for (const k of kinds)
+    tally.set(k, ((_a = tally.get(k)) != null ? _a : 0) + 1);
   return REPORT_ORDER.map((kind) => {
     var _a2;
     const meta = metaOf(kind);
@@ -3998,8 +4288,10 @@ function presentKinds(rows) {
   return rows.filter((r) => r.count > 0).sort((a, b) => b.count - a.count);
 }
 function countBadge(row) {
-  if (!row) return "";
-  if (row.count === 0) return "0";
+  if (!row)
+    return "";
+  if (row.count === 0)
+    return "0";
   return `${row.count} \xB7 ${row.percent}%`;
 }
 function breakdownTable(rows, total) {
@@ -4009,12 +4301,14 @@ function breakdownTable(rows, total) {
     (r) => `| ${r.icon} ${r.name} | \`${r.word}\` | ${r.count} | ${r.percent}% |`
   );
   const foot = `| **Total** | | **${total}** | 100% |`;
-  if (present.length === 0) return "No toggles found in this note.";
+  if (present.length === 0)
+    return "No toggles found in this note.";
   return [...head, ...body, foot].join("\n");
 }
 function breakdownSummary(rows, total) {
   const present = presentKinds(rows);
-  if (!present.length) return "no toggles";
+  if (!present.length)
+    return "no toggles";
   return `${total} toggles \xB7 ${present.map((r) => `${r.icon} ${r.count} (${r.percent}%)`).join(" \xB7 ")}`;
 }
 
@@ -4116,11 +4410,16 @@ var import_obsidian4 = require("obsidian");
 // src/stats-panel.ts
 var pct = (n) => `${Math.round(n * 100)}%`;
 function reason(row) {
-  if (row.fresh) return "never revised \u2014 new toggles get mixed in first";
-  if (row.lapses >= 2) return `forgotten ${row.lapses}\xD7 \u2014 kept close`;
-  if (row.due) return `recall ${pct(row.recall)} \u2014 due now`;
-  if (row.difficulty >= 7) return `hard for you (D ${row.difficulty.toFixed(1)}) \u2014 comes back sooner`;
-  if (row.stability >= 21) return `solid (${Math.round(row.stability)}d memory) \u2014 pushed far away`;
+  if (row.fresh)
+    return "never revised \u2014 new toggles get mixed in first";
+  if (row.lapses >= 2)
+    return `forgotten ${row.lapses}\xD7 \u2014 kept close`;
+  if (row.due)
+    return `recall ${pct(row.recall)} \u2014 due now`;
+  if (row.difficulty >= 7)
+    return `hard for you (D ${row.difficulty.toFixed(1)}) \u2014 comes back sooner`;
+  if (row.stability >= 21)
+    return `solid (${Math.round(row.stability)}d memory) \u2014 pushed far away`;
   return `recall ${pct(row.recall)} \u2014 not due yet`;
 }
 function weakRows(cards, total, now = Date.now(), opts = {}) {
@@ -4130,7 +4429,8 @@ function weakRows(cards, total, now = Date.now(), opts = {}) {
   const rows = [];
   for (let page = from; page <= to; page++) {
     const card = byPage.get(page);
-    if (!card) continue;
+    if (!card)
+      continue;
     const base = {
       ordinal: page,
       recall: retrievability(card, now),
@@ -4150,13 +4450,17 @@ function weakRows(cards, total, now = Date.now(), opts = {}) {
 function rowLabel(row) {
   const bits = [`#${row.ordinal}`];
   bits.push(row.fresh ? "new" : `${pct(row.recall)} recall`);
-  if (!row.fresh) bits.push(`D ${row.difficulty.toFixed(1)}`);
-  if (!row.fresh) bits.push(`S ${row.stability.toFixed(1)}d`);
-  if (row.lapses > 0) bits.push(`${row.lapses} lapse${row.lapses === 1 ? "" : "s"}`);
+  if (!row.fresh)
+    bits.push(`D ${row.difficulty.toFixed(1)}`);
+  if (!row.fresh)
+    bits.push(`S ${row.stability.toFixed(1)}d`);
+  if (row.lapses > 0)
+    bits.push(`${row.lapses} lapse${row.lapses === 1 ? "" : "s"}`);
   return bits.join(" \xB7 ");
 }
 function orderExplainer(rows) {
-  if (rows.length === 0) return "No revision history for this note yet \u2014 run a shuffle to build it.";
+  if (rows.length === 0)
+    return "No revision history for this note yet \u2014 run a shuffle to build it.";
   const due = rows.filter((r) => r.due && !r.fresh).length;
   const fresh = rows.filter((r) => r.fresh).length;
   const first = rows[0];
@@ -4212,12 +4516,14 @@ function flatFilterOptions() {
   return filterGroups().flatMap((g) => g.options);
 }
 function optionCount(opt, rows) {
-  if (!opt.kind) return "";
+  if (!opt.kind)
+    return "";
   return countBadge(rows.find((r) => r.kind === opt.kind));
 }
 function isEmptyOption(opt, rows) {
   var _a, _b;
-  if (!opt.kind) return false;
+  if (!opt.kind)
+    return false;
   return ((_b = (_a = rows.find((r) => r.kind === opt.kind)) == null ? void 0 : _a.count) != null ? _b : 0) === 0;
 }
 
@@ -4244,7 +4550,8 @@ function addSecondsPicker(setting, opts) {
       txt.setValue(String(value));
       await opts.save(value);
       const slider = setting.controlEl.querySelector('input[type="range"]');
-      if (slider) slider.value = String(Math.min(opts.sliderMax, Math.max(opts.sliderMin, value)));
+      if (slider)
+        slider.value = String(Math.min(opts.sliderMax, Math.max(opts.sliderMin, value)));
     };
     txt.inputEl.addEventListener("change", () => void commit());
   });
@@ -4294,7 +4601,8 @@ var ScrollStatsModal = class extends import_obsidian4.Modal {
     box.createDiv({ cls: "ntt-filter-summary", text: breakdownSummary(kinds, noteTotal) });
     const table = box.createEl("table", { cls: "ntt-breakdown-table" });
     const head = table.createEl("tr");
-    for (const h of ["Type", "Callout", "Count", "%"]) head.createEl("th", { text: h });
+    for (const h of ["Type", "Callout", "Count", "%"])
+      head.createEl("th", { text: h });
     for (const row of presentKinds(kinds)) {
       const tr = table.createEl("tr");
       tr.createEl("td", { text: `${row.icon} ${row.name}` });
@@ -4302,7 +4610,8 @@ var ScrollStatsModal = class extends import_obsidian4.Modal {
       tr.createEl("td", { text: String(row.count) });
       tr.createEl("td", { text: `${row.percent}%` });
     }
-    if (noteTotal === 0) box.createDiv({ text: "No toggles in this note yet." });
+    if (noteTotal === 0)
+      box.createDiv({ text: "No toggles in this note yet." });
   }
   onClose() {
     this.contentEl.empty();
@@ -4320,10 +4629,14 @@ function renderFilterPicker(host, active, rows, onPick) {
       const main = btn.createDiv({ cls: "ntt-filter-main" });
       main.createSpan({ text: opt.label, cls: "ntt-filter-label" });
       const badge = optionCount(opt, rows);
-      if (badge) main.createSpan({ text: badge, cls: "ntt-filter-count" });
-      if (opt.hint) btn.createDiv({ text: opt.hint, cls: "ntt-filter-hint" });
-      if (isEmptyOption(opt, rows)) btn.addClass("is-empty");
-      if (sameFilter(opt.filter, active)) btn.addClass("is-suggested");
+      if (badge)
+        main.createSpan({ text: badge, cls: "ntt-filter-count" });
+      if (opt.hint)
+        btn.createDiv({ text: opt.hint, cls: "ntt-filter-hint" });
+      if (isEmptyOption(opt, rows))
+        btn.addClass("is-empty");
+      if (sameFilter(opt.filter, active))
+        btn.addClass("is-suggested");
       btn.onclick = async () => {
         await onPick(opt.filter);
       };
@@ -4386,7 +4699,8 @@ var ScrollModeModal = class extends import_obsidian4.Modal {
   paint() {
     var _a, _b;
     const s = this.plugin.settings;
-    for (const { mode, btn } of this.modeBtns) btn.toggleClass("is-suggested", s.scrollMode === mode);
+    for (const { mode, btn } of this.modeBtns)
+      btn.toggleClass("is-suggested", s.scrollMode === mode);
     const empty = s.scrollMode === "custom" && ((_a = s.scrollPicks) != null ? _a : []).length === 0 || (s.scrollMode === "route" || s.scrollMode === "shuffle") && ((_b = s.scrollRoute) != null ? _b : []).length === 0;
     if (this.hintEl) {
       this.hintEl.setText(
@@ -4394,7 +4708,8 @@ var ScrollModeModal = class extends import_obsidian4.Modal {
       );
       this.hintEl.toggleClass("is-warning", empty);
     }
-    if (this.resumeBtn) this.resumeBtn.toggleClass("is-hidden", !empty);
+    if (this.resumeBtn)
+      this.resumeBtn.toggleClass("is-hidden", !empty);
     if (this.summaryEl) {
       const stats = this.plugin.scrollDeckStats();
       this.summaryEl.setText(stats ? deckSummary(stats) : "");
@@ -4433,7 +4748,8 @@ var ScrollModeModal = class extends import_obsidian4.Modal {
         }
         if (opt.mode === "route") {
           const saved = (_a = this.plugin.settings.scrollUserRoute) != null ? _a : [];
-          if (saved.length) this.plugin.settings.scrollRoute = [...saved];
+          if (saved.length)
+            this.plugin.settings.scrollRoute = [...saved];
         }
         this.plugin.settings.scrollMode = opt.mode;
         await this.commit();
@@ -4544,7 +4860,8 @@ var ScrollDwellModal = class extends import_obsidian4.Modal {
         text: formatDwell(secs),
         cls: "notion-toggle-color-btn"
       });
-      if (secs === current) btn.addClass("is-suggested");
+      if (secs === current)
+        btn.addClass("is-suggested");
       btn.onclick = async () => {
         this.plugin.settings.scrollHold = clampDwellSeconds2(secs);
         await this.plugin.saveSettings();
@@ -4576,7 +4893,8 @@ var ScrollSpeedModal = class extends import_obsidian4.Modal {
     const active = multiplierFromSpeed(this.plugin.settings.scrollSpeed);
     for (const mult of SPEED_MULTIPLIERS) {
       const btn = list.createEl("button", { text: `${mult}x`, cls: "notion-toggle-color-btn" });
-      if (mult === active) btn.addClass("is-suggested");
+      if (mult === active)
+        btn.addClass("is-suggested");
       btn.onclick = async () => {
         this.plugin.settings.scrollSpeed = speedFromMultiplier(mult);
         await this.plugin.saveSettings();
@@ -4604,7 +4922,8 @@ var MobileToolbarGuideModal = class extends import_obsidian4.Modal {
       `Checklist: ${guideProgress((_a = this.plugin.settings.toolbarGuideDone) != null ? _a : [])} added`
     );
     const steps = this.contentEl.createEl("ol", { cls: "ntt-guide-steps" });
-    for (const step of TOOLBAR_STEPS) steps.createEl("li", { text: step });
+    for (const step of TOOLBAR_STEPS)
+      steps.createEl("li", { text: step });
     new import_obsidian4.Setting(this.contentEl).setName("Open Obsidian settings").setDesc("Mobile \u2192 Manage toolbar me seedha jump (agar version support kare).").addButton(
       (btn) => btn.setButtonText("Open settings").onClick(() => {
         var _a2, _b2;
@@ -4642,7 +4961,8 @@ var MobileToolbarGuideModal = class extends import_obsidian4.Modal {
         })
       );
       row.settingEl.addClass("ntt-guide-row");
-      if (done.has(cmd.id)) row.settingEl.addClass("is-done");
+      if (done.has(cmd.id))
+        row.settingEl.addClass("is-done");
     }
     this.contentEl.createDiv({
       cls: "ntt-guide-tip",
@@ -4668,7 +4988,8 @@ var QuizSecondsModal = class extends import_obsidian4.Modal {
         text: formatQuizSeconds(seconds),
         cls: "notion-toggle-color-btn"
       });
-      if (seconds === current) btn.addClass("is-suggested");
+      if (seconds === current)
+        btn.addClass("is-suggested");
       btn.onclick = async () => {
         this.plugin.settings.quizSeconds = clampQuizSeconds(seconds);
         await this.plugin.saveSettings();
@@ -4740,7 +5061,8 @@ var ColorPickerModal = class extends import_obsidian4.Modal {
     this.setTitle("Toggle colour");
     const list = contentEl.createDiv({ cls: "notion-toggle-color-list" });
     for (const color of TOGGLE_COLORS) {
-      if (!color.callout) continue;
+      if (!color.callout)
+        continue;
       const btn = list.createEl("button", { text: color.label });
       btn.addClass("notion-toggle-color-btn");
       btn.dataset.color = color.callout;
@@ -4793,7 +5115,8 @@ function playCountdownPreview(target, seconds, icon, win = window) {
       img.src = icon;
       img.alt = "";
       (_b = img.addClass) == null ? void 0 : _b.call(img, "ntt-think-preview-img");
-      if (!target.createEl) target.appendChild(img);
+      if (!target.createEl)
+        target.appendChild(img);
       const text = target.ownerDocument.createElement("span");
       text.textContent = ` ${thinkCountdownLabel(left, "")}`.trimEnd();
       target.appendChild(text);
@@ -4887,8 +5210,10 @@ function cacheKey(op, body) {
 }
 function stableStringify(value) {
   var _a;
-  if (value === null || typeof value !== "object") return (_a = JSON.stringify(value)) != null ? _a : "null";
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value === null || typeof value !== "object")
+    return (_a = JSON.stringify(value)) != null ? _a : "null";
+  if (Array.isArray(value))
+    return `[${value.map(stableStringify).join(",")}]`;
   const obj = value;
   const keys = Object.keys(obj).filter((k) => obj[k] !== void 0).sort();
   return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(",")}}`;
@@ -4902,7 +5227,8 @@ var ResearchCache = class {
   }
   get(key) {
     const hit = this.entries.get(key);
-    if (!hit) return void 0;
+    if (!hit)
+      return void 0;
     if (hit.expiresAt <= this.now()) {
       this.entries.delete(key);
       return void 0;
@@ -4916,7 +5242,8 @@ var ResearchCache = class {
     this.entries.set(key, { value, expiresAt: this.now() + this.ttlMs });
     while (this.entries.size > this.max) {
       const oldest = this.entries.keys().next().value;
-      if (oldest === void 0) break;
+      if (oldest === void 0)
+        break;
       this.entries.delete(oldest);
     }
   }
@@ -4941,8 +5268,10 @@ var ResearchError = class extends Error {
 var PLUGIN_KEY_PATTERN = /^ntr_[A-Za-z0-9_-]{16,}$/;
 function normalizeBridgeUrl(raw) {
   let s = raw.trim();
-  if (!s) return "";
-  if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
+  if (!s)
+    return "";
+  if (!/^https?:\/\//i.test(s))
+    s = `https://${s}`;
   try {
     const u = new URL(s);
     return `${u.protocol}//${u.host}`;
@@ -5016,23 +5345,28 @@ var ResearchClient = class {
   }
   listTasks(opts = {}) {
     const params = new URLSearchParams();
-    if (opts.limit) params.set("limit", String(opts.limit));
-    if (opts.includeResult) params.set("include", "result");
+    if (opts.limit)
+      params.set("limit", String(opts.limit));
+    if (opts.includeResult)
+      params.set("include", "result");
     const qs = params.toString();
     return this.request("GET", `/tasks${qs ? `?${qs}` : ""}`);
   }
   async cached(op, body, run) {
-    if (!this.cache) return run();
+    if (!this.cache)
+      return run();
     const key = cacheKey(op, body);
     const hit = this.cache.get(key);
-    if (hit) return { ...hit, cached: true };
+    if (hit)
+      return { ...hit, cached: true };
     const fresh = await run();
     this.cache.set(key, fresh);
     return fresh;
   }
   async request(method, path, body) {
     var _a, _b, _c, _d, _e, _f;
-    if (!this.configured) throw new ResearchError("not_configured", "Research bridge is not configured");
+    if (!this.configured)
+      throw new ResearchError("not_configured", "Research bridge is not configured");
     let res;
     try {
       res = await this.transport({
@@ -5051,7 +5385,8 @@ var ResearchClient = class {
     }
     const parsed = parseJson(res.text);
     if (res.status >= 200 && res.status < 300) {
-      if (parsed === void 0) throw new ResearchError("internal", "The bridge returned an unreadable answer", res.status);
+      if (parsed === void 0)
+        throw new ResearchError("internal", "The bridge returned an unreadable answer", res.status);
       return parsed;
     }
     const errBody = parsed;
@@ -5061,7 +5396,8 @@ var ResearchClient = class {
   }
 };
 function parseJson(text) {
-  if (!text) return void 0;
+  if (!text)
+    return void 0;
   try {
     return JSON.parse(text);
   } catch (e) {
@@ -5069,12 +5405,18 @@ function parseJson(text) {
   }
 }
 function codeForStatus(status) {
-  if (status === 401 || status === 403) return "unauthorized";
-  if (status === 400 || status === 422) return "invalid_request";
-  if (status === 402) return "payment_required";
-  if (status === 404) return "not_found";
-  if (status === 429) return "rate_limited";
-  if (status === 502 || status === 503 || status === 504) return "provider_error";
+  if (status === 401 || status === 403)
+    return "unauthorized";
+  if (status === 400 || status === 422)
+    return "invalid_request";
+  if (status === 402)
+    return "payment_required";
+  if (status === 404)
+    return "not_found";
+  if (status === 429)
+    return "rate_limited";
+  if (status === 502 || status === 503 || status === 504)
+    return "provider_error";
   return "internal";
 }
 var URL_RE = /https?:\/\/[^\s<>()\]"'`]+/g;
@@ -5083,7 +5425,8 @@ function extractUrls(text) {
   const out = [];
   for (const m of (_a = text.match(URL_RE)) != null ? _a : []) {
     const cleaned = m.replace(/[.,;:!?)]+$/, "");
-    if (!out.includes(cleaned)) out.push(cleaned);
+    if (!out.includes(cleaned))
+      out.push(cleaned);
   }
   return out.slice(0, 20);
 }
@@ -5092,7 +5435,8 @@ function stripFrontmatter(text) {
 }
 function clipForRecall(text, max = 6e4) {
   const t = stripFrontmatter(text).trim();
-  if (t.length <= max) return t;
+  if (t.length <= max)
+    return t;
   const cut = t.lastIndexOf("\n\n", max);
   return t.slice(0, cut > max * 0.6 ? cut : max);
 }
@@ -5189,12 +5533,14 @@ function renderResearchSettings(containerEl, host) {
       const v = txt.getValue().trim();
       s.researchPluginKey = v;
       await host.saveSettings();
-      if (v && !PLUGIN_KEY_PATTERN.test(v)) new import_obsidian6.Notice("That does not look like a plugin key (ntr_\u2026). Saved anyway \u2014 press Test to check.");
+      if (v && !PLUGIN_KEY_PATTERN.test(v))
+        new import_obsidian6.Notice("That does not look like a plugin key (ntr_\u2026). Saved anyway \u2014 press Test to check.");
     });
   }).addExtraButton(
     (btn) => btn.setIcon("eye").setTooltip("Show / hide").onClick(() => {
       const input = containerEl.querySelector('input[placeholder="ntr_\u2026"]');
-      if (input) input.type = input.type === "password" ? "text" : "password";
+      if (input)
+        input.type = input.type === "password" ? "text" : "password";
     })
   );
   const status = new import_obsidian6.Setting(containerEl).setName("Connection").setDesc(host.research.configured ? "Press Test to check the key and the providers." : "Add the URL and key above first.");
@@ -5247,14 +5593,16 @@ function renderResearchSettings(containerEl, host) {
     })
   );
   new import_obsidian6.Setting(containerEl).setName("Search mode").setDesc("Default for \u201CWeb search\u201D. Fast is right for almost everything.").addDropdown((dd) => {
-    for (const [id, label] of Object.entries(SEARCH_MODE_LABELS)) dd.addOption(id, label);
+    for (const [id, label] of Object.entries(SEARCH_MODE_LABELS))
+      dd.addOption(id, label);
     dd.setValue(s.researchSearchMode).onChange(async (v) => {
       s.researchSearchMode = v;
       await host.saveSettings();
     });
   });
   new import_obsidian6.Setting(containerEl).setName("Answer effort").setDesc("Default for \u201CAsk the web\u201D and fact-checks.").addDropdown((dd) => {
-    for (const [id, label] of Object.entries(EFFORT_LABELS)) dd.addOption(id, label);
+    for (const [id, label] of Object.entries(EFFORT_LABELS))
+      dd.addOption(id, label);
     dd.setValue(s.researchEffort).onChange(async (v) => {
       s.researchEffort = v;
       await host.saveSettings();
@@ -5267,7 +5615,8 @@ function renderResearchSettings(containerEl, host) {
     });
   });
   new import_obsidian6.Setting(containerEl).setName("Recall style").setDesc("Q&A toggles, multiple choice with an Answer line, or fill-in-the-blank.").addDropdown((dd) => {
-    for (const [id, label] of Object.entries(RECALL_STYLE_LABELS)) dd.addOption(id, label);
+    for (const [id, label] of Object.entries(RECALL_STYLE_LABELS))
+      dd.addOption(id, label);
     dd.setValue(s.researchRecallStyle).onChange(async (v) => {
       s.researchRecallStyle = v;
       await host.saveSettings();
@@ -5281,7 +5630,8 @@ function renderResearchSettings(containerEl, host) {
     });
   });
   new import_obsidian6.Setting(containerEl).setName("Deep research default shape").setDesc("Preselected in the deep-research dialog.").addDropdown((dd) => {
-    for (const [id, label] of Object.entries(PRESET_LABELS)) dd.addOption(id, label);
+    for (const [id, label] of Object.entries(PRESET_LABELS))
+      dd.addOption(id, label);
     dd.setValue(s.researchDefaultPreset).onChange(async (v) => {
       s.researchDefaultPreset = v;
       await host.saveSettings();
@@ -5290,7 +5640,8 @@ function renderResearchSettings(containerEl, host) {
   new import_obsidian6.Setting(containerEl).setName("On-device cache").setDesc("Repeat searches within 15 minutes are answered instantly without using credits.").addToggle(
     (tg) => tg.setValue(s.researchCache).onChange(async (v) => {
       s.researchCache = v;
-      if (!v) host.research.clearCache();
+      if (!v)
+        host.research.clearCache();
       await host.saveSettings();
     })
   ).addExtraButton(
@@ -5321,7 +5672,8 @@ var NotionToggleSettingTab = class extends import_obsidian7.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     new import_obsidian7.Setting(containerEl).setName("Toggle colour").setDesc("Traffic-light colours for active recall: red = hard, yellow = revise, green = mastered. Plain = clean black Notion look.").addDropdown((dropdown) => {
-      for (const c of TOGGLE_COLORS) dropdown.addOption(c.id, c.label);
+      for (const c of TOGGLE_COLORS)
+        dropdown.addOption(c.id, c.label);
       dropdown.setValue(this.plugin.settings.color);
       dropdown.onChange(async (value) => {
         this.plugin.settings.color = value;
@@ -5400,7 +5752,8 @@ var NotionToggleSettingTab = class extends import_obsidian7.PluginSettingTab {
     });
     new import_obsidian7.Setting(containerEl).setName("Recall timer (Pomodoro)").setHeading();
     new import_obsidian7.Setting(containerEl).setName("Preset").setDesc("Pick a rhythm, or choose Custom and set your own minutes below.").addDropdown((dropdown) => {
-      for (const p of POMODORO_PRESETS) dropdown.addOption(p.id, p.label);
+      for (const p of POMODORO_PRESETS)
+        dropdown.addOption(p.id, p.label);
       dropdown.setValue(this.plugin.settings.preset);
       dropdown.onChange(async (value) => {
         const resolved = resolvePreset(this.plugin.settings, value);
@@ -5877,8 +6230,10 @@ var ScrollSheetModal = class extends import_obsidian8.Modal {
     renderThinkSettings(this.contentEl, this.plugin);
     new import_obsidian8.Setting(this.contentEl).setName("Quiz (timed question run)").setDesc("ON = timed quiz shuru \u2014 har toggle par timer, auto reveal, auto next.").addToggle(
       (tg) => tg.setValue(!!this.plugin.quizState).onChange((v) => {
-        if (v) this.plugin.startQuizRun();
-        else this.plugin.stopQuiz(true);
+        if (v)
+          this.plugin.startQuizRun();
+        else
+          this.plugin.stopQuiz(true);
         tg.setValue(!!this.plugin.quizState);
       })
     );
@@ -6113,7 +6468,8 @@ var ResearchPromptModal = class extends import_obsidian9.Modal {
     this.modalEl.addClass("ntt-research-modal");
     this.setTitle("Web research");
     new import_obsidian9.Setting(contentEl).setName("What do you want?").addDropdown((dd) => {
-      for (const k of KIND_OPTIONS) dd.addOption(k.id, k.label);
+      for (const k of KIND_OPTIONS)
+        dd.addOption(k.id, k.label);
       dd.setValue(this.kind).onChange((v) => {
         this.kind = v;
         this.renderKind();
@@ -6149,21 +6505,27 @@ var ResearchPromptModal = class extends import_obsidian9.Modal {
   renderKind() {
     var _a;
     const meta = (_a = KIND_OPTIONS.find((k) => k.id === this.kind)) != null ? _a : KIND_OPTIONS[0];
-    if (this.hintEl) this.hintEl.setText(meta.hint);
-    if (this.textarea) this.textarea.placeholder = meta.placeholder;
-    if (this.submitBtn) this.submitBtn.setText(meta.button);
+    if (this.hintEl)
+      this.hintEl.setText(meta.hint);
+    if (this.textarea)
+      this.textarea.placeholder = meta.placeholder;
+    if (this.submitBtn)
+      this.submitBtn.setText(meta.button);
     const el2 = this.optionsEl;
-    if (!el2) return;
+    if (!el2)
+      return;
     el2.empty();
     if (this.kind === "answer" || this.kind === "factcheck") {
       new import_obsidian9.Setting(el2).setName("Effort").setDesc("Low answers in seconds; high digs deeper and takes up to a minute.").addDropdown((dd) => {
-        for (const [id, label] of Object.entries(EFFORT_LABELS)) dd.addOption(id, label);
+        for (const [id, label] of Object.entries(EFFORT_LABELS))
+          dd.addOption(id, label);
         dd.setValue(this.effort).onChange((v) => this.effort = v);
       });
     }
     if (this.kind === "search") {
       new import_obsidian9.Setting(el2).setName("Search mode").addDropdown((dd) => {
-        for (const [id, label] of Object.entries(SEARCH_MODE_LABELS)) dd.addOption(id, label);
+        for (const [id, label] of Object.entries(SEARCH_MODE_LABELS))
+          dd.addOption(id, label);
         dd.setValue(this.mode).onChange((v) => this.mode = v);
       });
     }
@@ -6178,20 +6540,23 @@ var ResearchPromptModal = class extends import_obsidian9.Modal {
         sl.setLimits(3, 20, 1).setDynamicTooltip().setValue(this.recallCount).onChange((v) => this.recallCount = v);
       });
       new import_obsidian9.Setting(el2).setName("Style").addDropdown((dd) => {
-        for (const [id, label] of Object.entries(RECALL_STYLE_LABELS)) dd.addOption(id, label);
+        for (const [id, label] of Object.entries(RECALL_STYLE_LABELS))
+          dd.addOption(id, label);
         dd.setValue(this.recallStyle).onChange((v) => this.recallStyle = v);
       });
     }
     this.syncButton();
   }
   syncButton() {
-    if (!this.submitBtn) return;
+    if (!this.submitBtn)
+      return;
     const ok = this.text.trim().length > 0 || this.kind === "recall" && !!this.defaults.usingNote;
     this.submitBtn.disabled = !ok;
   }
   submit() {
     var _a;
-    if ((_a = this.submitBtn) == null ? void 0 : _a.disabled) return;
+    if ((_a = this.submitBtn) == null ? void 0 : _a.disabled)
+      return;
     this.onSubmit({
       kind: this.kind,
       text: this.text.trim(),
@@ -6233,7 +6598,8 @@ var DeepResearchModal = class extends import_obsidian9.Modal {
       this.sync();
     });
     new import_obsidian9.Setting(contentEl).setName("Shape of the result").setDesc("Report, key facts, comparison, timeline or literature summary.").addDropdown((dd) => {
-      for (const [id, label] of Object.entries(PRESET_LABELS)) dd.addOption(id, label);
+      for (const [id, label] of Object.entries(PRESET_LABELS))
+        dd.addOption(id, label);
       dd.setValue(this.preset).onChange((v) => {
         var _a;
         this.preset = v;
@@ -6242,7 +6608,8 @@ var DeepResearchModal = class extends import_obsidian9.Modal {
       });
     });
     new import_obsidian9.Setting(contentEl).setName("Depth").setDesc("Deeper takes longer and costs more. The default suits the chosen shape.").addDropdown((dd) => {
-      for (const [id, label] of Object.entries(PROCESSOR_LABELS)) dd.addOption(id, label);
+      for (const [id, label] of Object.entries(PROCESSOR_LABELS))
+        dd.addOption(id, label);
       dd.setValue(this.processor).onChange((v) => this.processor = v);
       this.processorDropdown = dd;
     });
@@ -6251,7 +6618,8 @@ var DeepResearchModal = class extends import_obsidian9.Modal {
     cancel.onclick = () => this.close();
     this.submitBtn = actions.createEl("button", { text: "Start research", cls: "mod-cta" });
     this.submitBtn.onclick = () => {
-      if (this.objective.trim().length < 3) return;
+      if (this.objective.trim().length < 3)
+        return;
       this.onSubmit({ objective: this.objective.trim(), preset: this.preset, processor: this.processor });
       this.close();
     };
@@ -6259,7 +6627,8 @@ var DeepResearchModal = class extends import_obsidian9.Modal {
     window.setTimeout(() => ta.focus(), 30);
   }
   sync() {
-    if (this.submitBtn) this.submitBtn.disabled = this.objective.trim().length < 3;
+    if (this.submitBtn)
+      this.submitBtn.disabled = this.objective.trim().length < 3;
   }
   onClose() {
     this.contentEl.empty();
@@ -6274,24 +6643,33 @@ function el(parent, tag, opts = {}) {
   const node = document.createElement(tag);
   if (opts.cls) {
     const classes = Array.isArray(opts.cls) ? opts.cls : opts.cls.split(/\s+/);
-    for (const c of classes) if (c) node.classList.add(c);
+    for (const c of classes)
+      if (c)
+        node.classList.add(c);
   }
-  if (opts.text != null) node.textContent = opts.text;
-  if (opts.title) node.title = opts.title;
-  if (opts.attrs) for (const [k, v] of Object.entries(opts.attrs)) node.setAttribute(k, v);
+  if (opts.text != null)
+    node.textContent = opts.text;
+  if (opts.title)
+    node.title = opts.title;
+  if (opts.attrs)
+    for (const [k, v] of Object.entries(opts.attrs))
+      node.setAttribute(k, v);
   parent == null ? void 0 : parent.appendChild(node);
   return node;
 }
 function clear(node) {
-  while (node.firstChild) node.removeChild(node.firstChild);
+  while (node.firstChild)
+    node.removeChild(node.firstChild);
 }
 function button2(parent, text, onClick, opts = {}) {
   var _a;
   const b = el(parent, "button", { cls: opts.cls, text, title: opts.title });
   b.type = "button";
   b.setAttribute("aria-label", (_a = opts.label) != null ? _a : text);
-  if (opts.cta) b.classList.add("mod-cta");
-  if (opts.disabled) b.disabled = true;
+  if (opts.cta)
+    b.classList.add("mod-cta");
+  if (opts.disabled)
+    b.disabled = true;
   b.addEventListener("click", (ev) => {
     ev.preventDefault();
     ev.stopPropagation();
@@ -6301,17 +6679,22 @@ function button2(parent, text, onClick, opts = {}) {
 }
 function ago(iso, now = Date.now()) {
   const t = typeof iso === "number" ? iso : Date.parse(iso);
-  if (!Number.isFinite(t)) return "";
+  if (!Number.isFinite(t))
+    return "";
   const s = Math.max(0, Math.round((now - t) / 1e3));
-  if (s < 60) return `${s} s`;
+  if (s < 60)
+    return `${s} s`;
   const m = Math.round(s / 60);
-  if (m < 60) return `${m} min`;
+  if (m < 60)
+    return `${m} min`;
   const h = Math.round(m / 60);
-  if (h < 48) return `${h} h`;
+  if (h < 48)
+    return `${h} h`;
   return `${Math.round(h / 24)} d`;
 }
 function latencyLabel(ms3) {
-  if (!Number.isFinite(ms3) || ms3 <= 0) return "";
+  if (!Number.isFinite(ms3) || ms3 <= 0)
+    return "";
   return ms3 < 1e3 ? `${Math.round(ms3)} ms` : `${(ms3 / 1e3).toFixed(ms3 < 1e4 ? 1 : 0)} s`;
 }
 
@@ -6367,7 +6750,8 @@ function removeRun(runs, runId) {
   return runs.filter((r) => r.runId !== runId);
 }
 function pruneRuns(runs, max = MAX_TRACKED_RUNS) {
-  if (runs.length <= max) return runs;
+  if (runs.length <= max)
+    return runs;
   const sorted = [...runs].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const finished = sorted.filter((r) => !isActive(r));
   const active = sorted.filter(isActive);
@@ -6376,12 +6760,15 @@ function pruneRuns(runs, max = MAX_TRACKED_RUNS) {
   return kept.slice(Math.max(0, kept.length - max));
 }
 function sanitizeRuns(raw) {
-  if (!Array.isArray(raw)) return [];
+  if (!Array.isArray(raw))
+    return [];
   const out = [];
   for (const item of raw) {
-    if (!item || typeof item !== "object") continue;
+    if (!item || typeof item !== "object")
+      continue;
     const r = item;
-    if (typeof r.runId !== "string" || !r.runId) continue;
+    if (typeof r.runId !== "string" || !r.runId)
+      continue;
     out.push({
       runId: r.runId,
       objective: typeof r.objective === "string" ? r.objective : "",
@@ -6450,14 +6837,16 @@ function sourceLine(s, index) {
 }
 function sourcesSection(sources, heading = "Sources") {
   const unique = dedupeByUrl(sources);
-  if (!unique.length) return [];
+  if (!unique.length)
+    return [];
   return ["", `**${heading}**`, ...unique.map((s, i) => sourceLine(s, i + 1))];
 }
 function dedupeByUrl(items) {
   const seen = /* @__PURE__ */ new Set();
   const out = [];
   for (const it of items) {
-    if (!it.url || seen.has(it.url)) continue;
+    if (!it.url || seen.has(it.url))
+      continue;
     seen.add(it.url);
     out.push(it);
   }
@@ -6487,15 +6876,19 @@ function applyCitations(answer, citations) {
   const positioned = citations.filter((c) => c.endIndex != null && c.endIndex >= 0 && c.endIndex <= answer.length).map((c) => ({ c, at: c.endIndex }));
   const byStart = [...positioned].sort((a, b) => a.at - b.at);
   const numbers = /* @__PURE__ */ new Map();
-  for (const p of byStart) numbers.set(p.c, indexFor(p.c));
-  for (const c of citations) if (!numbers.has(c)) indexFor(c);
+  for (const p of byStart)
+    numbers.set(p.c, indexFor(p.c));
+  for (const c of citations)
+    if (!numbers.has(c))
+      indexFor(c);
   let text = answer;
   const byEndDesc = [...positioned].sort((a, b) => b.at - a.at);
   const seenAt = /* @__PURE__ */ new Map();
   for (const p of byEndDesc) {
     const n = numbers.get(p.c);
     const set = (_a = seenAt.get(p.at)) != null ? _a : /* @__PURE__ */ new Set();
-    if (set.has(n)) continue;
+    if (set.has(n))
+      continue;
     set.add(n);
     seenAt.set(p.at, set);
     text = `${text.slice(0, p.at)}[${n}]${text.slice(p.at)}`;
@@ -6506,29 +6899,34 @@ function formatAnswer(res, opts) {
   const { text, sources } = applyCitations(res.answer, res.citations);
   const allSources = dedupeByUrl([...sources, ...res.sources]);
   const body = [...bodyLines(text), ...opts.includeSources ? sourcesSection(allSources) : []];
-  if (opts.insertStyle === "markdown") return `${body.join("\n")}
+  if (opts.insertStyle === "markdown")
+    return `${body.join("\n")}
 `;
   return toggleBlock(res.question, body, opts.style);
 }
 function formatFactCheck(res, opts) {
   const verdict = VERDICT_LABELS[res.verdict];
   const lines = [`**Verdict:** ${verdict} (${res.confidence} confidence)`, "", ...bodyLines(res.summary)];
-  if (res.correction) lines.push("", `**Correction:** ${oneLine(res.correction)}`);
+  if (res.correction)
+    lines.push("", `**Correction:** ${oneLine(res.correction)}`);
   if (opts.includeSources && res.sources.length) {
     lines.push("", "**Sources**");
     res.sources.forEach((s, i) => {
       lines.push(sourceLine(s, i + 1));
-      if (s.quote) lines.push(`   > ${oneLine(s.quote)}`);
+      if (s.quote)
+        lines.push(`   > ${oneLine(s.quote)}`);
     });
   }
-  if (opts.insertStyle === "markdown") return `**Claim:** ${oneLine(res.claim)}
+  if (opts.insertStyle === "markdown")
+    return `**Claim:** ${oneLine(res.claim)}
 
 ${lines.join("\n")}
 `;
   return toggleBlock(`Fact-check: ${res.claim}`, lines, opts.style, VERDICT_CALLOUT[res.verdict]);
 }
 function formatSearch(res, opts) {
-  if (!res.results.length) return `_No results for "${oneLine(res.query)}"._
+  if (!res.results.length)
+    return `_No results for "${oneLine(res.query)}"._
 `;
   if (opts.insertStyle === "markdown") {
     const lines = res.results.map((r) => {
@@ -6540,18 +6938,21 @@ function formatSearch(res, opts) {
   }
   return res.results.map((r) => {
     const lines = [];
-    for (const e of r.excerpts.slice(0, 3)) lines.push(...bodyLines(e), "");
+    for (const e of r.excerpts.slice(0, 3))
+      lines.push(...bodyLines(e), "");
     lines.push(`Source: [${escapeBrackets(r.title)}](${r.url})${r.publishDate ? ` \xB7 ${r.publishDate.slice(0, 10)}` : ""}`);
     return toggleBlock(r.title, lines, opts.style);
   }).join("\n");
 }
 function formatPerplexity(res, opts) {
-  if (!res.results.length) return `_No results for "${oneLine(res.query)}"._
+  if (!res.results.length)
+    return `_No results for "${oneLine(res.query)}"._
 `;
   const lines = res.results.map(
     (r) => `- [${escapeBrackets(r.title)}](${r.url})${r.date ? ` (${r.date.slice(0, 10)})` : ""}${r.snippet ? ` \u2014 ${oneLine(r.snippet).slice(0, 240)}` : ""}`
   );
-  if (opts.insertStyle === "markdown") return `${lines.join("\n")}
+  if (opts.insertStyle === "markdown")
+    return `${lines.join("\n")}
 `;
   return toggleBlock(`Quick search: ${res.query}`, lines, opts.style);
 }
@@ -6559,7 +6960,8 @@ function formatExtract(res, opts) {
   const blocks = res.results.map((r) => {
     const content = r.fullContent ? bodyLines(r.fullContent) : r.excerpts.flatMap((e) => [...bodyLines(e), ""]);
     const lines = [...content, `Source: [${escapeBrackets(r.title)}](${r.url})${r.publishDate ? ` \xB7 ${r.publishDate.slice(0, 10)}` : ""}`];
-    if (opts.insertStyle === "markdown") return `### ${r.title}
+    if (opts.insertStyle === "markdown")
+      return `### ${r.title}
 
 ${lines.join("\n")}
 `;
@@ -6579,11 +6981,13 @@ function formatRecallCard(card, style, kind, number) {
     });
     const correct = card.correctIndex != null && card.options[card.correctIndex] != null ? `${(_b = letters[card.correctIndex]) != null ? _b : card.correctIndex + 1}. ${oneLine(card.options[card.correctIndex])}` : oneLine(card.answer);
     lines2.push("", `**Answer:** ${correct}`);
-    if (card.hint) lines2.push(`_Hint: ${oneLine(card.hint)}_`);
+    if (card.hint)
+      lines2.push(`_Hint: ${oneLine(card.hint)}_`);
     return toggleBlock(`${num}${card.question}`, lines2, style);
   }
   const lines = bodyLines(card.answer);
-  if (card.hint) lines.push("", `_Hint: ${oneLine(card.hint)}_`);
+  if (card.hint)
+    lines.push("", `_Hint: ${oneLine(card.hint)}_`);
   return toggleBlock(`${num}${card.question}`, lines, style);
 }
 function formatRecall(res, opts) {
@@ -6596,7 +7000,8 @@ function formatRecall(res, opts) {
 function formatRun(run, opts) {
   var _a;
   const md = ((_a = run.markdown) != null ? _a : "").trim() || "_The report is empty._";
-  if (opts.insertStyle === "markdown") return `${md}
+  if (opts.insertStyle === "markdown")
+    return `${md}
 `;
   const lines = bodyLines(md).map((l) => /^#{1,5}\s/.test(l) ? `#${l}` : l);
   return toggleBlock(run.objective, lines, opts.style);
@@ -6659,7 +7064,8 @@ var ResearchService = class {
     return () => this.listeners.delete(fn);
   }
   emit() {
-    for (const fn of this.listeners) fn();
+    for (const fn of this.listeners)
+      fn();
   }
   get configured() {
     return bridgeConfigured(this.host.settings);
@@ -6699,24 +7105,28 @@ var ResearchService = class {
       sourcePath: (_b = (_a = this.host.app.workspace.getActiveFile()) == null ? void 0 : _a.path) != null ? _b : null
     };
     this.results.unshift(result);
-    if (this.results.length > MAX_RESULTS) this.results.length = MAX_RESULTS;
+    if (this.results.length > MAX_RESULTS)
+      this.results.length = MAX_RESULTS;
     this.emit();
     return result;
   }
   /** Drop one result from the panel history. */
   forget(id) {
     const idx = this.results.findIndex((r) => r.id === id);
-    if (idx < 0) return;
+    if (idx < 0)
+      return;
     this.results.splice(idx, 1);
     this.emit();
   }
   clearResults() {
-    if (!this.results.length) return;
+    if (!this.results.length)
+      return;
     this.results.length = 0;
     this.emit();
   }
   async guard(kind, work) {
-    if (!this.configured) throw new ResearchError("not_configured", "Research bridge is not configured");
+    if (!this.configured)
+      throw new ResearchError("not_configured", "Research bridge is not configured");
     this.busy.add(kind);
     this.emit();
     try {
@@ -6799,7 +7209,8 @@ var ResearchService = class {
   }
   async extract(text, opts = {}) {
     const urls = extractUrls(text);
-    if (!urls.length) throw new ResearchError("invalid_request", "No http(s) link found in the selection or on this line.");
+    if (!urls.length)
+      throw new ResearchError("invalid_request", "No http(s) link found in the selection or on this line.");
     return this.guard("extract", async () => {
       var _a, _b;
       const res = await this.client().extract({
@@ -6908,32 +7319,40 @@ var ResearchService = class {
     this.emit();
   }
   ensurePolling() {
-    if (this.pollTimer != null) return;
-    if (!activeRuns(this.runs).length) return;
+    if (this.pollTimer != null)
+      return;
+    if (!activeRuns(this.runs).length)
+      return;
     const now = Date.now();
-    for (const r of activeRuns(this.runs)) if (!this.nextPollAt.has(r.runId)) this.nextPollAt.set(r.runId, now + 1500);
+    for (const r of activeRuns(this.runs))
+      if (!this.nextPollAt.has(r.runId))
+        this.nextPollAt.set(r.runId, now + 1500);
     this.pollTimer = window.setInterval(() => void this.pollTick(), 2e3);
     this.host.registerInterval(this.pollTimer);
   }
   stopPolling() {
-    if (this.pollTimer != null) window.clearInterval(this.pollTimer);
+    if (this.pollTimer != null)
+      window.clearInterval(this.pollTimer);
     this.pollTimer = null;
   }
   async pollTick() {
     var _a;
-    if (this.polling) return;
+    if (this.polling)
+      return;
     const active = activeRuns(this.runs);
     if (!active.length) {
       this.stopPolling();
       return;
     }
-    if (!this.configured) return;
+    if (!this.configured)
+      return;
     const now = Date.now();
     const due = active.filter((r) => {
       var _a2;
       return ((_a2 = this.nextPollAt.get(r.runId)) != null ? _a2 : 0) <= now;
     });
-    if (!due.length) return;
+    if (!due.length)
+      return;
     this.polling = true;
     try {
       for (const r of due) {
@@ -6978,16 +7397,19 @@ var ResearchService = class {
     var _a, _b, _c, _d, _e, _f;
     const ws = this.host.app.workspace;
     const active = ws.getActiveViewOfType(import_obsidian11.MarkdownView);
-    if ((active == null ? void 0 : active.editor) && (!preferPath || ((_a = active.file) == null ? void 0 : _a.path) === preferPath)) return active.editor;
+    if ((active == null ? void 0 : active.editor) && (!preferPath || ((_a = active.file) == null ? void 0 : _a.path) === preferPath))
+      return active.editor;
     const markdownLeaves = ws.getLeavesOfType("markdown");
     const views = markdownLeaves.map((l) => l.view).filter((v) => v instanceof import_obsidian11.MarkdownView);
     const byPath = preferPath ? views.find((v) => {
       var _a2;
       return ((_a2 = v.file) == null ? void 0 : _a2.path) === preferPath;
     }) : void 0;
-    if (byPath == null ? void 0 : byPath.editor) return byPath.editor;
+    if (byPath == null ? void 0 : byPath.editor)
+      return byPath.editor;
     const recent = (_c = (_b = ws.getMostRecentLeaf) == null ? void 0 : _b.call(ws)) == null ? void 0 : _c.view;
-    if (recent instanceof import_obsidian11.MarkdownView && recent.editor) return recent.editor;
+    if (recent instanceof import_obsidian11.MarkdownView && recent.editor)
+      return recent.editor;
     return (_f = (_e = active == null ? void 0 : active.editor) != null ? _e : (_d = views[0]) == null ? void 0 : _d.editor) != null ? _f : null;
   }
   /** Insert markdown into the best editor, or append to `fallbackPath`. */
@@ -7019,7 +7441,8 @@ ${markdown.trimEnd()}
   async insertRun(runId) {
     var _a, _b;
     let run = (_a = this.runs.find((r) => r.runId === runId)) != null ? _a : null;
-    if (!run) return false;
+    if (!run)
+      return false;
     if (run.status !== "completed" || !run.markdown) {
       try {
         run = await this.refreshRun(runId);
@@ -7053,9 +7476,11 @@ ${markdown.trimEnd()}
   }
   /** Text the reader most likely means: selection, else the current line. */
   contextText(editor) {
-    if (!editor) return { text: "", fromSelection: false };
+    if (!editor)
+      return { text: "", fromSelection: false };
     const sel = editor.getSelection();
-    if (sel.trim()) return { text: sel.trim(), fromSelection: true };
+    if (sel.trim())
+      return { text: sel.trim(), fromSelection: true };
     const line = editor.getLine(editor.getCursor().line);
     return { text: cleanLine(line), fromSelection: false };
   }
@@ -7064,7 +7489,8 @@ ${markdown.trimEnd()}
     return editor ? editor.getValue() : "";
   }
   nextNumber(editor) {
-    if (!editor || !this.host.settings.numberedByDefault) return void 0;
+    if (!editor || !this.host.settings.numberedByDefault)
+      return void 0;
     return this.host.nextNumberAt(editor, editor.getCursor().line);
   }
 };
@@ -7074,8 +7500,10 @@ function cleanLine(line) {
 function recallInput(typed, noteText) {
   const t = typed.trim();
   if (t) {
-    if (/^https?:\/\/\S+$/.test(t)) return { url: t };
-    if (t.length > 400 || /\n/.test(t)) return { text: t };
+    if (/^https?:\/\/\S+$/.test(t))
+      return { url: t };
+    if (t.length > 400 || /\n/.test(t))
+      return { text: t };
     return { topic: t };
   }
   const note = noteText.trim();
@@ -7206,7 +7634,8 @@ var ResearchView = class extends import_obsidian12.ItemView {
   syncComposer() {
     var _a;
     const meta = (_a = COMPOSER_KINDS.find((k) => k.id === this.kind)) != null ? _a : COMPOSER_KINDS[0];
-    if (this.textarea) this.textarea.placeholder = meta.placeholder;
+    if (this.textarea)
+      this.textarea.placeholder = meta.placeholder;
     if (this.goBtn) {
       this.goBtn.textContent = meta.button;
       const noteOk = this.kind === "recall" && !!this.noteEditor();
@@ -7224,7 +7653,8 @@ var ResearchView = class extends import_obsidian12.ItemView {
   }
   renderStatus() {
     const s = this.statusEl;
-    if (!s) return;
+    if (!s)
+      return;
     const ok = this.host.research.configured;
     s.textContent = ok ? "Connected" : "Not set up";
     s.classList.toggle("is-ok", ok);
@@ -7232,7 +7662,8 @@ var ResearchView = class extends import_obsidian12.ItemView {
   }
   renderSetup() {
     const box = this.setupEl;
-    if (!box) return;
+    if (!box)
+      return;
     clear(box);
     if (this.host.research.configured) {
       box.style.display = "none";
@@ -7249,7 +7680,8 @@ var ResearchView = class extends import_obsidian12.ItemView {
   }
   renderBusy() {
     const box = this.busyEl;
-    if (!box) return;
+    if (!box)
+      return;
     clear(box);
     const busy = [...this.host.research.busy];
     if (!busy.length) {
@@ -7262,7 +7694,8 @@ var ResearchView = class extends import_obsidian12.ItemView {
   }
   renderRuns() {
     const box = this.runsEl;
-    if (!box) return;
+    if (!box)
+      return;
     clear(box);
     const runs = [...this.host.research.runs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     if (!runs.length) {
@@ -7273,8 +7706,10 @@ var ResearchView = class extends import_obsidian12.ItemView {
     const head = el(box, "div", { cls: "ntt-rp-section-title" });
     el(head, "span", { text: "Deep research" });
     const active = runs.filter(isActive).length;
-    if (active) el(head, "span", { cls: "ntt-rp-chip", text: `${active} running` });
-    for (const run of runs) this.renderRun(box, run);
+    if (active)
+      el(head, "span", { cls: "ntt-rp-chip", text: `${active} running` });
+    for (const run of runs)
+      this.renderRun(box, run);
   }
   renderRun(parent, run) {
     const row = el(parent, "div", { cls: `ntt-rp-run is-${run.status}` });
@@ -7285,8 +7720,10 @@ var ResearchView = class extends import_obsidian12.ItemView {
     const meta = el(row, "div", { cls: "ntt-rp-meta" });
     const parts = [PRESET_LABELS[run.preset], PROCESSOR_LABELS[run.processor].split(" \u2014 ")[0], statusLabel(run), `${ago(run.createdAt)} ago`];
     meta.textContent = parts.filter(Boolean).join(" \xB7 ");
-    if (run.status === "failed" && run.error) el(row, "div", { cls: "ntt-rp-error", text: run.error });
-    if (run.status === "completed" && run.consumed) el(row, "div", { cls: "ntt-rp-meta", text: "Inserted" });
+    if (run.status === "failed" && run.error)
+      el(row, "div", { cls: "ntt-rp-error", text: run.error });
+    if (run.status === "completed" && run.consumed)
+      el(row, "div", { cls: "ntt-rp-meta", text: "Inserted" });
     const actions = el(row, "div", { cls: "ntt-rp-actions" });
     if (run.status === "completed") {
       button2(actions, run.consumed ? "Insert again" : "Insert", () => void this.host.research.insertRun(run.runId).catch(this.notify), {
@@ -7300,7 +7737,8 @@ var ResearchView = class extends import_obsidian12.ItemView {
   }
   renderResults() {
     const box = this.resultsEl;
-    if (!box) return;
+    if (!box)
+      return;
     clear(box);
     const results = this.host.research.results;
     const head = el(box, "div", { cls: "ntt-rp-section-title" });
@@ -7318,7 +7756,8 @@ var ResearchView = class extends import_obsidian12.ItemView {
       });
       return;
     }
-    for (const r of results) this.renderResult(box, r);
+    for (const r of results)
+      this.renderResult(box, r);
   }
   renderResult(parent, r) {
     var _a;
@@ -7333,7 +7772,8 @@ var ResearchView = class extends import_obsidian12.ItemView {
     const actions = el(card, "div", { cls: "ntt-rp-actions" });
     button2(actions, "Insert", () => void this.host.research.insertResult(r).catch(this.notify), { cta: true, label: `Insert \u201C${r.title}\u201D into the note` });
     button2(actions, "Copy", () => void this.host.research.copy(r.markdown), { label: "Copy as markdown" });
-    if (r.kind === "answer" && r.responseId) button2(actions, "Follow-up", () => this.followUp(r), { title: "Ask another question in the same thread" });
+    if (r.kind === "answer" && r.responseId)
+      button2(actions, "Follow-up", () => this.followUp(r), { title: "Ask another question in the same thread" });
     button2(actions, open ? "Hide" : "Show", () => this.toggleExpanded(r.id), { label: open ? "Hide preview" : "Show preview" });
     button2(actions, "\xD7", () => this.host.research.forget(r.id), { cls: "ntt-rp-close", label: "Remove this result" });
     if (open) {
@@ -7342,8 +7782,10 @@ var ResearchView = class extends import_obsidian12.ItemView {
     }
   }
   toggleExpanded(id) {
-    if (this.expanded.has(id)) this.expanded.delete(id);
-    else this.expanded.add(id);
+    if (this.expanded.has(id))
+      this.expanded.delete(id);
+    else
+      this.expanded.add(id);
     this.renderResults();
   }
   async renderMarkdown(target, markdown, sourcePath) {
@@ -7352,7 +7794,8 @@ var ResearchView = class extends import_obsidian12.ItemView {
     } catch (e) {
       target.textContent = markdown;
     }
-    if (!target.childNodes.length) target.textContent = markdown;
+    if (!target.childNodes.length)
+      target.textContent = markdown;
   }
   /* ---------- actions ---------- */
   /** The note editor a panel action should read from (never the panel itself). */
@@ -7368,13 +7811,15 @@ var ResearchView = class extends import_obsidian12.ItemView {
       return;
     }
     this.text = ctx.text;
-    if (this.textarea) this.textarea.value = ctx.text;
+    if (this.textarea)
+      this.textarea.value = ctx.text;
     this.syncComposer();
     (_a = this.textarea) == null ? void 0 : _a.focus();
   }
   async submit() {
     var _a, _b;
-    if (this.submitting) return;
+    if (this.submitting)
+      return;
     const svc = this.host.research;
     const text = this.text.trim();
     const editor = this.noteEditor();
@@ -7388,19 +7833,23 @@ var ResearchView = class extends import_obsidian12.ItemView {
     try {
       switch (this.kind) {
         case "answer":
-          if (!text) return;
+          if (!text)
+            return;
           await svc.ask(text);
           break;
         case "factcheck":
-          if (!text) return;
+          if (!text)
+            return;
           await svc.factCheck(text);
           break;
         case "search":
-          if (!text) return;
+          if (!text)
+            return;
           await svc.search(text);
           break;
         case "quick":
-          if (!text) return;
+          if (!text)
+            return;
           await svc.quickSearch(text);
           break;
         case "extract": {
@@ -7423,7 +7872,8 @@ var ResearchView = class extends import_obsidian12.ItemView {
         }
       }
       this.text = "";
-      if (this.textarea) this.textarea.value = "";
+      if (this.textarea)
+        this.textarea.value = "";
       this.expanded.add((_b = (_a = svc.results[0]) == null ? void 0 : _a.id) != null ? _b : "");
     } catch (err) {
       this.notify(err);
@@ -7444,7 +7894,8 @@ var ResearchView = class extends import_obsidian12.ItemView {
         recallStyle: this.host.settings.researchRecallStyle
       },
       (r) => {
-        if (r.kind !== "answer") return;
+        if (r.kind !== "answer")
+          return;
         this.host.research.ask(r.text, { effort: r.effort, previousResponseId: prev.responseId }).then((res) => this.expanded.add(res.id)).catch(this.notify);
       }
     ).open();
@@ -7487,12 +7938,14 @@ var ResearchView = class extends import_obsidian12.ItemView {
     var _a;
     const b = button2(parent, "", onClick, { cls: "clickable-icon ntt-rp-iconbtn", label, title: label });
     this.safeIcon(b, icon);
-    if (!b.childNodes.length) b.textContent = (_a = label[0]) != null ? _a : "\u2022";
+    if (!b.childNodes.length)
+      b.textContent = (_a = label[0]) != null ? _a : "\u2022";
     return b;
   }
   safeIcon(target, icon) {
     try {
-      if (typeof import_obsidian12.setIcon === "function") (0, import_obsidian12.setIcon)(target, icon);
+      if (typeof import_obsidian12.setIcon === "function")
+        (0, import_obsidian12.setIcon)(target, icon);
     } catch (e) {
     }
   }
@@ -7649,7 +8102,8 @@ function registerResearchCommands(plugin) {
   });
   plugin.registerEvent(
     plugin.app.workspace.on("editor-menu", (menu, editor) => {
-      if (!editor.getSelection().trim()) return;
+      if (!editor.getSelection().trim())
+        return;
       menu.addItem(
         (item) => item.setTitle("Research: ask the web").setIcon("globe").onClick(() => openPrompt("answer", editor))
       );
@@ -7667,7 +8121,8 @@ function nearbyContext(editor, radius = 6) {
   const from = Math.max(0, line - radius);
   const to = Math.min(editor.lastLine(), line + radius);
   const lines = [];
-  for (let l = from; l <= to; l++) lines.push(editor.getLine(l));
+  for (let l = from; l <= to; l++)
+    lines.push(editor.getLine(l));
   return lines.join("\n").slice(0, 4e3);
 }
 async function openPanel(plugin) {
@@ -7755,7 +8210,8 @@ function convertCalloutsToDetails(doc) {
       const body = [];
       i++;
       while (i < lines.length && /^>\s?/.test(lines[i])) {
-        if (/^>\s*\[![^\]]+\][+-]/.test(lines[i])) break;
+        if (/^>\s*\[![^\]]+\][+-]/.test(lines[i]))
+          break;
         const bodyLine = lines[i].replace(/^>\s?/, "");
         body.push(bodyLine);
         i++;
@@ -7785,7 +8241,8 @@ function nextToggleNumber(lines) {
   let last = 0;
   for (const line of lines) {
     const m = (_a = line.match(NUMBERED_HEADER)) != null ? _a : line.match(NUMBERED_SUMMARY);
-    if (m) last = parseInt(m[2], 10);
+    if (m)
+      last = parseInt(m[2], 10);
   }
   return last + 1;
 }
@@ -7794,7 +8251,8 @@ function renumberToggles(doc) {
   const out = doc.split("\n").map((line) => {
     var _a;
     const m = (_a = line.match(NUMBERED_HEADER)) != null ? _a : line.match(NUMBERED_SUMMARY);
-    if (!m) return line;
+    if (!m)
+      return line;
     n += 1;
     return line.replace(m[0], `${m[1]}${n}. `);
   });
@@ -7809,7 +8267,8 @@ var EMPTY_MATCH_ROW = /^>\s*\|\s*\d*\s*\|\s*\|\s*\d*\.?\s*\|\s*$/;
 var MATCH_SEPARATOR = /^>\s*\|[\s-|]+\|\s*$/;
 function toggleOptionCheckbox(line) {
   const m = line.match(/^(\s*(?:>\s*)?-\s\[)([ xX])(\].*)$/);
-  if (!m) return line;
+  if (!m)
+    return line;
   return `${m[1]}${m[2] === " " ? "x" : " "}${m[3]}`;
 }
 function nextMatchRow(rowNumber) {
@@ -7847,7 +8306,8 @@ ${body}
 function buildMcqBlock(opts) {
   const count = Math.max(2, Math.min(6, opts.count || 4));
   const lines = [];
-  for (let i = 0; i < count; i++) lines.push("- [ ] ");
+  for (let i = 0; i < count; i++)
+    lines.push("- [ ] ");
   if (opts.addAnswerLine !== false) {
     lines.push("");
     lines.push("**Answer:** ");
@@ -7858,7 +8318,8 @@ function buildMatchBlock(opts) {
   var _a;
   const rows = Math.max(2, Math.min(8, opts.count || 4));
   const lines = ["| # | Column A | Column B |", "|---|---|---|"];
-  for (let i = 1; i <= rows; i++) lines.push(`| ${i} |  | ${i}.  |`);
+  for (let i = 1; i <= rows; i++)
+    lines.push(`| ${i} |  | ${i}.  |`);
   if (opts.addAnswerLine !== false) {
     lines.push("");
     const key = Array.from({ length: rows }, (_, i) => `${i + 1}-`).join(", ");
@@ -7907,7 +8368,8 @@ ${sOpen}${num}`.length;
   }
   const isCalloutHeader = /^>\s*\[![^\]]+\][+-]/.test(text);
   const isCalloutLine = /^>/.test(text);
-  if (!isCalloutLine) return null;
+  if (!isCalloutLine)
+    return null;
   if (isCalloutHeader && /^>\s*\[![^\]]+\][+-]\s*(\*\*\s*(?:\d+\.\s*)?\*\*)?\s*(?:\d+\.)?\s*$/.test(text)) {
     return { from: "lineStart", insert: "", cursorOffset: 0 };
   }
@@ -7990,7 +8452,8 @@ function planBackspace(text, col, opts) {
   return null;
 }
 function midLineEnterInsert(text, format) {
-  if (format !== "callout" || !/^>/.test(text)) return null;
+  if (format !== "callout" || !/^>/.test(text))
+    return null;
   return MCQ_OPTION2.test(text) || MCQ_EMPTY_OPTION.test(text) ? "\n> - [ ] " : "\n> ";
 }
 function newTogglePlan(input) {
@@ -8418,7 +8881,8 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
         }
         let last = found.line;
         for (let l = found.line + 1; l < editor.lineCount(); l++) {
-          if (!/^>/.test(editor.getLine(l))) break;
+          if (!/^>/.test(editor.getLine(l)))
+            break;
           if (ANSWER_LINE2.test(editor.getLine(l))) {
             new import_obsidian14.Notice("This toggle already has an answer line.");
             return;
@@ -8453,7 +8917,8 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
         this.showTimer();
         const running = !this.timerState.running;
         this.timerState = { ...this.timerState, running, autoPaused: false };
-        if (running && !this.sessionNotePath) this.sessionNotePath = this.activeNotePath();
+        if (running && !this.sessionNotePath)
+          this.sessionNotePath = this.activeNotePath();
         this.lastTick = Date.now();
         this.lastActivityAt = Date.now();
         this.renderTimer();
@@ -8516,7 +8981,8 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
       icon: "gauge",
       name: "Autoscroll: faster",
       callback: () => {
-        if (!this.requireScrollRunning()) return;
+        if (!this.requireScrollRunning())
+          return;
         this.nudgeScrollSpeed(SPEED_STEP);
       }
     });
@@ -8525,7 +8991,8 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
       icon: "gauge",
       name: "Autoscroll: slower",
       callback: () => {
-        if (!this.requireScrollRunning()) return;
+        if (!this.requireScrollRunning())
+          return;
         this.nudgeScrollSpeed(-SPEED_STEP);
       }
     });
@@ -8534,7 +9001,8 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
       icon: "square",
       name: "Autoscroll: stop",
       callback: () => {
-        if (!this.requireScrollRunning()) return;
+        if (!this.requireScrollRunning())
+          return;
         this.stopAutoScroll(true);
       }
     });
@@ -8595,7 +9063,8 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
         this.settings.scrollAdvanceBy = "screens";
         await this.saveSettings();
         this.refreshScrollPlan();
-        if (!this.scrollRunning) this.startAutoScroll();
+        if (!this.scrollRunning)
+          this.startAutoScroll();
       }
     });
     this.addCommand({
@@ -8705,7 +9174,8 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
         const { store, moved } = renameCardKey((_a = this.settings.srs) != null ? _a : {}, oldPath, file.path);
         const mem = renameCardKey((_b = this.settings.scrollMemory) != null ? _b : {}, oldPath, file.path);
         const per = renameCardKey((_c = this.settings.scrollPerNote) != null ? _c : {}, oldPath, file.path);
-        if (!moved && !mem.moved && !per.moved) return;
+        if (!moved && !mem.moved && !per.moved)
+          return;
         this.settings.srs = store;
         this.settings.scrollMemory = mem.store;
         this.settings.scrollPerNote = per.store;
@@ -8719,7 +9189,8 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
         const { store, removed } = removeCardKey((_a = this.settings.srs) != null ? _a : {}, file.path);
         const mem = removeCardKey((_b = this.settings.scrollMemory) != null ? _b : {}, file.path);
         const per = removeCardKey((_c = this.settings.scrollPerNote) != null ? _c : {}, file.path);
-        if (!removed && !mem.removed && !per.removed) return;
+        if (!removed && !mem.removed && !per.removed)
+          return;
         this.settings.srs = store;
         this.settings.scrollMemory = mem.store;
         this.settings.scrollPerNote = per.store;
@@ -8728,7 +9199,8 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
       })
     );
     void this.pruneSchedule(true);
-    if (this.settings.showOnStartup) this.showTimer();
+    if (this.settings.showOnStartup)
+      this.showTimer();
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", () => this.syncScrollFab())
     );
@@ -8746,7 +9218,8 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
       }
       if (link.action === "stop") {
         this.stopQuiz(false);
-        if (this.scrollRunning) this.stopAutoScroll(false);
+        if (this.scrollRunning)
+          this.stopAutoScroll(false);
         return;
       }
       if (link.file) {
@@ -8754,8 +9227,10 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
         await new Promise((r) => window.setTimeout(r, 350));
       }
       if (link.filter) {
-        if (link.action === "quiz") await this.setQuizFilter(link.filter);
-        else await this.setScrollFilter(link.filter);
+        if (link.action === "quiz")
+          await this.setQuizFilter(link.filter);
+        else
+          await this.setScrollFilter(link.filter);
       }
       if (link.seconds) {
         this.settings.quizSeconds = clampQuizSeconds(link.seconds);
@@ -8765,8 +9240,10 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
         this.settings.scrollSpeed = link.speed;
         await this.saveSettings();
       }
-      if (link.action === "quiz") this.startQuizRun();
-      else this.startAutoScroll();
+      if (link.action === "quiz")
+        this.startQuizRun();
+      else
+        this.startAutoScroll();
     });
     this.registerEditorExtension(
       import_state.Prec.highest(
@@ -8774,14 +9251,16 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
           {
             key: "Enter",
             run: (view) => {
-              if (!this.settings.autoContinue) return false;
+              if (!this.settings.autoContinue)
+                return false;
               return this.handleEnter(view);
             }
           },
           {
             key: "Backspace",
             run: (view) => {
-              if (!this.settings.autoContinue) return false;
+              if (!this.settings.autoContinue)
+                return false;
               return this.handleBackspace(view);
             }
           }
@@ -8814,15 +9293,18 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
     const cursor = editor.getCursor();
     for (let l = cursor.line; l >= 0 && l >= cursor.line - 40; l--) {
       const text = editor.getLine(l);
-      if (/^>\s*\[![^\]]+\][+-]/.test(text)) return { line: l, text };
-      if (!/^>/.test(text) && l !== cursor.line) break;
+      if (/^>\s*\[![^\]]+\][+-]/.test(text))
+        return { line: l, text };
+      if (!/^>/.test(text) && l !== cursor.line)
+        break;
     }
     return null;
   }
   /** Swap the callout type (colour) of the toggle at the cursor. */
   recolorToggleAtCursor(editor, callout) {
     const found = this.findHeaderLine(editor);
-    if (!found) return false;
+    if (!found)
+      return false;
     const updated = recolorHeaderLine(found.text, callout);
     editor.setLine(found.line, updated);
     return true;
@@ -8846,7 +9328,8 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
   /** Next auto-number, based on the last numbered toggle above `line`. */
   nextNumberAt(editor, line) {
     const above = [];
-    for (let l = 0; l <= line; l++) above.push(editor.getLine(l));
+    for (let l = 0; l <= line; l++)
+      above.push(editor.getLine(l));
     return nextToggleNumber(above);
   }
   /** Insert an MCQ or "Match the following" skeleton below the cursor. */
@@ -8881,13 +9364,15 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
   handleEnter(view) {
     const state = view.state;
     const sel = state.selection.main;
-    if (!sel.empty) return false;
+    if (!sel.empty)
+      return false;
     const line = state.doc.lineAt(sel.head);
     const text = line.text;
     const atLineEnd = sel.head === line.to;
     if (!atLineEnd) {
       const prefix = midLineEnterInsert(text, this.settings.format);
-      if (!prefix) return false;
+      if (!prefix)
+        return false;
       view.dispatch({
         changes: { from: sel.head, to: sel.head, insert: prefix },
         selection: { anchor: sel.head + prefix.length },
@@ -8897,7 +9382,8 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
       return true;
     }
     const linesAbove = [];
-    for (let n = 1; n <= line.number; n++) linesAbove.push(state.doc.line(n).text);
+    for (let n = 1; n <= line.number; n++)
+      linesAbove.push(state.doc.line(n).text);
     const hasNumbered = linesAbove.some((l) => NUMBERED_HEADER.test(l));
     const numbered = this.settings.numberedByDefault || hasNumbered;
     const plan = planEnter(text, {
@@ -8909,7 +9395,8 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
       nextNumber: numbered ? nextToggleNumber(linesAbove) : void 0,
       addAnswerLine: this.settings.addAnswerLine
     });
-    if (!plan) return false;
+    if (!plan)
+      return false;
     view.dispatch({
       changes: { from: plan.from === "lineStart" ? line.from : sel.head, to: line.to, insert: plan.insert },
       selection: { anchor: (plan.from === "lineStart" ? line.from : sel.head) + plan.cursorOffset },
@@ -8928,7 +9415,8 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
   handleBackspace(view) {
     const state = view.state;
     const sel = state.selection.main;
-    if (!sel.empty) return false;
+    if (!sel.empty)
+      return false;
     const line = state.doc.lineAt(sel.head);
     const plan = planBackspace(line.text, sel.head - line.from, {
       calloutType: this.activeCallout(),
@@ -8936,7 +9424,8 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
       boldSummary: this.settings.boldSummary,
       format: this.settings.format
     });
-    if (!plan) return false;
+    if (!plan)
+      return false;
     view.dispatch({
       changes: { from: line.from, to: line.to, insert: plan.insert },
       selection: { anchor: line.from + plan.cursorOffset },
@@ -8946,8 +9435,10 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
     return true;
   }
   maybeBold(text) {
-    if (!this.settings.boldSummary) return text;
-    if (text.startsWith("**") && text.endsWith("**")) return text;
+    if (!this.settings.boldSummary)
+      return text;
+    if (text.startsWith("**") && text.endsWith("**"))
+      return text;
     return `**${text}**`;
   }
   /* ---------- v1.0.7: smart commands + SM-2 review ---------- */
@@ -8988,7 +9479,8 @@ var NotionTogglePlugin = class extends import_obsidian14.Plugin {
     }
     const title = this.maybeBold(titleLine);
     const bodyLines2 = lines.slice(bodyStart);
-    while (bodyLines2.length > 0 && bodyLines2[0].trim().length === 0) bodyLines2.shift();
+    while (bodyLines2.length > 0 && bodyLines2[0].trim().length === 0)
+      bodyLines2.shift();
     const body = bodyLines2.length > 0 ? "\n" + bodyLines2.map((l) => `> ${l}`.replace(/>\s+$/, ">")).join("\n") : "";
     editor.replaceSelection(`> [!${type}]${fold} ${title}${body}
 `);
@@ -9034,7 +9526,8 @@ ${row}`, { line: cursor.line, ch: line.length });
       default:
         this.insertNewToggleBelow(editor);
     }
-    if (action !== "new-toggle") new import_obsidian14.Notice(smartActionLabel(action));
+    if (action !== "new-toggle")
+      new import_obsidian14.Notice(smartActionLabel(action));
   }
   /** Start, pause or resume the recall session with a single command. */
   runSmartRecall(editor) {
@@ -9079,7 +9572,8 @@ ${row}`, { line: cursor.line, ch: line.length });
   /** The SM-2 card for a note path. */
   cardFor(path) {
     var _a;
-    if (!path) return void 0;
+    if (!path)
+      return void 0;
     return (_a = this.settings.srs) == null ? void 0 : _a[path];
   }
   /** Show the grading row (Again / Hard / Good / Easy) for the current note. */
@@ -9119,7 +9613,8 @@ ${row}`, { line: cursor.line, ch: line.length });
     const rows = due.map((path) => ({ path, card: this.settings.srs[path] }));
     new DueNotesModal(this.app, rows, (path) => {
       const file = this.app.vault.getAbstractFileByPath(path);
-      if (file) void this.app.workspace.openLinkText(path, "", false);
+      if (file)
+        void this.app.workspace.openLinkText(path, "", false);
     }).open();
   }
   /* ---------- v1.0.5: timer plumbing ---------- */
@@ -9131,13 +9626,15 @@ ${row}`, { line: cursor.line, ch: line.length });
     this.showTimer();
   }
   showTimer() {
-    if (this.timerWidget) return;
+    if (this.timerWidget)
+      return;
     this.timerWidget = new TimerWidget(
       {
         onToggleRun: () => {
           const running = !this.timerState.running;
           this.timerState = { ...this.timerState, running, autoPaused: false };
-          if (running && !this.sessionNotePath) this.sessionNotePath = this.activeNotePath();
+          if (running && !this.sessionNotePath)
+            this.sessionNotePath = this.activeNotePath();
           this.lastTick = Date.now();
           this.lastActivityAt = Date.now();
           this.renderTimer();
@@ -9200,7 +9697,8 @@ ${row}`, { line: cursor.line, ch: line.length });
     if (reason2) {
       this.timerState = pauseForInactivity(this.timerState);
       this.renderTimer();
-      if (this.settings.notifyOnPhaseEnd) new import_obsidian14.Notice(autoPauseNotice(reason2));
+      if (this.settings.notifyOnPhaseEnd)
+        new import_obsidian14.Notice(autoPauseNotice(reason2));
       return;
     }
     const resume = shouldAutoResume({
@@ -9221,7 +9719,8 @@ ${row}`, { line: cursor.line, ch: line.length });
   collapseActiveNote(notify = false) {
     var _a;
     const editor = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.editor;
-    if (!editor) return;
+    if (!editor)
+      return;
     const doc = editor.getValue();
     const collapsed = collapseAllToggles(doc);
     if (collapsed !== doc) {
@@ -9239,11 +9738,13 @@ ${row}`, { line: cursor.line, ch: line.length });
     const now = Date.now();
     const elapsed = now - this.lastTick;
     this.lastTick = now;
-    if (!this.timerState.running) return;
+    if (!this.timerState.running)
+      return;
     if (this.timerState.phase === "focus" && isIdle(this.lastActivityAt, now, this.settings.idlePauseMinutes)) {
       this.timerState = pauseForInactivity(this.timerState);
       this.renderTimer();
-      if (this.settings.notifyOnPhaseEnd) new import_obsidian14.Notice(autoPauseNotice("idle"));
+      if (this.settings.notifyOnPhaseEnd)
+        new import_obsidian14.Notice(autoPauseNotice("idle"));
       return;
     }
     const result = tick(this.timerState, elapsed, this.settings);
@@ -9256,7 +9757,8 @@ ${row}`, { line: cursor.line, ch: line.length });
         const ended = result.endedPhase === "focus" ? "Focus" : "Break";
         new import_obsidian14.Notice(`${ended} done \u2192 ${phaseLabel(this.timerState.phase)} \xB7 ${(_b = this.recallHint()) != null ? _b : ""}`.trim());
       }
-      if (this.settings.soundOnPhaseEnd) this.buzz();
+      if (this.settings.soundOnPhaseEnd)
+        this.buzz();
       if (result.endedPhase === "focus" && this.settings.autoCollapseOnBreak) {
         this.collapseActiveNote();
       }
@@ -9278,9 +9780,11 @@ ${row}`, { line: cursor.line, ch: line.length });
   /** Colour stats of the active note, used for the break hint. */
   recallHint() {
     const doc = this.activeDoc();
-    if (!doc) return void 0;
+    if (!doc)
+      return void 0;
     const stats = scanRecallStats(doc);
-    if (stats.total === 0) return void 0;
+    if (stats.total === 0)
+      return void 0;
     return `\u{1F534} ${stats.red} \xB7 \u{1F7E1} ${stats.yellow} \xB7 \u{1F7E2} ${stats.green} of ${stats.total}`;
   }
   activeDoc() {
@@ -9307,7 +9811,8 @@ ${row}`, { line: cursor.line, ch: line.length });
     );
   }
   renderTimer() {
-    if (!this.timerWidget) return;
+    if (!this.timerWidget)
+      return;
     const breakPhase = this.timerState.phase !== "focus";
     const recall = this.recallHint();
     const hint = this.timerState.autoPaused ? "Paused \u2014 tap \u25B6 to resume" : breakPhase ? recall : void 0;
@@ -9394,15 +9899,18 @@ ${row}`, { line: cursor.line, ch: line.length });
    * Shows the exact command to run instead of failing silently.
    */
   requireScrollRunning() {
-    if (this.scrollPlan.length > 0) return true;
+    if (this.scrollPlan.length > 0)
+      return true;
     new import_obsidian14.Notice(MSG_NOT_RUNNING, 6e3);
     return false;
   }
   /** v1.1.6 — settings ON/OFF switch: start or stop the session. */
   async setAutoScrollEnabled(on) {
     if (on) {
-      if (this.scrollPlan.length === 0) this.startAutoScroll();
-      else if (!this.scrollRunning) this.toggleAutoScroll();
+      if (this.scrollPlan.length === 0)
+        this.startAutoScroll();
+      else if (!this.scrollRunning)
+        this.toggleAutoScroll();
     } else if (this.scrollPlan.length > 0) {
       this.stopAutoScroll(true);
     }
@@ -9425,7 +9933,8 @@ ${row}`, { line: cursor.line, ch: line.length });
    * `new Notice(...)` directly so they are never swallowed.
    */
   say(message, ms3 = 3e3) {
-    if (this.settings.scrollQuiet) return;
+    if (this.settings.scrollQuiet)
+      return;
     new import_obsidian14.Notice(message, ms3);
   }
   /** v1.4.10 — candidates + pick rule live in `src/scroll-container.ts`. */
@@ -9490,7 +9999,8 @@ ${row}`, { line: cursor.line, ch: line.length });
    */
   beginFullRender() {
     var _a;
-    if ((_a = this.scrollFullRender) == null ? void 0 : _a.forced) return false;
+    if ((_a = this.scrollFullRender) == null ? void 0 : _a.forced)
+      return false;
     const view = this.app.workspace.getActiveViewOfType(import_obsidian14.MarkdownView);
     const handle = ensureFullRender(view);
     this.scrollFullRender = handle;
@@ -9534,9 +10044,11 @@ ${row}`, { line: cursor.line, ch: line.length });
    */
   calloutBreakdown() {
     const source = scanSourceToggles(this.noteSource());
-    if (source.total > 0) return countKinds(source.kinds);
+    if (source.total > 0)
+      return countKinds(source.kinds);
     const container = this.findViewContainer();
-    if (!container) return countKinds([]);
+    if (!container)
+      return countKinds([]);
     return countKinds(this.collectStops(container).map((s) => s.color));
   }
   /** v1.2.0 — is this toggle currently expanded? */
@@ -9560,9 +10072,12 @@ ${row}`, { line: cursor.line, ch: line.length });
     const stops = this.collectStops(container);
     let n = 0;
     for (const s of stops) {
-      if (!s.el) continue;
-      if (this.quizState) setQuizVisible(s.el, open);
-      else this.setToggleOpen(s.el, open);
+      if (!s.el)
+        continue;
+      if (this.quizState)
+        setQuizVisible(s.el, open);
+      else
+        this.setToggleOpen(s.el, open);
       n++;
     }
     if (!this.settings.scrollQuiet) {
@@ -9571,7 +10086,8 @@ ${row}`, { line: cursor.line, ch: line.length });
   }
   /** Re-apply the quiz answer rule after the "keep answers open" switch flips. */
   refreshQuizAnswerVisibility() {
-    if (!this.quizState) return;
+    if (!this.quizState)
+      return;
     this.applyQuizVisibility(this.quizState.at, this.quizState.phase === "reveal");
   }
   /**
@@ -9580,7 +10096,8 @@ ${row}`, { line: cursor.line, ch: line.length });
    */
   holdPauseStart() {
     var _a;
-    if (!this.scrollRunning || this.scrollHoldPaused) return;
+    if (!this.scrollRunning || this.scrollHoldPaused)
+      return;
     this.scrollHoldPaused = true;
     this.scrollHoldAt = performance.now();
     if (this.scrollRaf !== null) {
@@ -9592,17 +10109,23 @@ ${row}`, { line: cursor.line, ch: line.length });
   /** Resume at exactly the same speed / direction / dwell state. */
   holdPauseEnd() {
     var _a;
-    if (!this.scrollHoldPaused) return;
+    if (!this.scrollHoldPaused)
+      return;
     this.scrollHoldPaused = false;
     const held = Math.max(0, performance.now() - this.scrollHoldAt);
-    if (this.scrollDwellUntil) this.scrollDwellUntil += held;
-    if (this.scrollHoldUntil) this.scrollHoldUntil += held;
-    if (this.scrollOpenedAt) this.scrollOpenedAt += held;
+    if (this.scrollDwellUntil)
+      this.scrollDwellUntil += held;
+    if (this.scrollHoldUntil)
+      this.scrollHoldUntil += held;
+    if (this.scrollOpenedAt)
+      this.scrollOpenedAt += held;
     this.scrollHoldAt = 0;
     this.scrollLastFrame = 0;
-    if (this.scrollContainer) this.scrollPos = this.scrollContainer.scrollTop;
+    if (this.scrollContainer)
+      this.scrollPos = this.scrollContainer.scrollTop;
     (_a = this.scrollFabBtn) == null ? void 0 : _a.setPinned(!this.scrollRunning);
-    if (this.scrollRunning) this.scheduleScrollFrame();
+    if (this.scrollRunning)
+      this.scheduleScrollFrame();
   }
   /** Attach / detach the document-level hold listener with the session. */
   syncHoldPause() {
@@ -9628,7 +10151,8 @@ ${row}`, { line: cursor.line, ch: line.length });
       new import_obsidian14.Notice(`Autoscroll paused \u2014 ${hotkeyLabel("smart-autoscroll")} se resume.`);
       return;
     }
-    if (this.scrollPlan.length === 0) this.startAutoScroll();
+    if (this.scrollPlan.length === 0)
+      this.startAutoScroll();
     else {
       this.scrollRunning = true;
       this.scrollLastFrame = 0;
@@ -9651,7 +10175,8 @@ ${row}`, { line: cursor.line, ch: line.length });
   }
   /** FSRS cards for the active note. */
   scrollCards(path = ((_c) => (_c = ((_b) => (_b = this.scrollNotePath) != null ? _b : ((_a) => (_a = this.app.workspace.getActiveFile()) == null ? void 0 : _a.path)())()) != null ? _c : "")()) {
-    if (!path) return [];
+    if (!path)
+      return [];
     return loadDeck(this.settings.scrollMemory, path);
   }
   async saveScrollCards(path, cards) {
@@ -9676,7 +10201,8 @@ ${row}`, { line: cursor.line, ch: line.length });
   screenPlanSummary() {
     var _a;
     const container = (_a = this.scrollContainer) != null ? _a : this.findViewContainer();
-    if (!container) return "Open a note to see the live screen calculation.";
+    if (!container)
+      return "Open a note to see the live screen calculation.";
     return describeScreenPlan(this.screenPlanFor(container));
   }
   /**
@@ -9719,7 +10245,8 @@ ${row}`, { line: cursor.line, ch: line.length });
     const ordered = orderModeStops(toggleStops, cfg, this.settings.scrollReverse);
     const togglePlan = ordered.flatMap((ms3) => {
       const src = byOrdinal.get(ms3.ordinal);
-      if (!src) return [];
+      if (!src)
+        return [];
       return [{
         index: src.index,
         top: ms3.top,
@@ -9730,7 +10257,8 @@ ${row}`, { line: cursor.line, ch: line.length });
         part: ms3.part
       }];
     });
-    if (advanceBy !== "both") return togglePlan;
+    if (advanceBy !== "both")
+      return togglePlan;
     const screenPlan2 = this.screenPlanTops(container, keptTops).map((top, part) => ({
       index: -1,
       top,
@@ -9782,9 +10310,11 @@ ${deckSummary(
   scrollDeckStats() {
     var _a, _b, _c;
     const path = (_c = (_b = this.scrollNotePath) != null ? _b : (_a = this.app.workspace.getActiveFile()) == null ? void 0 : _a.path) != null ? _c : "";
-    if (!path) return null;
+    if (!path)
+      return null;
     const total = this.scrollTotalItems || this.scrollBoxes.length;
-    if (!total) return null;
+    if (!total)
+      return null;
     return deckStats2(this.scrollCards(path), total, {
       from: this.settings.scrollShuffleFrom,
       to: this.settings.scrollShuffleTo,
@@ -9796,7 +10326,8 @@ ${deckSummary(
     var _a, _b, _c;
     const path = (_c = (_b = this.scrollNotePath) != null ? _b : (_a = this.app.workspace.getActiveFile()) == null ? void 0 : _a.path) != null ? _c : "";
     const total = this.scrollTotalItems || this.scrollBoxes.length;
-    if (!path || !total) return [];
+    if (!path || !total)
+      return [];
     return forecastDue(this.scrollCards(path), total, 7, {
       from: this.settings.scrollShuffleFrom,
       to: this.settings.scrollShuffleTo,
@@ -9806,16 +10337,19 @@ ${deckSummary(
   async resetScrollMemory() {
     var _a, _b;
     const path = (_b = (_a = this.app.workspace.getActiveFile()) == null ? void 0 : _a.path) != null ? _b : "";
-    if (!path) return;
+    if (!path)
+      return;
     this.settings.scrollMemory = resetDeck(this.settings.scrollMemory, path);
     await this.saveSettings();
     new import_obsidian14.Notice("Revision memory reset \u2014 every toggle is new again.");
   }
   /** Auto-grade the toggle we are leaving (shuffle mode only). */
   async gradeLeavingStop(ordinal, openedMs) {
-    if (!this.settings.scrollAutoGrade || this.settings.scrollMode !== "shuffle") return;
+    if (!this.settings.scrollAutoGrade || this.settings.scrollMode !== "shuffle")
+      return;
     const path = this.scrollNotePath;
-    if (!path || !ordinal) return;
+    if (!path || !ordinal)
+      return;
     const planned = Math.max(1, clampHold(this.settings.scrollHold)) * 1e3;
     const grade = gradeFromDwell(openedMs / planned, this.scrollSeen.has(ordinal));
     this.scrollSeen.add(ordinal);
@@ -9846,13 +10380,15 @@ ${deckSummary(
     var _a, _b;
     if (this.ensureReadingMode()) {
       window.setTimeout(() => {
-        if (!this.scrollRunning && this.scrollPlan.length === 0) this.startAutoScroll();
+        if (!this.scrollRunning && this.scrollPlan.length === 0)
+          this.startAutoScroll();
       }, 180);
       return;
     }
     if (this.beginFullRender()) {
       window.setTimeout(() => {
-        if (!this.scrollRunning && this.scrollPlan.length === 0) this.startAutoScroll();
+        if (!this.scrollRunning && this.scrollPlan.length === 0)
+          this.startAutoScroll();
       }, 220);
       return;
     }
@@ -9864,7 +10400,8 @@ ${deckSummary(
           this.scrollRenderRetries += 1;
           window.setTimeout(() => {
             this.scrollRetryPending = false;
-            if (!this.scrollRunning && this.scrollPlan.length === 0) this.startAutoScroll();
+            if (!this.scrollRunning && this.scrollPlan.length === 0)
+              this.startAutoScroll();
           }, 350);
         }
         return;
@@ -9889,7 +10426,8 @@ ${deckSummary(
           this.scrollRenderRetries += 1;
           window.setTimeout(() => {
             this.scrollRetryPending = false;
-            if (!this.scrollRunning && this.scrollPlan.length === 0) this.startAutoScroll();
+            if (!this.scrollRunning && this.scrollPlan.length === 0)
+              this.startAutoScroll();
           }, 350);
         }
         return;
@@ -9971,9 +10509,11 @@ ${deckSummary(
   applyPerNoteScrollPrefs() {
     var _a;
     const path = this.scrollNotePath;
-    if (!path) return;
+    if (!path)
+      return;
     const saved = (_a = this.settings.scrollPerNote) == null ? void 0 : _a[path];
-    if (!saved) return;
+    if (!saved)
+      return;
     this.settings.scrollSpeed = clampSpeed(saved.speed);
     this.settings.scrollReverse = !!saved.reverse;
     this.settings.scrollHold = clampHold(saved.hold);
@@ -9981,7 +10521,8 @@ ${deckSummary(
   async rememberPerNoteScrollPrefs() {
     var _a, _b, _c, _d;
     const path = (_c = (_b = this.scrollNotePath) != null ? _b : (_a = this.app.workspace.getActiveFile()) == null ? void 0 : _a.path) != null ? _c : null;
-    if (!path) return;
+    if (!path)
+      return;
     this.settings.scrollPerNote = {
       ...(_d = this.settings.scrollPerNote) != null ? _d : {},
       [path]: {
@@ -9996,7 +10537,8 @@ ${deckSummary(
   scrollToStart() {
     var _a;
     const container = (_a = this.scrollContainer) != null ? _a : this.findScrollContainer();
-    if (!container) return;
+    if (!container)
+      return;
     container.scrollTop = this.settings.scrollReverse ? container.scrollHeight : 0;
     this.scrollPos = container.scrollTop;
     this.resetDwell();
@@ -10015,7 +10557,8 @@ ${deckSummary(
     this.endFullRender();
     this.scrollRenderRetries = 0;
     this.thinkGate.clear();
-    if (this.scrollOpenEl) clearThinkMarks(this.scrollOpenEl);
+    if (this.scrollOpenEl)
+      clearThinkMarks(this.scrollOpenEl);
     document.body.classList.remove(THINK_RUN_CLASS, FOCUS_RUN_CLASS, REDUCED_MOTION_CLASS);
     if (this.scrollOpenEl && this.settings.scrollAutoClose) {
       this.setToggleOpen(this.scrollOpenEl, false);
@@ -10041,7 +10584,8 @@ ${deckSummary(
     this.scrollHoldPaused = false;
     this.syncScrollFab();
     this.syncHoldPause();
-    if (notify) this.say("Autoscroll stopped.");
+    if (notify)
+      this.say("Autoscroll stopped.");
   }
   async setScrollReverse(reverse) {
     this.settings.scrollReverse = reverse;
@@ -10084,7 +10628,8 @@ ${deckSummary(
   /** Recompute the plan mid-session (filter / mode / direction changed). */
   refreshScrollPlan() {
     const container = this.scrollContainer;
-    if (!container) return;
+    if (!container)
+      return;
     this.scrollPlan = this.buildScrollPlan(container);
     this.scrollAt = 0;
     this.scrollBoxes = [];
@@ -10127,7 +10672,8 @@ ${deckSummary(
     var _a;
     const overlay = this.scrollDebugOverlay;
     const container = this.scrollContainer;
-    if (!overlay || !container) return;
+    if (!overlay || !container)
+      return;
     overlay.update({
       ...loopFrame({
         pos: this.scrollPos,
@@ -10290,7 +10836,8 @@ ${deckSummary(
     this.scrollLastSkips = [];
   }
   endScrollFrame(ts) {
-    if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
+    if (this.scrollDebugOverlay)
+      this.paintScrollDebug({}, ts);
     this.scheduleScrollFrame();
   }
   /** v1.6.1 — the think settings this note is actually running with. */
@@ -10306,7 +10853,8 @@ ${deckSummary(
    */
   closeFilteredStrays(container, keep) {
     const filter = this.settings.scrollFilter;
-    if (!container || filter.length === 0) return 0;
+    if (!container || filter.length === 0)
+      return 0;
     const scan = this.collectStops(container).filter((s) => !!s.el).map((s) => ({ el: s.el, color: s.color, open: this.isToggleOpen(s.el) }));
     const strays = strayOpenToggles(scan, filter, keep != null ? keep : this.scrollOpenEl);
     for (const el2 of strays) {
@@ -10359,25 +10907,30 @@ ${deckSummary(
       this.thinkTimeline.mark("countdown", ordinal, now, `${Math.round(this.scrollThinkMs / 1e3)}s`);
     }
     this.scrollBoxesAt = 0;
-    if (identity) this.scrollVisitedToggles.add(identity);
+    if (identity)
+      this.scrollVisitedToggles.add(identity);
     this.scrollActiveIdentity = nextActiveIdentity(identity, true);
     this.noteScrollVisit(ordinal, now);
     return true;
   }
   /** Reader parity: a visit opens here and is graded when the pause ends. */
   noteScrollVisit(ordinal, now = Date.now()) {
-    if (!Number.isFinite(ordinal) || ordinal <= 0) return;
-    if (this.settings.scrollMode !== "shuffle") return;
+    if (!Number.isFinite(ordinal) || ordinal <= 0)
+      return;
+    if (this.settings.scrollMode !== "shuffle")
+      return;
     const open = this.scrollVisit;
     if (open && open.ordinal !== ordinal) {
       this.scrollVisit = null;
       void this.gradeLeavingStop(open.ordinal, Date.now() - open.at);
     }
-    if (!this.scrollVisit) this.scrollVisit = { ordinal, at: Date.now() };
+    if (!this.scrollVisit)
+      this.scrollVisit = { ordinal, at: Date.now() };
   }
   closeScrollVisit() {
     const open = this.scrollVisit;
-    if (!open || this.settings.scrollMode !== "shuffle") return;
+    if (!open || this.settings.scrollMode !== "shuffle")
+      return;
     this.scrollVisit = null;
     void this.gradeLeavingStop(open.ordinal, Date.now() - open.at);
   }
@@ -10385,15 +10938,19 @@ ${deckSummary(
   pickSmoothEl(container) {
     var _a;
     try {
-      if ((_a = window.matchMedia) == null ? void 0 : _a.call(window, "(prefers-reduced-motion: reduce)").matches) return null;
+      if ((_a = window.matchMedia) == null ? void 0 : _a.call(window, "(prefers-reduced-motion: reduce)").matches)
+        return null;
       const candidate = Array.from(container.children).find((c) => {
-        if (!(c instanceof HTMLElement)) return false;
+        if (!(c instanceof HTMLElement))
+          return false;
         const pos = getComputedStyle(c).position;
         return pos !== "sticky" && pos !== "fixed";
       });
-      if (!candidate) return null;
+      if (!candidate)
+        return null;
       const t = getComputedStyle(candidate).transform;
-      if (t && t !== "none") return null;
+      if (t && t !== "none")
+        return null;
       return candidate;
     } catch (e) {
       return null;
@@ -10413,8 +10970,10 @@ ${deckSummary(
     this.scrollPrevBehavior = null;
   }
   scheduleScrollFrame() {
-    if (this.scrollHoldPaused) return;
-    if (this.scrollRaf !== null) window.cancelAnimationFrame(this.scrollRaf);
+    if (this.scrollHoldPaused)
+      return;
+    if (this.scrollRaf !== null)
+      window.cancelAnimationFrame(this.scrollRaf);
     this.scrollRaf = window.requestAnimationFrame((ts) => this.autoScrollFrame(ts));
   }
   /**
@@ -10428,8 +10987,10 @@ ${deckSummary(
       this.scrollStuckSince = 0;
       return false;
     }
-    if (!this.scrollStuckSince) this.scrollStuckSince = ts;
-    if (!isScrollStuck(this.scrollStuckSince, ts)) return false;
+    if (!this.scrollStuckSince)
+      this.scrollStuckSince = ts;
+    if (!isScrollStuck(this.scrollStuckSince, ts))
+      return false;
     this.scrollLastEvent = `stopped: ${why}`;
     new import_obsidian14.Notice(MSG_NO_SCROLLER, 8e3);
     this.stopAutoScroll(false);
@@ -10438,13 +10999,15 @@ ${deckSummary(
   autoScrollFrame(ts) {
     var _a;
     this.scrollRaf = null;
-    if (!this.scrollRunning || this.scrollHoldPaused) return;
+    if (!this.scrollRunning || this.scrollHoldPaused)
+      return;
     const container = this.scrollContainer;
     if (!container || !container.isConnected) {
       this.stopAutoScroll(false);
       return;
     }
-    if (!this.scrollLastFrame) this.scrollLastFrame = ts;
+    if (!this.scrollLastFrame)
+      this.scrollLastFrame = ts;
     const dt = frameFactor(ts - this.scrollLastFrame);
     this.scrollLastFrame = ts;
     const perFrame = clampSpeed(this.settings.scrollSpeed) / 60;
@@ -10456,7 +11019,8 @@ ${deckSummary(
       } else if (this.thinkGate.thinking) {
         this.thinkTimeline.mark("tick", this.scrollOpenOrdinal, ts);
       }
-      if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
+      if (this.scrollDebugOverlay)
+        this.paintScrollDebug({}, ts);
       this.scheduleScrollFrame();
       return;
     }
@@ -10473,7 +11037,8 @@ ${deckSummary(
     const max = container.scrollHeight - container.clientHeight;
     markProgrammaticScroll();
     if (max > 2) {
-      if (Math.abs(container.scrollTop - this.scrollPos) > 2) this.scrollPos = container.scrollTop;
+      if (Math.abs(container.scrollTop - this.scrollPos) > 2)
+        this.scrollPos = container.scrollTop;
       const cfg = this.dwellCfg();
       const routeMode = isRouteMode(cfg);
       const remeasureMs = this.renderedFully() ? 500 : 200;
@@ -10499,7 +11064,8 @@ ${deckSummary(
       this.scrollMovedPx += Math.abs(this.scrollPos - prevPos);
       const whole = Math.floor(this.scrollPos);
       container.scrollTop = whole;
-      if (this.noteScrollProgress(Math.abs(container.scrollTop - whole) <= 2, ts, "scrollTop writes ignored")) return;
+      if (this.noteScrollProgress(Math.abs(container.scrollTop - whole) <= 2, ts, "scrollTop writes ignored"))
+        return;
       if (routeMode) {
         if (routeTarget != null && waypointReached(prevPos, this.scrollPos, routeTarget)) {
           this.scrollPos = routeTarget;
@@ -10612,9 +11178,11 @@ ${deckSummary(
         this.scrollBoxesAt = 0;
         this.scrollSmoothEl = null;
         this.scrollStuckSince = 0;
-      } else if (this.noteScrollProgress(false, ts, "no scrollable container")) return;
+      } else if (this.noteScrollProgress(false, ts, "no scrollable container"))
+        return;
     }
-    if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
+    if (this.scrollDebugOverlay)
+      this.paintScrollDebug({}, ts);
     this.scheduleScrollFrame();
   }
   /* ==================== v1.1.0: quiz mode ==================== */
@@ -10629,9 +11197,11 @@ ${deckSummary(
   async setQuizFilter(filter) {
     applyQuizFilter(this.settings, filter);
     await this.saveSettings();
-    if (this.scrollContainer && this.scrollPlan.length) this.refreshScrollPlan();
+    if (this.scrollContainer && this.scrollPlan.length)
+      this.refreshScrollPlan();
     this.renderScrollBar();
-    if (!this.settings.scrollQuiet) new import_obsidian14.Notice(`Quiz filter: ${filterLabel(this.settings.quizFilter)}`);
+    if (!this.settings.scrollQuiet)
+      new import_obsidian14.Notice(`Quiz filter: ${filterLabel(this.settings.quizFilter)}`);
   }
   /** Primary command: start, pause or resume the quiz. */
   toggleQuiz() {
@@ -10645,7 +11215,8 @@ ${deckSummary(
     var _a;
     if (this.beginFullRender()) {
       window.setTimeout(() => {
-        if (!this.quizState) this.startQuizRun();
+        if (!this.quizState)
+          this.startQuizRun();
       }, 220);
       return;
     }
@@ -10670,7 +11241,8 @@ ${deckSummary(
         this.quizRenderRetries += 1;
         window.setTimeout(() => {
           this.quizRetryPending = false;
-          if (!this.quizState) this.startQuizRun();
+          if (!this.quizState)
+            this.startQuizRun();
         }, 350);
         return;
       }
@@ -10688,12 +11260,16 @@ ${deckSummary(
     this.quizSnapshot = snapshotToggles(stops.map((s) => s.el));
     document.body.classList.add(QUIZ_ACTIVE_CLASS);
     for (const s of stops) {
-      if (!s.el) continue;
-      if (this.settings.quizKeepAnswersOpen) this.forceQuizOpen(s.el);
-      else setQuizVisible(s.el, false);
+      if (!s.el)
+        continue;
+      if (this.settings.quizKeepAnswersOpen)
+        this.forceQuizOpen(s.el);
+      else
+        setQuizVisible(s.el, false);
     }
     this.quizState = startQuiz(this.quizTitles, this.settings);
-    if (!this.quizBoard) this.quizBoard = new QuizBoard(document);
+    if (!this.quizBoard)
+      this.quizBoard = new QuizBoard(document);
     if (!this.settings.quizMinimalUi && !this.quizBar) {
       this.quizBar = new QuizBar({
         onTogglePause: () => this.toggleQuizPause(),
@@ -10706,7 +11282,8 @@ ${deckSummary(
     this.perf.reset();
     const first = (_a = this.quizTitles[0]) != null ? _a : "";
     this.perf.timer.start(1, first, "question", questionMs(first, this.settings), Date.now());
-    if (!this.settings.scrollQuiet) new import_obsidian14.Notice(quizStartLabel(stops.length, this.settings));
+    if (!this.settings.scrollQuiet)
+      new import_obsidian14.Notice(quizStartLabel(stops.length, this.settings));
     this.renderQuizHud();
     this.startQuizLoop();
   }
@@ -10722,7 +11299,8 @@ ${deckSummary(
       this.quizSnapshot
     );
     document.body.classList.remove(QUIZ_ACTIVE_CLASS);
-    if (!this.scrollRunning) this.endFullRender();
+    if (!this.scrollRunning)
+      this.endFullRender();
     this.quizState = null;
     this.quizSnapshot = [];
     this.quizStops = [];
@@ -10732,7 +11310,8 @@ ${deckSummary(
     this.quizBoard = null;
     (_b = this.quizBar) == null ? void 0 : _b.destroy();
     this.quizBar = null;
-    if (notify) new import_obsidian14.Notice(summary || "Quiz stopped.");
+    if (notify)
+      new import_obsidian14.Notice(summary || "Quiz stopped.");
   }
   toggleQuizPause() {
     if (!this.quizState) {
@@ -10740,7 +11319,8 @@ ${deckSummary(
       return;
     }
     this.quizState = this.quizState.running ? pauseQuiz(this.quizState) : resumeQuiz(this.quizState);
-    if (this.quizState.running) this.perf.timer.addPause(Date.now() - this.quizLastFrame);
+    if (this.quizState.running)
+      this.perf.timer.addPause(Date.now() - this.quizLastFrame);
     this.perf.freezes.ignoreNext();
     this.quizLastFrame = Date.now();
     this.renderQuizHud();
@@ -10749,13 +11329,15 @@ ${deckSummary(
     }
   }
   quizRevealNow() {
-    if (!this.quizState) return;
+    if (!this.quizState)
+      return;
     const { state, event } = revealNow(this.quizState, this.settings);
     this.quizState = state;
     this.applyQuizEvent(event);
   }
   quizNext() {
-    if (!this.quizState) return;
+    if (!this.quizState)
+      return;
     const { state, event } = skipQuestion(this.quizState, this.quizTitles, this.settings);
     this.quizState = state;
     this.applyQuizEvent(event);
@@ -10768,8 +11350,10 @@ ${deckSummary(
    */
   ensureQuizEls() {
     const container = this.quizContainer;
-    if (!container || !this.quizStops.length) return;
-    if (!needsHeal(this.quizStops.map((s) => s.el))) return;
+    if (!container || !this.quizStops.length)
+      return;
+    if (!needsHeal(this.quizStops.map((s) => s.el)))
+      return;
     const healStart = nowMs();
     const fresh = this.collectStops(container, this.quizFilterColors()).map((s) => s.el).filter((el2) => !!el2);
     const healed = healQuizEls(
@@ -10784,8 +11368,10 @@ ${deckSummary(
   /** React to an engine event: open the answer, move on, or finish. */
   applyQuizEvent(event) {
     var _a;
-    if (!this.quizState) return;
-    if (event) this.markQuizPhase(event);
+    if (!this.quizState)
+      return;
+    if (event)
+      this.markQuizPhase(event);
     if (event === "reveal") {
       this.ensureQuizEls();
       this.applyQuizVisibility(this.quizState.at, true);
@@ -10810,14 +11396,17 @@ ${perfVerdict(this.perf.report())}`, 9e3);
    * only when that did not land (natively collapsed / re-rendered callout).
    */
   forceQuizOpen(el2) {
-    if (!el2 || !el2.isConnected) return;
+    if (!el2 || !el2.isConnected)
+      return;
     setQuizVisible(el2, true);
-    if (!revealLanded(el2)) this.setToggleOpen(el2, true);
+    if (!revealLanded(el2))
+      this.setToggleOpen(el2, true);
   }
   /** Only the current question may show its answer, and only after the reveal. */
   applyQuizVisibility(index, revealed) {
     if (this.settings.quizKeepAnswersOpen) {
-      for (const s of this.quizStops) this.forceQuizOpen(s.el);
+      for (const s of this.quizStops)
+        this.forceQuizOpen(s.el);
       return;
     }
     applyQuizVisibilityClasses(
@@ -10831,7 +11420,8 @@ ${perfVerdict(this.perf.report())}`, 9e3);
   scrollQuizTo(index) {
     const container = this.quizContainer;
     const stop = this.quizStops[index];
-    if (!container || !stop) return;
+    if (!container || !stop)
+      return;
     this.applyQuizVisibility(index, false);
     const el2 = stop.el;
     const scroll = () => {
@@ -10846,17 +11436,21 @@ ${perfVerdict(this.perf.report())}`, 9e3);
       });
       this.renderQuizHud();
     };
-    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(scroll);
-    else scroll();
+    if (typeof window.requestAnimationFrame === "function")
+      window.requestAnimationFrame(scroll);
+    else
+      scroll();
   }
   startQuizLoop() {
-    if (this.quizInterval !== null) window.clearInterval(this.quizInterval);
+    if (this.quizInterval !== null)
+      window.clearInterval(this.quizInterval);
     this.quizLastFrame = Date.now();
     this.quizInterval = window.setInterval(() => this.quizFrame(), 250);
     this.registerInterval(this.quizInterval);
   }
   quizFrame() {
-    if (!this.quizState) return;
+    if (!this.quizState)
+      return;
     const container = this.quizContainer;
     if (!container || !container.isConnected) {
       this.stopQuiz(false);
@@ -10864,20 +11458,25 @@ ${perfVerdict(this.perf.report())}`, 9e3);
     }
     const now = Date.now();
     const dt = Math.min(2e3, now - this.quizLastFrame);
-    if (this.quizState.running) this.perf.freezes.tick(now - this.quizLastFrame, this.quizState.phase, now);
+    if (this.quizState.running)
+      this.perf.freezes.tick(now - this.quizLastFrame, this.quizState.phase, now);
     this.quizLastFrame = now;
     const { state, event } = quizTick(this.quizState, dt, this.quizTitles, this.settings);
     this.quizState = state;
-    if (event) this.applyQuizEvent(event);
-    else this.renderQuizHud();
+    if (event)
+      this.applyQuizEvent(event);
+    else
+      this.renderQuizHud();
   }
   /** v1.4.7 — close the phase that just ended, open the next one for the report. */
   markQuizPhase(event) {
     var _a;
     const st = this.quizState;
-    if (!st) return;
+    if (!st)
+      return;
     this.perf.timer.finish(Date.now());
-    if (event === "done") return;
+    if (event === "done")
+      return;
     const title = (_a = this.quizTitles[st.at]) != null ? _a : "";
     const reveal = event === "reveal";
     const ms3 = reveal ? clampRevealSeconds(this.settings.quizRevealSeconds) * 1e3 : questionMs(title, this.settings);
@@ -10886,7 +11485,8 @@ ${perfVerdict(this.perf.report())}`, 9e3);
   /** Paint the inline ring (and the optional dock) from the engine state. */
   renderQuizHud() {
     const st = this.quizState;
-    if (!st) return;
+    if (!st)
+      return;
     const paintAt = nowMs();
     this.perf.quizRender.mark(paintAt);
     this.ensureQuizEls();

@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1790231936309,
+      "tag": "0000_research_bridge_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790231954347,
+      "tag": "0001_touch_plugin_key_fn",
+      "breakpoints": true
+    }
+  ]
+}

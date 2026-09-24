@@ -1,4 +1,4 @@
-# Feature status — v1.6.2
+# Feature status — v1.7.0
 
 **Verification rule:** Working means covered by a passing automated test, a deterministic source audit, or an explicitly named end-to-end fixture. Remaining means the capability is not broken; it still needs the validation gate listed below.
 
@@ -6,9 +6,9 @@
 
 | Status | Count | Meaning |
 |---|---:|---|
-| Working | 42 | Implemented and verified in the current suite / audit |
-| Remaining validation | 4 | Needs real-device, long-note, or accessibility proof |
-| **Total tracked** | **46** | Full product surface |
+| Working | 50 | Implemented and verified in the current suite / audit |
+| Remaining validation | 5 | Needs real-device, long-note, or accessibility proof |
+| **Total tracked** | **55** | Full product surface |
 
 ## Working features
 
@@ -54,6 +54,14 @@
 40. Reduced-motion mode for countdown and reveal (v1.6.1)
 41. Timing debug overlay: open / countdown / tick / reveal stamps (v1.6.1)
 42. Colour-filter hard guard and refused-park skip, so a stop that vanished never freezes the run (v1.6.2)
+43. Research side panel with composer, results history and background-run list (v1.7.0)
+44. Ask the web: cited answers with numbered markers and a Sources list (v1.7.0)
+45. Fact-check selection as a verdict-coloured callout with correction (v1.7.0)
+46. Web search, quick search and read-link into source toggles (v1.7.0)
+47. Recall toggles generated from a topic, link, pasted text or the whole note (v1.7.0)
+48. Background deep research with polling backoff, insert notice and restart-safe run memory (v1.7.0)
+49. Web research settings with URL normalisation, masked key and connection test (v1.7.0)
+50. On-device research cache and research-folder architecture guardrails (v1.7.0)
 
 ## Remaining validation gates
 
@@ -62,7 +70,8 @@
 | Obsidian mobile device run | Browser fixtures cannot prove every mobile wrapper and safe-area quirk | 20-minute run with filter picker, start/stop, and rotation |
 | 500+ toggle benchmark | The normal fixture proves correctness, not large-note latency | No skipped stops, bounded frame work, no silent freeze |
 | Accessibility review | Automated labels do not replace assistive-technology review | Keyboard + screen reader + reduced-motion pass |
-| Published release smoke test | Source build is not the same as BRAT installation | Install v1.6.2 assets in a clean vault and run quiz + autoscroll |
+| Published release smoke test | Source build is not the same as BRAT installation | Install v1.7.0 assets in a clean vault and run quiz + autoscroll |
+| Live bridge end-to-end | Plugin tests use a scripted bridge; the published bridge, a real key and live providers are only proven by hand | Dashboard key → Settings → Test, then Ask / Fact-check / Deep research insert into a real note |
 
 ## Evidence baseline
 

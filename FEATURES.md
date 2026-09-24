@@ -1,4 +1,4 @@
-# Feature table + rating (v1.5.0)
+# Feature table + rating (v1.7.0)
 
 Rating = kitna reliable / complete feature hai, 1 (kaam chalau) se 5
 (production, tests se locked). "Tests" column me us feature ko cover karne
@@ -32,12 +32,20 @@ waale test files hain.
 | 24 | Mobile toolbar guide | Commands ko toolbar me daalne ka guide | 3/5 | `guide` |
 | 25 | Architecture guardrails | main.ts budget, pure modules Obsidian import na karein | 5/5 | `architecture`, `no-self-recursion` |
 | 26 | Release metadata | manifest / package / versions.json sync | 5/5 | `release-meta` |
+| 27 | Research panel (v1.7.0) | Side panel: composer (6 modes), results history, background runs, unconfigured state | 5/5 | `research-panel`, `research-wire` |
+| 28 | Cited answers + fact-check (v1.7.0) | Bridge se answer `[1]` citations ke saath, fact-check coloured callout me | 5/5 | `research-format`, `research-client`, `research-service` |
+| 29 | Web search / quick search / read link (v1.7.0) | Parallel search + extract, Perplexity quick links → source toggles | 5/5 | `research-format`, `research-client` |
+| 30 | Recall toggles from web / note (v1.7.0) | Topic, link, text ya poora note → 3–20 Q&A / MCQ / cloze toggles | 5/5 | `research-format`, `research-service` |
+| 31 | Deep research runs (v1.7.0) | Background Parallel task, polling with backoff, insert notice, restart-safe | 5/5 | `research-runs`, `research-service`, `research-panel` |
+| 32 | Research settings + connection test (v1.7.0) | URL normalise, key masked/flagged, Test batata hai key + providers | 5/5 | `research-settings` |
+| 33 | On-device research cache (v1.7.0) | 15-min repeat queries bina credits ke, bounded | 5/5 | `research-client` |
+| 34 | Research architecture guardrails (v1.7.0) | Folder main.ts me wapas nahi jhankta, styles har panel class ship karti hain | 5/5 | `research-architecture` |
 
 ## Score summary
 
-- 5/5: 14 features (core recall loop, filters, quiz, deep links, guardrails)
+- 5/5: 22 features (core recall loop, filters, quiz, deep links, guardrails, web research)
 - 4/5: 10 features (polish / breadth remaining, not correctness)
 - 3/5: 1 feature (toolbar guide — documentation-heavy, low logic)
-- **Average: 4.5 / 5**, 751+ tests, typecheck aur build clean.
+- **Average: 4.6 / 5**, 1037 tests, typecheck aur build clean.
 
 Ek hi feature 3/5 par hai; usme koi logic bug nahi, sirf coverage patla hai.
