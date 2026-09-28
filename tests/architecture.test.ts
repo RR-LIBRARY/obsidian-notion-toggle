@@ -23,7 +23,10 @@ describe("module boundaries", () => {
     // v1.7.2 — sticky "Open all / Close all" wiring: the state machine lives in
     // src/answer-state.ts and the render watcher in src/answer-render-watch.ts,
     // main.ts only registers them.
-    expect(lines("main.ts")).toBeLessThan(3500);
+    // v1.8.0 — Notion-like writing (clean editing, `>`+space, <details> paste
+    // and nudge, plain look) lives in src/notion-writing.ts + src/clean-toggles*.ts;
+    // main.ts gained one import, one interface mixin and one install call.
+    expect(lines("main.ts")).toBeLessThan(3510);
   });
 
   test("extracted modules exist and stay reviewable", () => {
@@ -79,6 +82,8 @@ const OBSIDIAN_SHELLS = new Set([
   "src/think-settings.ts",
   // v1.7.4 — top-padding diagnostic modal.
   "src/padding-diagnose-view.ts",
+  // v1.8.0 — Notion-like writing shell (clean editing, `>`+space, <details> paste/nudge).
+  "src/notion-writing.ts",
 ]);
 
 describe("module size budget (v1.3.3)", () => {

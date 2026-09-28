@@ -2,7 +2,7 @@
 
 Notion-style collapsible toggles for Obsidian, plus a recall workflow built on top of them: traffic-light grading, a floating Pomodoro timer, and SM-2 spaced repetition. You never type `<details>`, `<summary>` or `>` brackets by hand.
 
-Works on desktop and mobile. Version 1.7.8.
+Works on desktop and mobile. Version 1.8.0.
 
 Autoscroll sheet ki Hindi guide: **[AUTOSCROLL-SHEET-GUIDE.md](AUTOSCROLL-SHEET-GUIDE.md)** — sheet ke saare 35 options, number-wise, + student presets. Minimal sheet ideas: [SHEET-MINIMAL-IDEAS.md](SHEET-MINIMAL-IDEAS.md).
 
@@ -39,6 +39,19 @@ Five context-aware commands cover the daily workflow — add them to the mobile 
 | **Due notes** | Lists every note that is due today, soonest first. |
 
 All older commands still exist (insert toggle, wrap selection, Quick Q&A, MCQ, Match the following, numbering, `<details>` conversion, timer controls). They are simply no longer required for the common path.
+
+## Notion-like writing (1.8.0)
+
+The toggle you store is still a plain callout, but you no longer have to look at it while writing:
+
+- **Clean editing** — the moment the caret enters a toggle, the `> [!question]-` code and every `>` on the answer lines are hidden. A small **▸ arrow** sits where the code was; click or tap it to open or close the toggle, exactly like Notion. A closed toggle shows a `…` chip you can tap to see the answer. The caret can never land inside the hidden code (Home, taps at the left edge and Up/Down from column 0 all stop after the arrow), so nothing breaks by accident.
+- **`>` + space starts a toggle** — on an empty line type `>` and a space; you get a fresh toggle with the caret in the title (numbered if auto-numbering is on).
+- **Paste `<details>`, get a toggle** — pasted `<details><summary>…</summary>…</details>` blocks arrive already converted; `<details open>` stays open, nested blocks become nested toggles.
+- **Old notes** — opening a note that still uses `<details>` shows a one-tap **Convert to toggles** offer (once per note per session; nothing changes until you press it).
+- **Plain Notion look** — in reading view, toggles are just an arrow and the title: no coloured box, no icon. Colour toggles keep a coloured arrow. Turn it off in settings to get the boxed callout look back.
+- **Open ↔ closed by default** — one command flips the toggle under the caret between `-` (starts closed) and `+` (starts open).
+
+Everything is a switch under *Settings → Notion-like writing*; the `<details>` format keeps the plain editor. The implementation is a CodeMirror state field (`src/clean-toggles-view.ts`) driven by a pure planner (`src/clean-toggles.ts`), so it is unit-tested against the real editor engine without Obsidian.
 
 ## Writing toggles
 
@@ -146,6 +159,7 @@ Logic lives in pure modules — `src/smart.ts`, `src/naming.ts`, `src/timer.ts`,
 
 ## Changelog highlights
 
+- **1.8.0** — Notion-like writing: clean editing (arrow instead of `>` / `[!type]-` while typing, tap to open/close, `…` chip for a closed answer), `>` + space starts a toggle, pasted `<details>` converted automatically, one-tap offer for old `<details>` notes, plain Notion look in reading view, open/closed-by-default command. See `CHANGELOG.md`.
 - **1.7.0** — web research: side panel + 8 commands (ask the web with citations, fact-check, web search, quick search, read links, recall toggles, background deep research), a self-hosted research bridge with per-user keys, usage log and a 15-minute cache, results inserted as your usual toggles. See `CHANGELOG.md`.
 - **1.1.0** — quiz mode: per-question countdown, automatic answer reveal, auto-close, auto-next, floating quiz HUD, per-question `⏱30` override.
 - **1.0.9** — auto-scroll revision with auto-open/auto-close toggles, reverse direction, speed control and colour filter.

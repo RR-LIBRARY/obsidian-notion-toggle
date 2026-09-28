@@ -1,6 +1,7 @@
 import { App, Editor, MarkdownView, Modal, Notice, Platform, Plugin, PluginSettingTab, Setting, type WorkspaceLeaf } from "obsidian";
 import { Prec } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
+import { DEFAULT_NOTION_WRITING, installNotionWriting, type NotionWritingSettings } from "./src/notion-writing";
 import {
   DEFAULT_POMODORO,
   POMODORO_PRESETS,
@@ -283,7 +284,7 @@ import {
 } from "./src/editor-blocks";
 export * from "./src/editor-blocks";
 export { CALLOUT_TYPES, TOGGLE_COLORS, calloutForColor, QUIZ_FILTER_OPTIONS };
-interface NotionToggleSettings extends PomodoroSettings, AutoScrollSettings, QuizSettings, ResearchSettings {
+interface NotionToggleSettings extends PomodoroSettings, AutoScrollSettings, QuizSettings, ResearchSettings, NotionWritingSettings {
   /** v1.6.2 — data.json shape stamp; see src/settings-migrate.ts. */
   settingsVersion?: number;
   calloutType: string;
@@ -350,6 +351,7 @@ const DEFAULT_SETTINGS: NotionToggleSettings = {
   quizFilter: [],
   quizMinimalUi: true,
   perfLog: false,
+  ...DEFAULT_NOTION_WRITING,
 };
 export { TRAFFIC_CYCLE };
 export default class NotionTogglePlugin extends Plugin {
@@ -1153,6 +1155,7 @@ export default class NotionTogglePlugin extends Plugin {
         ])
       )
     );
+    installNotionWriting(this); // v1.8.0 — clean editing, `>`+space, <details> paste/nudge, Notion look
     registerCalloutCommands(this);
     registerPaddingDiagnostic(this);
     // v1.7.0 — web research: side panel, commands, ribbon, background runs.

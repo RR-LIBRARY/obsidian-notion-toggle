@@ -15,7 +15,10 @@ export type ToggleFormat = "callout" | "details";
  *  - <summary><b>Q1. ...</b></summary>  (bold inside summary tag)
  *  - <summary>Q1. ...</summary>        (plain)
  *  - multiline bodies with lists, bold, links
- *  - attributes on <details> tags (e.g. <details open>)
+ *  - attributes on <details> tags; v1.8.0: `<details open>` keeps its open
+ *    state (`+`), everything else follows the `collapsed` setting
+ *  - v1.8.0: nested <details> — inner blocks are converted first and end up as
+ *    nested callouts (`> > [!type]- …`), the way Obsidian nests callouts
  */
 export function convertDetailsToCallouts(
   doc: string,
@@ -23,11 +26,13 @@ export function convertDetailsToCallouts(
   collapsed: boolean,
   boldSummary: boolean
 ): string {
-  const fold = collapsed ? "-" : "+";
-  // Match a single <details ...> ... </details> block (non-greedy, multiline)
-  const detailsRegex = /<details(\s[^>]*)?>\s*<summary>([\s\S]*?)<\/summary>([\s\S]*?)<\/details>/g;
+  const defaultFold = collapsed ? "-" : "+";
+  // Innermost blocks first: the body may not contain another `<details`.
+  const detailsRegex =
+    /<details(\s[^>]*)?>\s*<summary>((?:(?!<details[\s>])[\s\S])*?)<\/summary>((?:(?!<details[\s>])[\s\S])*?)<\/details>/g;
 
-  return doc.replace(detailsRegex, (_match, _attrs: string, summaryRaw: string, bodyRaw: string) => {
+  const convertOne = (_match: string, attrs: string | undefined, summaryRaw: string, bodyRaw: string): string => {
+    const fold = /(^|\s)open(\s|=|$)/i.test(attrs ?? "") ? "+" : defaultFold;
     const summary = cleanInlineHtml(summaryRaw).trim();
     const title = boldSummary && !summary.startsWith("**") ? `**${summary}**` : summary;
     const bodyText = bodyRaw.trim();
@@ -39,7 +44,16 @@ export function convertDetailsToCallouts(
       return cleaned.trim().length === 0 ? ">" : `> ${cleaned}`;
     });
     return `> [!${calloutType}]${fold} ${title}\n${bodyLines.join("\n")}`;
-  });
+  };
+
+  // Each pass converts one nesting level; a plain document needs exactly one.
+  let out = doc;
+  for (let pass = 0; pass < 8; pass++) {
+    const next = out.replace(detailsRegex, convertOne);
+    if (next === out) break;
+    out = next;
+  }
+  return out;
 }
 
 /**

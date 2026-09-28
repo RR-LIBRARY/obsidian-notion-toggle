@@ -1587,3 +1587,196 @@ body.ntt-focus-run .workspace-drawer-backdrop {
   opacity: 0 !important;
   pointer-events: none !important;
 }
+
+/* ===== v1.8.0 — Notion-like writing ===== */
+
+/* ---- Clean editing: what a toggle looks like WHILE the caret is inside it ----
+   Live Preview normally drops the caret into raw `> [!question]- Title` / `> body`
+   lines. src/clean-toggles-view.ts replaces those markers with an arrow widget
+   and hides the `> ` prefixes; these rules make the result read like a Notion
+   toggle instead of a blockquote. Everything is scoped to .ntt-clean-* lines,
+   so ordinary quotes and callouts are untouched. */
+
+/* per-colour accent for the arrow and the thin guide line */
+.cm-line.ntt-clean-header,
+.cm-line.ntt-clean-body { --ntt-arrow: var(--text-muted); --ntt-guide: var(--background-modifier-border); }
+.cm-line.ntt-clean-t-recall-red    { --ntt-arrow: rgb(235, 87, 87);  --ntt-guide: rgba(235, 87, 87, 0.35); }
+.cm-line.ntt-clean-t-recall-yellow { --ntt-arrow: rgb(242, 201, 76); --ntt-guide: rgba(242, 201, 76, 0.45); }
+.cm-line.ntt-clean-t-recall-green  { --ntt-arrow: rgb(39, 174, 96);  --ntt-guide: rgba(39, 174, 96, 0.35); }
+.cm-line.ntt-clean-t-recall-blue   { --ntt-arrow: rgb(47, 128, 237); --ntt-guide: rgba(47, 128, 237, 0.35); }
+.cm-line.ntt-clean-t-recall-purple { --ntt-arrow: rgb(155, 81, 224); --ntt-guide: rgba(155, 81, 224, 0.35); }
+.cm-line.ntt-clean-t-recall-orange { --ntt-arrow: rgb(242, 153, 74); --ntt-guide: rgba(242, 153, 74, 0.35); }
+.cm-line.ntt-clean-t-recall-gray   { --ntt-arrow: rgb(130, 130, 130); --ntt-guide: rgba(130, 130, 130, 0.35); }
+.cm-line.ntt-clean-t-recall-plain  { --ntt-arrow: var(--text-normal); --ntt-guide: var(--background-modifier-border); }
+
+/* the header and body lines stop looking like a quote */
+.markdown-source-view.mod-cm6 .cm-line.ntt-clean-header,
+.markdown-source-view.mod-cm6 .cm-line.ntt-clean-body {
+  border-inline-start: none !important;
+  background-color: transparent !important;
+  color: var(--text-normal);
+  font-style: normal;
+}
+.markdown-source-view.mod-cm6 .cm-line.ntt-clean-header {
+  padding-inline-start: 0 !important;
+  border-radius: var(--radius-s);
+}
+.markdown-source-view.mod-cm6 .cm-line.ntt-clean-header:hover {
+  background-color: var(--background-modifier-hover) !important;
+}
+.markdown-source-view.mod-cm6 .cm-line.ntt-clean-body {
+  margin-inline-start: 0.68em;
+  padding-inline-start: 1.12em !important;
+  border-inline-start: 2px solid var(--ntt-guide) !important;
+}
+/* Obsidian draws the Live Preview quote border with a ::before pseudo-element
+   (`.is-live-preview .HyperMD-quote:before` / `.cm-blockquote-border:before`,
+   see forum.obsidian.md/t/97203); switch it off on clean lines. */
+.markdown-source-view.mod-cm6 .cm-line.ntt-clean-header::before,
+.markdown-source-view.mod-cm6 .cm-line.ntt-clean-body::before,
+.cm-line.ntt-clean-header .cm-blockquote-border::before,
+.cm-line.ntt-clean-body .cm-blockquote-border::before,
+.cm-line.ntt-clean-body .cm-indent::before {
+  display: none !important;
+  content: none !important;
+}
+.markdown-source-view.mod-cm6 .cm-line.ntt-clean-header,
+.markdown-source-view.mod-cm6 .cm-line.ntt-clean-body { text-indent: 0 !important; }
+/* Obsidian's own quote marker is text-replaced, but keep it from flashing during layout. */
+.cm-line.ntt-clean-header .cm-formatting-quote,
+.cm-line.ntt-clean-body .cm-formatting-quote { display: none; }
+
+/* the arrow */
+.ntt-clean-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5em;
+  height: 1.5em;
+  margin-inline-end: 0.3em;
+  vertical-align: -0.35em;
+  border-radius: var(--radius-s);
+  color: var(--ntt-arrow);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background-color 0.1s ease;
+}
+.ntt-clean-arrow svg {
+  width: 0.9em;
+  height: 0.9em;
+  transition: transform 0.15s ease;
+}
+.ntt-clean-arrow.is-open svg { transform: rotate(90deg); }
+.ntt-clean-arrow:hover { background-color: var(--background-modifier-hover); }
+.is-mobile .ntt-clean-arrow { width: 1.9em; height: 1.9em; }
+
+/* the "…" chip standing in for a folded body */
+.ntt-clean-more {
+  display: inline-block;
+  margin-inline-start: 0.45em;
+  padding: 0 0.55em;
+  line-height: 1.35;
+  border-radius: var(--radius-s);
+  background-color: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: 0.85em;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ntt-clean-more:hover { background-color: var(--background-modifier-border); color: var(--text-normal); }
+
+/* ---- Plain Notion look: rendered toggles (reading view + Live Preview) ----
+   Arrow first, then the title; no icon, no coloured box. Colour toggles keep a
+   coloured arrow so the traffic-light meaning survives. Off by a setting; the
+   body class comes from src/notion-writing.ts. */
+body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible,
+body.ntt-notion-look .callout[data-callout="question"].is-collapsible,
+body.ntt-notion-look .callout[data-callout="info"].is-collapsible,
+body.ntt-notion-look .callout[data-callout="note"].is-collapsible,
+body.ntt-notion-look .callout[data-callout="abstract"].is-collapsible {
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin: 0.15em 0;
+  border-radius: var(--radius-s);
+  mix-blend-mode: normal;
+}
+body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible .callout-title,
+body.ntt-notion-look .callout[data-callout="question"].is-collapsible .callout-title,
+body.ntt-notion-look .callout[data-callout="info"].is-collapsible .callout-title,
+body.ntt-notion-look .callout[data-callout="note"].is-collapsible .callout-title,
+body.ntt-notion-look .callout[data-callout="abstract"].is-collapsible .callout-title {
+  padding: 3px 4px 3px 0;
+  gap: 0.15em;
+  color: var(--text-normal);
+  background-color: transparent;
+}
+body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible .callout-icon,
+body.ntt-notion-look .callout[data-callout="question"].is-collapsible .callout-icon,
+body.ntt-notion-look .callout[data-callout="info"].is-collapsible .callout-icon,
+body.ntt-notion-look .callout[data-callout="note"].is-collapsible .callout-icon,
+body.ntt-notion-look .callout[data-callout="abstract"].is-collapsible .callout-icon {
+  display: none;
+}
+body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible .callout-fold,
+body.ntt-notion-look .callout[data-callout="question"].is-collapsible .callout-fold,
+body.ntt-notion-look .callout[data-callout="info"].is-collapsible .callout-fold,
+body.ntt-notion-look .callout[data-callout="note"].is-collapsible .callout-fold,
+body.ntt-notion-look .callout[data-callout="abstract"].is-collapsible .callout-fold {
+  order: -1;
+  margin: 0;
+  padding: 0;
+  width: 1.5em;
+  height: 1.5em;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+  /* Obsidian's default: chevron-down when open, rotated -90deg when closed (see top of file). */
+}
+body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible .callout-fold { color: rgb(var(--callout-color)); }
+body.ntt-notion-look .callout[data-callout="recall-plain"].is-collapsible .callout-fold { color: var(--text-normal); }
+body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible .callout-fold:hover,
+body.ntt-notion-look .callout[data-callout="question"].is-collapsible .callout-fold:hover,
+body.ntt-notion-look .callout[data-callout="info"].is-collapsible .callout-fold:hover,
+body.ntt-notion-look .callout[data-callout="note"].is-collapsible .callout-fold:hover,
+body.ntt-notion-look .callout[data-callout="abstract"].is-collapsible .callout-fold:hover {
+  background-color: var(--background-modifier-hover);
+}
+body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible .callout-title-inner,
+body.ntt-notion-look .callout[data-callout="question"].is-collapsible .callout-title-inner,
+body.ntt-notion-look .callout[data-callout="info"].is-collapsible .callout-title-inner,
+body.ntt-notion-look .callout[data-callout="note"].is-collapsible .callout-title-inner,
+body.ntt-notion-look .callout[data-callout="abstract"].is-collapsible .callout-title-inner {
+  font-weight: var(--font-normal);
+}
+body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible .callout-content,
+body.ntt-notion-look .callout[data-callout="question"].is-collapsible .callout-content,
+body.ntt-notion-look .callout[data-callout="info"].is-collapsible .callout-content,
+body.ntt-notion-look .callout[data-callout="note"].is-collapsible .callout-content,
+body.ntt-notion-look .callout[data-callout="abstract"].is-collapsible .callout-content {
+  padding: 0 0 0.25em 1.8em;
+  background-color: transparent;
+}
+body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible .callout-content > :first-child,
+body.ntt-notion-look .callout[data-callout="question"].is-collapsible .callout-content > :first-child { margin-top: 0.2em; }
+body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible .callout-content > :last-child,
+body.ntt-notion-look .callout[data-callout="question"].is-collapsible .callout-content > :last-child { margin-bottom: 0.2em; }
+
+/* ---- One-tap "<details> → toggles" offer (a Notice with buttons) ---- */
+.ntt-details-nudge { display: flex; flex-direction: column; gap: 0.35em; }
+.ntt-details-nudge-hint { color: var(--text-muted); font-size: var(--font-ui-small); }
+.ntt-details-nudge-actions { display: flex; gap: 0.5em; margin-top: 0.2em; }
+.ntt-details-nudge-actions button { min-height: 32px; }
+
+/* ---- settings ---- */
+.ntt-notion-writing-note { margin: -0.2em 0 0.8em; }
+
+/* Respect the OS "reduce motion" preference for the arrow rotation. */
+@media (prefers-reduced-motion: reduce) {
+  .ntt-clean-arrow svg,
+  body.ntt-notion-look .callout.is-collapsible .callout-fold svg { transition: none !important; }
+}

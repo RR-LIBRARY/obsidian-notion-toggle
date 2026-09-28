@@ -70,6 +70,8 @@ class ItemView extends Component {
 
 /** Notices are collected so tests can assert what the reader was told. */
 export const notices: string[] = [];
+/** v1.8.0 — the notice elements themselves, so tests can press buttons inside a fragment notice. */
+export const noticeEls: HTMLElement[] = [];
 class Notice {
   noticeEl: HTMLElement;
   constructor(message: string | DocumentFragment, _timeout?: number) {
@@ -77,6 +79,12 @@ class Notice {
     this.noticeEl = doc.createElement("div");
     const text = typeof message === "string" ? message : (message.textContent ?? "");
     this.noticeEl.textContent = text;
+    if (typeof message !== "string") {
+      // Real Obsidian appends the fragment; keep the buttons reachable.
+      this.noticeEl.textContent = "";
+      this.noticeEl.appendChild(message);
+    }
+    noticeEls.push(this.noticeEl);
     // Obsidian's createDiv / createEl helpers are used by the finished-run notice.
     (this.noticeEl as unknown as { createDiv: (o?: { cls?: string }) => HTMLElement }).createDiv = (o) => {
       const d = doc.createElement("div");
@@ -459,12 +467,19 @@ mock.module("obsidian", () => ({
     el.title = t;
   },
   Platform: { isMobile: false, isDesktop: true },
+  /** v1.8.0 — a real CodeMirror field standing in for Obsidian's live-preview flag (always "on"). */
+  get editorLivePreviewField() {
+    return livePreviewField;
+  },
 }));
 
-mock.module("@codemirror/state", () => ({
-  Prec: { highest: (x: unknown) => x },
-}));
+/* ---------- v1.8.0 — real CodeMirror ----------
+ * @codemirror/state and @codemirror/view ship with the `obsidian` package, so the
+ * clean-editing extension is tested against the real editor state machinery
+ * (StateField, transaction filters, decoration sets) instead of stand-ins. */
+import { StateField as CmStateField } from "@codemirror/state";
 
-mock.module("@codemirror/view", () => ({
-  keymap: { of: (x: unknown) => x },
-}));
+export const livePreviewField = CmStateField.define<boolean>({
+  create: () => true,
+  update: (v) => v,
+});

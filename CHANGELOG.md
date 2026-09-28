@@ -2,6 +2,30 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.8.0 — 2026-09-28 — Notion-like writing: no more visible `>` / `[!question]-` while typing
+
+Why: a toggle is stored as `> [!question]- Title` + `> answer` (or as a `<details>` block). Reading view already shows an arrow, but the moment you start typing Live Preview reveals the raw code — non-technical writers found that uncomfortable, and it is the biggest visual difference from Notion. Research for this release (Obsidian API docs, CodeMirror 6 docs, Notion's shortcut docs and Obsidian forum CSS threads) is summarised in `NOTION-WRITING-RESEARCH.md`.
+
+### Added
+- **Clean editing** (`src/clean-toggles.ts`, `src/clean-toggles-view.ts`). While the caret is inside a toggle, the `> [!type]- ` prefix is replaced by a clickable **▸ arrow** and every `> ` on the answer lines is hidden; answer lines get a thin indent guide in the toggle's colour instead of Obsidian's quote border. A closed toggle shows a `…` chip; the arrow and the chip open/close the toggle (mouse and touch). Choices made with the arrow are remembered per block and survive typing. Blocks the caret is not in are left to Obsidian's own callout rendering. Only active in Live Preview and only for the callout format.
+- **Caret safety.** A transaction filter keeps a lone caret out of the hidden code: `Home`, a tap at the left edge or `Up`/`Down` from column 0 land after the arrow / after the hidden `> `; closing a toggle from inside its answer parks the caret on the title. Drag selections are never touched.
+- **`>` + space starts a toggle** (Notion habit). Works through the keymap (hardware keyboards) and the input handler (phone keyboards). Uses the current colour, numbering and open/closed defaults.
+- **Paste conversion.** Pasted text that carries `<details>` blocks arrives as toggles (`editor-paste`; respects `defaultPrevented`). `<details open>` keeps its open state (`+`); nested `<details>` become nested callouts (innermost first).
+- **One-tap offer for old notes.** Opening a note that still contains `<details>` shows a notice with **Convert to toggles** / **Not now** — once per note per session, never automatic.
+- **Plain Notion look** (`body.ntt-notion-look`). Collapsible callouts in reading view render as arrow + title without the coloured box or icon; colour toggles keep a coloured arrow. Scoped to `.is-collapsible` so plain informational callouts are untouched.
+- **Command:** *Toggle: open by default ↔ closed by default (this toggle)* flips `-`/`+` on the header under the caret.
+- **Settings → Notion-like writing:** Clean editing, Plain Notion look, `>` + space, Convert pasted `<details>`, Offer to convert old notes (all on by default). Flipping Clean editing or the shortcut re-runs the editor extension immediately (`Workspace.updateOptions()`).
+- Tests: `tests/clean-toggles.test.ts` (28, pure planner), `tests/clean-toggles-view.test.ts` (17, against the real `@codemirror/state` — decorations, caret filter, effects, widgets, input handlers), `tests/notion-writing.test.ts` (18, paste / nudge / command / shortcut / settings / stylesheet contract). The CodeMirror stand-ins in `tests/setup.ts` were replaced by the real packages that ship with `obsidian`.
+
+### Changed
+- `convertDetailsToCallouts` now honours `<details open>` and converts nested blocks instead of stopping at the first inner `</details>`.
+- `styles.css`: Obsidian draws the Live Preview quote border with a `::before` pseudo-element (`.is-live-preview .HyperMD-quote:before`, `.cm-blockquote-border:before`); clean lines switch it off explicitly and also reset `text-indent` / `padding-inline-start`. Reduced-motion users get no arrow rotation animation.
+- `main.ts` gained one import, one settings mixin and one `installNotionWriting(this)` call; the size guard moved from 3500 to 3510 lines with a note.
+
+### Notes
+- Storage format is unchanged: notes stay ordinary Markdown callouts and open fine in any other Markdown app.
+- `<details>` format users are unaffected; every new feature checks `format === "callout"`.
+
 ## 1.7.8 — 2026-09-24 — Fix: note turns faded yellow on a sideways swipe during autoscroll
 
 ### Fixed

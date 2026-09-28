@@ -22,6 +22,7 @@ import { formatDwell, modeLabel, multiplierFromSpeed } from "./scrollmode";
 import { renderScreenPause } from "./screen-pause-ui";
 import { clampScreenOverlap, normalizeAdvanceBy, clampScreenDwellMs, clampViewportPct } from "./screen-stops";
 import { renderThinkSettings } from "./think-settings";
+import { renderNotionWritingSettings } from "./notion-writing";
 import { renderResearchSettings } from "./research/settings";
 import { scheduleStoreSummary } from "./maintenance";
 import { hotkeyLabel } from "./guide";
@@ -169,6 +170,9 @@ export class NotionToggleSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         });
       });
+
+    /* ---------- v1.8.0: Notion-like writing ---------- */
+    renderNotionWritingSettings(containerEl, this.plugin);
 
     /* ---------- v1.0.5: Recall timer (Pomodoro) ---------- */
 

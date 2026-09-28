@@ -1,9 +1,9 @@
 {
   "id": "notion-toggle",
   "name": "Notion Toggle",
-  "version": "1.7.8",
+  "version": "1.8.0",
   "minAppVersion": "1.4.0",
-  "description": "Notion-style collapsible toggles via commands. Insert, wrap, or convert <details> blocks to foldable callouts — no manual brackets.",
+  "description": "Notion-style toggles that look and feel like Notion while you type: an arrow instead of `>` / `[!type]-` code, `>`+space to start one, pasted <details> blocks converted automatically.",
   "author": "Anuj Yadav",
   "authorUrl": "https://github.com/RR-LIBRARY/obsidian-notion-toggle",
   "isDesktopOnly": false

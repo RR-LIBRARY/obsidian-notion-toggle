@@ -914,3 +914,53 @@ Neeche **Background runs** (running / ready / failed, *Insert*, *Copy*, *Check n
 - **"The plugin key was rejected"** → dashboard me key revoke to nahi hui? Nayi banao aur paste karo.
 - **Deep research failed: "Run not found on the bridge"** → bridge ne run bhula diya (bahut purana, ya bridge ka database reset hua); dobara start karo.
 - **Insert kuch nahi karta** → koi markdown note khula hona chahiye; panel result ko us note me daalta hai jahan se pucha tha, warna focused note me.
+
+## 16. v1.8.0 — Notion jaisa likhna (clean editing)
+
+### 16.1 Problem kya thi
+Toggle andar se aisa save hota hai:
+
+```markdown
+> [!question]- **Q7. NCERT example ke hisaab se nematode-resistant plant kaunsa tha?**
+> **Answer:** **Tobacco plant** ko nematode-resistant banaya gaya tha.
+```
+
+Reading view me to sirf arrow + title dikhta hai, lekin jaise hi cursor toggle ke andar jaata hai, `>` aur `[!question]-` wala code saamne aa jaata tha. Non-tech logon ko yeh uncomfortable lagta hai — Notion me aisa kuch nahi dikhta. v1.8.0 me likhte waqt bhi yeh code chhup jaata hai. Note ka format bilkul same rehta hai (koi naya markup nahi), isliye purane notes aur doosre apps me sab waise hi khulta hai.
+
+### 16.2 Kya dikhta hai ab
+- **Chhota ▸ arrow** — jahan pehle `> [!question]- ` tha, wahan ab ek arrow hai. Tap/click karo → toggle khulta ya band hota hai (Notion jaisa). Khula ho to arrow neeche (▾) ghoom jaata hai.
+- **Answer lines** — har line ka `> ` gayab; uski jagah toggle ke rang ki patli line (guide) left me. Type karte raho jaise plain text ho.
+- **Band toggle** — title ke aage `…` chip. Tap karo to answer khul jaata hai.
+- **Cursor kabhi code ke andar nahi jaata** — Home dabao, left edge par tap karo, ya upar wali line se neeche aao: cursor hamesha arrow ke baad rukta hai. Isliye galti se code toot nahi sakta.
+- Jis toggle me cursor nahi hai, use Obsidian apne aap normal callout jaisa dikhata hai (pehle jaisa).
+
+### 16.3 Naya toggle shuru karna — `>` + space
+Khali line par `>` type karo aur phir space — turant naya toggle ban jaata hai, cursor title me. Colour, numbering aur "closed by default" wali settings apne aap lagti hain. (Purane commands — Insert toggle, Enter/Backspace flow — sab waise hi chalte hain.)
+
+### 16.4 `<details>` wale purane notes
+- **Paste** — agar aap `<details><summary>…</summary>…</details>` wala text paste karte ho (ChatGPT/website se), woh apne aap toggle ban kar aata hai. `<details open>` khula rehta hai; nested `<details>` nested toggle bante hain.
+- **Note kholte hi offer** — jis note me abhi bhi `<details>` blocks hain, use kholte hi ek chhota notice aata hai: "This note has N <details> blocks — Convert to toggles / Not now". Ek note ke liye ek session me sirf ek baar poochta hai, aur jab tak aap button nahi dabate, kuch nahi badalta.
+- Command **Convert <details> blocks to callouts** pehle jaisa maujood hai.
+
+### 16.5 Plain Notion look (reading view)
+Reading view me toggle ab sirf arrow + title hai — na coloured box, na icon. Colour toggles (red/yellow/green …) ka arrow us rang ka hota hai, taaki traffic-light system waise hi kaam kare. Boxed look wapas chahiye to setting OFF kar do.
+
+### 16.6 Command: open ↔ closed by default
+Cursor toggle ke andar rakho, command **Toggle: open by default ↔ closed by default (this toggle)** chalao — header ka `-` ↔ `+` badal jaata hai. `-` = note kholte hi band, `+` = khula.
+
+### 16.7 Settings → Notion-like writing
+| Setting | Kya karta hai | Default |
+|---|---|---|
+| Clean editing | Likhte waqt code ki jagah arrow | ON |
+| Plain Notion look | Reading view me sirf arrow + title | ON |
+| "\>" + space starts a toggle | Khali line par `>` + space se naya toggle | ON |
+| Convert pasted \<details\> automatically | Paste kiya `<details>` → toggle | ON |
+| Offer to convert old notes | Note kholne par one-tap offer | ON |
+
+Sab kuch sirf **callout format** ke liye hai; agar aapne *Toggle format* = `<details>` rakha hai to editor pehle jaisa plain rehta hai.
+
+### 16.8 Troubleshooting
+- **Arrow nahi dikh raha** → check karo ki *Clean editing* ON hai aur aap Live Preview me ho (Source mode me code dikhna hi chahiye). Toggle format callout hona chahiye.
+- **Toggle band hai aur answer edit karna hai** → `…` chip ya arrow tap karo; ya bas Down arrow se andar jao — cursor answer me jaate hi toggle khul jaata hai.
+- **Kisi theme me left border double dikh rahi hai** → theme apni border `.HyperMD-quote` par khud laga raha hai; plugin ka CSS `::before` border hata deta hai, phir bhi dikhe to issue me theme ka naam batao.
+- **Mobile keyboard par `>` + space kaam nahi kar raha** → kuch keyboards `>` ke baad auto-space daalte hain; us case me sirf `>` type karke ek baar space dabao. Command palette se *Insert toggle* hamesha chalta hai.
