@@ -7,6 +7,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
+  BOLD_WRAP_RE,
   CLEAN_HEADER_RE,
   blocksTouching,
   convertPastedText,
@@ -110,25 +111,27 @@ describe("v1.8.0 clean toggles — block detection", () => {
 describe("v1.8.0 clean toggles — plans", () => {
   test("caret on the title of a closed toggle: arrow + folded body, no raw `>` anywhere", () => {
     const { plans } = planClean(doc, caretAt(line(2).to), new Map());
-    expect(kinds(plans)).toEqual(["line", "arrow", "fold"]);
+    expect(kinds(plans)).toEqual(["line", "arrow", "hide", "fold"]);
     const arrow = plans[1] as Extract<CleanPlan, { kind: "arrow" }>;
-    expect(NOTE.slice(arrow.from, arrow.to)).toBe("> [!question]- ");
+    expect(NOTE.slice(arrow.from, arrow.to)).toBe("> [!question]- **"); // v1.8.2: the opening ** hides with the prefix
     expect(arrow.open).toBe(false);
-    const fold = plans[2] as Extract<CleanPlan, { kind: "fold" }>;
+    expect(NOTE.slice((plans[2] as { from: number }).from, (plans[2] as { to: number }).to)).toBe("**");
+    const fold = plans[3] as Extract<CleanPlan, { kind: "fold" }>;
     expect(fold.from).toBe(line(2).to);
     expect(fold.to).toBe(line(4).to);
     const lineDeco = plans[0] as Extract<CleanPlan, { kind: "line" }>;
     expect(lineDeco.cls).toContain("ntt-clean-header");
     expect(lineDeco.cls).toContain("ntt-clean-t-question");
     expect(lineDeco.cls).toContain("ntt-clean-closed");
+    expect(lineDeco.cls).toContain("ntt-clean-bold");
   });
 
   test("caret in the answer: toggle opens, every `> ` prefix is hidden, body lines get the indent class", () => {
     const { plans } = planClean(doc, caretAt(line(3).to), new Map());
-    expect(kinds(plans)).toEqual(["line", "arrow", "line", "hide", "line", "hide"]);
+    expect(kinds(plans)).toEqual(["line", "arrow", "hide", "line", "hide", "line", "hide"]);
     const hides = plans.filter((p) => p.kind === "hide") as Extract<CleanPlan, { kind: "hide" }>[];
-    expect(hides.map((h) => NOTE.slice(h.from, h.to))).toEqual(["> ", "> "]);
-    expect((plans[2] as Extract<CleanPlan, { kind: "line" }>).cls).toContain("ntt-clean-body");
+    expect(hides.map((h) => NOTE.slice(h.from, h.to))).toEqual(["**", "> ", "> "]);
+    expect((plans[3] as Extract<CleanPlan, { kind: "line" }>).cls).toContain("ntt-clean-body");
   });
 
   test("a `+` toggle is open even with the caret on its title", () => {
@@ -187,11 +190,14 @@ describe("v1.8.0 clean toggles — plans", () => {
 describe("v1.8.0 clean toggles — caret never hides inside a marker", () => {
   test("Home on the title line lands after the hidden prefix", () => {
     const target = nudgeCaret(doc, line(2).from, new Map());
-    expect(target).toBe(findBlockAt(doc, 2)!.prefixEnd);
+    expect(target).toBe(findBlockAt(doc, 2)!.titleFrom);
   });
 
-  test("a caret already on visible title text is left alone", () => {
-    expect(nudgeCaret(doc, line(2).to, new Map())).toBeNull();
+  test("a caret already on visible title text is left alone; behind the hidden closing ** it is pulled back", () => {
+    const b = findBlockAt(doc, 2)!;
+    expect(nudgeCaret(doc, b.titleTo - 3, new Map())).toBeNull();
+    expect(nudgeCaret(doc, b.titleTo, new Map())).toBeNull();
+    expect(nudgeCaret(doc, line(2).to, new Map())).toBe(b.titleTo);
   });
 
   test("column 0 of an open body line moves past the `> `", () => {
@@ -206,7 +212,7 @@ describe("v1.8.0 clean toggles — caret never hides inside a marker", () => {
     // isOpen() gives a caret-in-body precedence, so a folded body can only be
     // reached by a programmatic selection; the nudge still returns a visible spot.
     const t = nudgeCaret(doc, line(3).from, new Map([[key, false]]));
-    expect(t === line(3).from + 2 || t === line(2).to).toBe(true);
+    expect(t === line(3).from + 2 || t === findBlockAt(doc, 2)!.titleTo).toBe(true);
   });
 
   test("outside a toggle nothing happens", () => {
@@ -228,11 +234,13 @@ describe("v1.8.0 clean toggles — caret never hides inside a marker", () => {
     // Right / End from the title → the line after the block
     expect(redirectCaret(doc, { anchor: b.bodyTo, head: b.bodyTo, prevHead: b.headerTo }, none)).toBe(line(5).from);
     // Up from below into the body → end of the title
-    expect(redirectCaret(doc, { anchor: line(3).from + 4, head: line(3).from + 4, prevHead: line(6).from }, none)).toBe(b.headerTo);
+    expect(redirectCaret(doc, { anchor: line(3).from + 4, head: line(3).from + 4, prevHead: line(6).from }, none)).toBe(b.titleTo);
     // No history (a click past the chip) → end of the title
-    expect(redirectCaret(doc, { anchor: b.bodyTo, head: b.bodyTo }, none)).toBe(b.headerTo);
+    expect(redirectCaret(doc, { anchor: b.bodyTo, head: b.bodyTo }, none)).toBe(b.titleTo);
+    // A tap past the title never skips forward, even with history (v1.8.2 pointer flag)
+    expect(redirectCaret(doc, { anchor: b.bodyTo, head: b.bodyTo, prevHead: b.titleTo, pointer: true }, none)).toBe(b.titleTo);
     // Selection anchored on the title reaching into the body → clamp head to the title
-    expect(redirectCaret(doc, { anchor: b.headerFrom + 20, head: b.bodyTo, prevHead: b.headerTo }, none)).toBe(b.headerTo);
+    expect(redirectCaret(doc, { anchor: b.headerFrom + 20, head: b.bodyTo, prevHead: b.headerTo }, none)).toBe(b.titleTo);
     // Selection anchored above the block → untouched (whole-block selection)
     expect(redirectCaret(doc, { anchor: 0, head: b.bodyTo, prevHead: 0 }, none)).toBeNull();
   });
@@ -299,5 +307,71 @@ describe("v1.8.0 clean toggles — <details> comfort", () => {
     expect(flipFoldMarker("> [!recall-red]+ Title")).toBe("> [!recall-red]- Title");
     expect(flipFoldMarker("> plain")).toBe("> plain");
     expect(flipFoldMarker("> [!note] not foldable")).toBe("> [!note] not foldable");
+  });
+});
+
+describe("v1.8.2 clean toggles — bold titles (`**Title**`)", () => {
+  test("BOLD_WRAP_RE: a clean **…** pair only", () => {
+    expect("**Q7. Plant?**".match(BOLD_WRAP_RE)?.[1]).toBe("Q7. Plant?");
+    expect("**Q**".match(BOLD_WRAP_RE)?.[1]).toBe("Q");
+    expect("**Q7. Plant?**  ".match(BOLD_WRAP_RE)?.[1]).toBe("Q7. Plant?");
+    expect("**a*b**".match(BOLD_WRAP_RE)?.[1]).toBe("a*b");
+    expect(BOLD_WRAP_RE.test("**Q** tail")).toBe(false);
+    expect(BOLD_WRAP_RE.test("** Q **")).toBe(false);
+    expect(BOLD_WRAP_RE.test("**Q** and **R**")).toBe(false);
+    expect(BOLD_WRAP_RE.test("****")).toBe(false);
+    expect(BOLD_WRAP_RE.test("plain")).toBe(false);
+  });
+
+  test("findBlockAt marks the visible title inside the markers", () => {
+    const b = findBlockAt(doc, 2)!;
+    expect(b.boldWrap).toBe(true);
+    expect(NOTE.slice(b.titleFrom, b.titleTo)).toBe("Q7. Nematode-resistant plant?");
+    expect(b.titleFrom).toBe(b.prefixEnd + 2);
+    expect(b.titleTo).toBe(b.headerTo - 2);
+    const plain = findBlockAt(doc, 7)!;
+    expect(plain.boldWrap).toBe(false);
+    expect(plain.titleFrom).toBe(plain.prefixEnd);
+    expect(plain.titleTo).toBe(plain.headerTo);
+  });
+
+  test("a partly bold title is left alone (markers stay visible)", () => {
+    const d = textDoc("> [!q]- **Bold** and more\n> body");
+    const b = findBlockAt(d, 1)!;
+    expect(b.boldWrap).toBe(false);
+    const { plans } = planClean(d, caretAt(b.headerTo), new Map());
+    expect(kinds(plans)).toEqual(["line", "arrow", "fold"]);
+    expect((plans[0] as Extract<CleanPlan, { kind: "line" }>).cls).not.toContain("ntt-clean-bold");
+  });
+
+  test("a body-less bold title still hides both marker pairs", () => {
+    const d = textDoc("> [!q]- **Solo**");
+    const { plans } = planClean(d, caretAt(12), new Map());
+    expect(kinds(plans)).toEqual(["line", "arrow", "hide"]);
+    const hide = plans[2] as Extract<CleanPlan, { kind: "hide" }>;
+    expect(hide.from).toBe(d.line(1).to - 2);
+    expect(hide.to).toBe(d.line(1).to);
+  });
+
+  test("redirectCaret around the hidden closing **", () => {
+    const b = findBlockAt(doc, 2)!;
+    const none = new Map();
+    // inside the opening ** → title start
+    expect(redirectCaret(doc, { anchor: b.prefixEnd + 1, head: b.prefixEnd + 1 }, none)).toBe(b.titleFrom);
+    // Up / a tap landing behind the closing ** → title end
+    expect(redirectCaret(doc, { anchor: b.headerTo, head: b.headerTo, prevHead: line(6).from }, none)).toBe(b.titleTo);
+    expect(redirectCaret(doc, { anchor: b.headerTo - 1, head: b.headerTo - 1, prevHead: b.titleTo, pointer: true }, none)).toBe(b.titleTo);
+    // Right from the title end of a closed toggle → line after the block
+    expect(redirectCaret(doc, { anchor: b.titleTo + 1, head: b.titleTo + 1, prevHead: b.titleTo }, none)).toBe(line(5).from);
+    // Right from the title end of an open toggle → first body line, after its hidden `> `
+    expect(redirectCaret(doc, { anchor: b.titleTo + 1, head: b.titleTo + 1, prevHead: b.titleTo }, new Map([[b.key, true]]))).toBe(line(3).from + 2);
+    // Shift-Right from the title stops at the title end
+    expect(redirectCaret(doc, { anchor: b.titleTo - 2, head: b.headerTo, prevHead: b.titleTo }, none)).toBe(b.titleTo);
+    // a selection from above may run through the whole header line
+    expect(redirectCaret(doc, { anchor: 0, head: b.headerTo, prevHead: 0 }, none)).toBeNull();
+    // Right off a body-less bold title that ends the note stays on the title
+    const tail = textDoc("> [!q]- **Last**");
+    const t = findBlockAt(tail, 1)!;
+    expect(redirectCaret(tail, { anchor: t.titleTo + 1, head: t.titleTo + 1, prevHead: t.titleTo }, none)).toBe(t.titleTo);
   });
 });

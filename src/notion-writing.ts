@@ -40,6 +40,8 @@ export interface NotionWritingSettings {
   convertDetailsOnPaste: boolean;
   /** v1.8.0: offer a one-tap conversion when a note with `<details>` opens. */
   detailsNudge: boolean;
+  /** v1.8.2: show a small "…" chip after the title of a closed toggle while editing (off = Notion: arrow + title only). */
+  cleanMoreChip: boolean;
 }
 
 export const DEFAULT_NOTION_WRITING: NotionWritingSettings = {
@@ -48,6 +50,7 @@ export const DEFAULT_NOTION_WRITING: NotionWritingSettings = {
   notionShortcut: true,
   convertDetailsOnPaste: true,
   detailsNudge: true,
+  cleanMoreChip: false,
 };
 
 /** Body class the stylesheet keys off; themes and CSS snippets can build on it too. */
@@ -149,6 +152,7 @@ export function installNotionWriting(plugin: NotionTogglePlugin): void {
       enabled: () => plugin.settings.cleanEditing && calloutMode(plugin),
       shortcutEnabled: () => plugin.settings.notionShortcut && calloutMode(plugin),
       insertToggleFromShortcut: (view) => insertToggleFromShortcut(plugin, view),
+      moreChip: () => plugin.settings.cleanMoreChip,
     })
   );
 
@@ -212,7 +216,9 @@ export function renderNotionWritingSettings(containerEl: HTMLElement, plugin: No
 
   new Setting(containerEl)
     .setName("Clean editing")
-    .setDesc("While typing, show a small arrow instead of the “> [!question]-” code. Click the arrow to open or close the toggle.")
+    .setDesc(
+      "While typing, show a small arrow instead of the “> [!question]-” code (a bold title's ** are hidden too). Click the arrow to open or close the toggle."
+    )
     .addToggle((toggle) => {
       toggle.setValue(plugin.settings.cleanEditing);
       toggle.onChange(async (value) => {
@@ -264,6 +270,18 @@ export function renderNotionWritingSettings(containerEl: HTMLElement, plugin: No
       toggle.setValue(plugin.settings.detailsNudge);
       toggle.onChange(async (value) => {
         plugin.settings.detailsNudge = value;
+        await save();
+      });
+    });
+
+  new Setting(containerEl)
+    .setName("Show “…” after a closed title")
+    .setDesc("Add a small … chip after the title of a closed toggle while editing. Off = just the arrow and the title, like Notion.")
+    .addToggle((toggle) => {
+      toggle.setValue(plugin.settings.cleanMoreChip);
+      toggle.onChange(async (value) => {
+        plugin.settings.cleanMoreChip = value;
+        plugin.app.workspace.updateOptions();
         await save();
       });
     });

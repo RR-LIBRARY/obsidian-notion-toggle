@@ -930,8 +930,10 @@ Reading view me to sirf arrow + title dikhta hai, lekin jaise hi cursor toggle k
 ### 16.2 Kya dikhta hai ab
 - **Chhota ▸ arrow** — jahan pehle `> [!question]- ` tha, wahan ab ek arrow hai. Tap/click karo → toggle khulta ya band hota hai (Notion jaisa). Khula ho to arrow neeche (▾) ghoom jaata hai.
 - **Answer lines** — har line ka `> ` gayab; uski jagah toggle ke rang ki patli line (guide) left me. Type karte raho jaise plain text ho.
-- **Band toggle** — title ke aage `…` chip. Tap karo to answer khul jaata hai.
-- **Cursor kabhi code ke andar nahi jaata** — Home dabao, left edge par tap karo, ya upar wali line se neeche aao: cursor hamesha arrow ke baad rukta hai. Isliye galti se code toot nahi sakta.
+- **Band toggle** — sirf arrow + title (Notion jaisa). Agar aapko title ke aage tap karne wala `…` chip chahiye to settings me *Show “…” after a closed title* ON karo (v1.8.2 se default OFF).
+- **Bold title ka `**` nahi dikhta (v1.8.2)** — *Bold the question* ON ho to title file me `**Q7. …**` ki tarah save hota hai; ab cursor title par ho tab bhi `**` chhupa rehta hai, title bas bold dikhta hai. File me kuch nahi badalta. Title ke bilkul shuru par Backspace dabao to toggle plain text ban jaata hai (prefix aur `**` dono ek saath hat jaate hain).
+- **Lamba title** — agar title wrap ho to doosri line title ke neeche se shuru hoti hai, arrow ke neeche nahi (v1.8.2).
+- **Cursor kabhi code ke andar nahi jaata** — Home dabao, left edge par tap karo, ya upar wali line se neeche aao: cursor hamesha arrow ke baad rukta hai. Title ke aage tap karo to cursor title ke end par rukta hai; sirf keyboard `Right` / `End` band toggle ke paar agli line par le jaate hain. Isliye galti se code toot nahi sakta.
 - Jis toggle me cursor nahi hai, use Obsidian apne aap normal callout jaisa dikhata hai (pehle jaisa).
 
 ### 16.3 Naya toggle shuru karna — `>` + space
@@ -961,6 +963,7 @@ Sab kuch sirf **callout format** ke liye hai; agar aapne *Toggle format* = `<det
 
 ### 16.8 Troubleshooting
 - **Arrow nahi dikh raha** → check karo ki *Clean editing* ON hai aur aap Live Preview me ho (Source mode me code dikhna hi chahiye). Toggle format callout hona chahiye.
-- **Toggle band hai aur answer edit karna hai** → `…` chip ya arrow tap karo; ya bas Down arrow se andar jao — cursor answer me jaate hi toggle khul jaata hai.
+- **Toggle band hai aur answer edit karna hai** → arrow tap karo, `Ctrl/Cmd+Enter` dabao, ya bas Down arrow se andar jao — cursor answer me jaate hi toggle khul jaata hai.
+- **Title par `**` dikh raha hai** → title `**…**` se poora wrap nahi hai (jaise `**Q** aur kuch`) — sirf poora-bold title chhupta hai. Ya *Bold the question* OFF karke naya toggle banao.
 - **Kisi theme me left border double dikh rahi hai** → theme apni border `.HyperMD-quote` par khud laga raha hai; plugin ka CSS `::before` border hata deta hai, phir bhi dikhe to issue me theme ka naam batao.
 - **Mobile keyboard par `>` + space kaam nahi kar raha** → kuch keyboards `>` ke baad auto-space daalte hain; us case me sirf `>` type karke ek baar space dabao. Command palette se *Insert toggle* hamesha chalta hai.

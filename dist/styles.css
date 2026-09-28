@@ -1621,9 +1621,6 @@ body.ntt-focus-run .workspace-drawer-backdrop {
   padding-inline-start: 0 !important;
   border-radius: var(--radius-s);
 }
-.markdown-source-view.mod-cm6 .cm-line.ntt-clean-header:hover {
-  background-color: var(--background-modifier-hover) !important;
-}
 .markdown-source-view.mod-cm6 .cm-line.ntt-clean-body {
   margin-inline-start: 0.68em;
   padding-inline-start: 1.12em !important;
@@ -1642,6 +1639,19 @@ body.ntt-focus-run .workspace-drawer-backdrop {
 }
 .markdown-source-view.mod-cm6 .cm-line.ntt-clean-header,
 .markdown-source-view.mod-cm6 .cm-line.ntt-clean-body { text-indent: 0 !important; }
+/* v1.8.2 — hanging indent: a title that wraps continues under the title text,
+   not under the arrow (1.8em = arrow 1.5em + its 0.3em gap; 2.2em on phones). */
+.markdown-source-view.mod-cm6 .cm-line.ntt-clean-header {
+  padding-inline-start: 1.8em !important;
+  text-indent: -1.8em !important;
+}
+.is-mobile .markdown-source-view.mod-cm6 .cm-line.ntt-clean-header {
+  padding-inline-start: 2.2em !important;
+  text-indent: -2.2em !important;
+}
+/* v1.8.2 — a `**Title**` keeps its bold look while the markers are hidden. */
+.cm-line.ntt-clean-header.ntt-clean-bold { font-weight: var(--bold-weight, 600); }
+.cm-line.ntt-clean-header.ntt-clean-bold .ntt-clean-more { font-weight: var(--font-normal, 400); }
 /* Obsidian's own quote marker is text-replaced, but keep it from flashing during layout. */
 .cm-line.ntt-clean-header .cm-formatting-quote,
 .cm-line.ntt-clean-body .cm-formatting-quote { display: none; }

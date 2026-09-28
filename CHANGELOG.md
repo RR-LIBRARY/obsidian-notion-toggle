@@ -2,6 +2,21 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.8.2 — 2026-09-28 — Bold titles without `**`, hanging indent, quieter header
+
+### Fixed
+- A title saved as `**Question**` (the "Bold the question" setting) no longer shows its `**` markers while the caret is on it. The arrow swallows the opening pair, the closing pair is hidden, and the title keeps its bold weight — the note text is unchanged.
+- A long title that wraps now continues under the title text (hanging indent), not under the arrow — like Notion.
+- The header line no longer highlights on hover; only the arrow reacts.
+- `End` / `Shift+End` on a bold title stop before the hidden `**`; `Delete` at the end of a bold title is a no-op instead of eating one hidden marker; `Backspace` at the very start of a title turns the toggle back into plain text (prefix and `**` removed together).
+- A tap that lands behind a closed title parks the caret at the title end instead of jumping to the next line (only keyboard `Right` / `End` skip forward).
+
+### Added
+- Setting **Show "…" after a closed title** (off by default). Off = arrow + title only, exactly like Notion; on = the 1.8.0 chip is back.
+
+### Tests
+- 1260 tests pass (`bun test`).
+
 ## 1.8.1 — 2026-09-28 — Caret fixes on closed toggles + workbench
 
 ### Fixed

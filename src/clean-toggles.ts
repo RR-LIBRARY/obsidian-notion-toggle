@@ -71,6 +71,12 @@ export const CLEAN_HEADER_RE = /^(>[ \t]*\[!([^\]\n]+)\]([+-])[ \t]?)/;
 /** `> body` — group 1 = the marker that gets hidden (`>` plus one optional space). */
 export const CLEAN_BODY_RE = /^(>[ ]?)/;
 const FENCE_RE = /^[ \t]*(```|~~~)/;
+/**
+ * v1.8.2 — a title stored as `**Title**` (the "Bold the question" setting).
+ * Group 1 = the inner text. The inner text may not contain another `**`, and
+ * must start and end with a non-space so Obsidian really renders it bold.
+ */
+export const BOLD_WRAP_RE = /^\*\*(\S(?:[^*\n]|\*(?!\*))*?\S|\S)\*\*[ \t]*$/;
 
 export interface ToggleBlock {
   /** Stable key for per-block state: offset of the header line start. */
@@ -80,8 +86,13 @@ export interface ToggleBlock {
   /** Header line start / end. */
   headerFrom: number;
   headerTo: number;
-  /** Where the visible title starts (after `> [!type]- `). */
+  /** Where the callout prefix ends (after `> [!type]- `). */
   prefixEnd: number;
+  /** Title stored as `**…**`: the markers are hidden along with the prefix. */
+  boldWrap: boolean;
+  /** Where the visible title starts / ends (inside the hidden `**` pair when boldWrap). */
+  titleFrom: number;
+  titleTo: number;
   /** First body line start / last body line end (both equal to headerTo when there is no body). */
   bodyFrom: number;
   bodyTo: number;
@@ -144,13 +155,19 @@ export function blockFromHeader(doc: DocLike, headerLine: number): ToggleBlock |
     lastLine = n;
   }
   const hasBody = lastLine > headerLine;
+  const prefixEnd = header.from + (m[1] ?? "").length;
+  const wrap = header.text.slice(prefixEnd - header.from).match(BOLD_WRAP_RE);
+  const inner = wrap?.[1] ?? "";
   return {
     key: header.from,
     headerLine,
     lastLine,
     headerFrom: header.from,
     headerTo: header.to,
-    prefixEnd: header.from + (m[1] ?? "").length,
+    prefixEnd,
+    boldWrap: !!wrap,
+    titleFrom: wrap ? prefixEnd + 2 : prefixEnd,
+    titleTo: wrap ? prefixEnd + 2 + inner.length : header.to,
     bodyFrom: hasBody ? doc.line(headerLine + 1).from : header.to,
     bodyTo: hasBody ? doc.line(lastLine).to : header.to,
     type: (m[2] ?? "").trim(),
@@ -251,9 +268,12 @@ export function planClean(doc: DocLike, ranges: readonly SelRange[], overrides: 
     plans.push({
       kind: "line",
       pos: block.headerFrom,
-      cls: `ntt-clean-header ntt-clean-t-${slug} ${open ? "ntt-clean-open" : "ntt-clean-closed"}`,
+      cls: `ntt-clean-header ntt-clean-t-${slug} ${open ? "ntt-clean-open" : "ntt-clean-closed"}${block.boldWrap ? " ntt-clean-bold" : ""}`,
     });
-    plans.push({ kind: "arrow", from: block.headerFrom, to: block.prefixEnd, key: block.key, open, type: block.type });
+    // The arrow swallows the opening `**` of a bold title too; the closing pair
+    // is hidden on its own so the title reads as plain text with a bold look.
+    plans.push({ kind: "arrow", from: block.headerFrom, to: block.titleFrom, key: block.key, open, type: block.type });
+    if (block.boldWrap && block.titleTo < block.headerTo) plans.push({ kind: "hide", from: block.titleTo, to: block.headerTo });
     const hasBody = block.bodyTo > block.headerTo;
     if (!hasBody) continue;
     if (!open) {
@@ -280,6 +300,17 @@ export interface CaretMove {
   head: number;
   /** Where the main caret was before this move (undefined for a fresh state). */
   prevHead?: number;
+  /** The move came from a mouse / touch tap (never "skip forward", just park). */
+  pointer?: boolean;
+}
+
+/** The first visible spot after a title, or the title end when there is none. */
+function afterTitle(doc: DocLike, block: ToggleBlock, overrides: OverrideMap): number {
+  const docEnd = doc.line(doc.lines).to;
+  const hasBody = block.bodyTo > block.headerTo;
+  if (hasBody && openWithoutCaret(block, overrides)) return block.bodyPrefixes[0]?.to ?? block.titleTo;
+  const last = hasBody ? block.bodyTo : block.headerTo;
+  return last < docEnd ? last + 1 : block.titleTo;
 }
 
 /**
@@ -287,11 +318,14 @@ export interface CaretMove {
  * slips into the folded body of a closed toggle by keyboard.
  *
  * Rules (Notion parity):
- *  - header line: anything inside the hidden `> [!type]- ` prefix → after it;
+ *  - header line: anything inside the hidden `> [!type]- ` prefix (and the
+ *    opening `**` of a bold title) → the visible title start; anything after
+ *    the visible title end (the hidden closing `**`) → the title end, or —
+ *    when the keyboard moved forward off the title — the next visible spot;
  *  - open toggle: column 0 of a body line → after the hidden `> `;
  *  - closed toggle: a caret arriving in the folded body from the title while
  *    moving forward (Right / End) skips to the line after the toggle; any other
- *    arrival (Up from below, Left from the next line, a click past the chip)
+ *    arrival (Up from below, Left from the next line, a tap past the title)
  *    parks it at the end of the title. A selection anchored on the title that
  *    reaches into the folded body is clamped to the title so typing can never
  *    replace hidden text.
@@ -299,12 +333,18 @@ export interface CaretMove {
  * Returns the new head, or null when nothing needs to change.
  */
 export function redirectCaret(doc: DocLike, move: CaretMove, overrides: OverrideMap): number | null {
-  const { anchor, head, prevHead } = move;
+  const { anchor, head, prevHead, pointer } = move;
   const line = doc.lineAt(head);
   const block = findBlockAt(doc, line.number);
   if (!block) return null;
+  const anchorOnHeader = anchor >= block.headerFrom && anchor <= block.headerTo;
+  const cameFromTitle = !pointer && prevHead !== undefined && prevHead >= block.headerFrom && prevHead <= block.headerTo;
   if (line.number === block.headerLine) {
-    return head >= block.headerFrom && head < block.prefixEnd ? block.prefixEnd : null;
+    if (head >= block.headerFrom && head < block.titleFrom) return block.titleFrom;
+    if (head <= block.titleTo) return null;
+    // Past the visible title: only the hidden closing `**` lives here.
+    if (anchor !== head) return anchorOnHeader ? block.titleTo : null;
+    return cameFromTitle ? afterTitle(doc, block, overrides) : block.titleTo;
   }
   if (openWithoutCaret(block, overrides)) {
     if (anchor !== head) return null;
@@ -312,13 +352,11 @@ export function redirectCaret(doc: DocLike, move: CaretMove, overrides: Override
     return prefix ? prefix.to : null;
   }
   // Closed toggle: the body is not a place for the caret.
-  const anchorOnHeader = anchor >= block.headerFrom && anchor <= block.headerTo;
-  if (anchor !== head) return anchorOnHeader ? block.headerTo : null;
-  const cameFromTitle = prevHead !== undefined && prevHead >= block.headerFrom && prevHead <= block.headerTo;
+  if (anchor !== head) return anchorOnHeader ? block.titleTo : null;
   if (cameFromTitle && head >= block.bodyTo && block.bodyTo < doc.line(doc.lines).to) {
     return block.bodyTo + 1;
   }
-  return block.headerTo;
+  return block.titleTo;
 }
 
 /** Backwards-compatible caret-only form of `redirectCaret`. */

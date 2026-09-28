@@ -44,6 +44,8 @@ export interface CleanTogglesHost {
   shortcutEnabled(): boolean;
   /** Replace the `>` line with a fresh toggle. Returns true when handled. */
   insertToggleFromShortcut(view: EditorView): boolean;
+  /** v1.8.2 setting: show a "…" chip after a closed title? (default off — Notion shows nothing). */
+  moreChip?(): boolean;
 }
 
 /** Click on the arrow / the "…" chip: remember the choice for this block. */
@@ -149,8 +151,9 @@ export function applyToggle(view: EditorView, key: number, open: boolean): void 
   const spec: TransactionSpec = { effects: setToggleOpen.of({ key, open }) };
   if (!open) {
     const line = view.state.doc.lineAt(Math.min(key, view.state.doc.length));
+    const parkAt = findBlockAt(view.state.doc, line.number)?.titleTo ?? line.to;
     const sel = view.state.selection.main;
-    if (sel.head > line.to) spec.selection = EditorSelection.cursor(line.to);
+    if (sel.head > parkAt) spec.selection = EditorSelection.cursor(parkAt);
   }
   view.dispatch(spec);
   view.focus();
@@ -159,7 +162,7 @@ export function applyToggle(view: EditorView, key: number, open: boolean): void 
 /* ---------- plans → decorations ---------- */
 
 /** Ranges (unsorted) for a list of plans — exported so tests can inspect them. */
-export function decorationsFor(plans: CleanPlan[]): Range<Decoration>[] {
+export function decorationsFor(plans: CleanPlan[], moreChip = true): Range<Decoration>[] {
   const out: Range<Decoration>[] = [];
   for (const p of plans) {
     switch (p.kind) {
@@ -178,7 +181,9 @@ export function decorationsFor(plans: CleanPlan[]): Range<Decoration>[] {
         out.push(Decoration.replace({ inclusive: false }).range(p.from, p.to));
         break;
       case "fold":
-        out.push(Decoration.replace({ widget: new MoreWidget(p.key), inclusive: false }).range(p.from, p.to));
+        out.push(
+          Decoration.replace(moreChip ? { widget: new MoreWidget(p.key), inclusive: false } : { inclusive: false }).range(p.from, p.to)
+        );
         break;
     }
   }
@@ -199,7 +204,8 @@ function compute(host: CleanTogglesHost, state: EditorState, overrides: Override
   if (!host.enabled() || !livePreviewOn(host, state)) return EMPTY;
   const result = planClean(state.doc, selRanges(state), overrides);
   if (result.plans.length === 0) return { decorations: Decoration.none, overrides: result.overrides };
-  return { decorations: Decoration.set(decorationsFor(result.plans), true), overrides: result.overrides };
+  const chip = host.moreChip ? host.moreChip() : false;
+  return { decorations: Decoration.set(decorationsFor(result.plans, chip), true), overrides: result.overrides };
 }
 
 /* ---------- the extension ---------- */
@@ -248,16 +254,25 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
     const overrides = tr.startState.field(field, false)?.overrides ?? new Map();
     const target = redirectCaret(
       tr.newDoc,
-      { anchor: sel.main.anchor, head: sel.main.head, prevHead: tr.startState.selection.main.head },
+      {
+        anchor: sel.main.anchor,
+        head: sel.main.head,
+        prevHead: tr.startState.selection.main.head,
+        pointer: tr.isUserEvent("select.pointer"),
+      },
       overrides
     );
     if (target === null || target === sel.main.head) return tr;
     return [tr, { selection: EditorSelection.range(sel.main.empty ? target : sel.main.anchor, target) }];
   });
 
-  // Keys that need to know about closed toggles:
-  //  - End / Shift-End on the title of a closed toggle stop at the end of the
-  //    title instead of jumping past the folded body,
+  // Keys that need to know about hidden text:
+  //  - End / Shift-End on a title stop at the end of the visible title instead
+  //    of jumping past the folded body or behind the hidden closing `**`,
+  //  - Backspace at the very start of a title turns the toggle into plain text
+  //    (prefix and bold markers go together — Notion does the same),
+  //  - Delete at the end of a bold title is a no-op instead of eating the
+  //    hidden `**` and leaving a stray pair in front,
   //  - Mod-Enter opens / closes the toggle under the caret (Notion's shortcut),
   //  - `>` + space on an empty line starts a toggle (Notion habit). Both paths
   //    are needed for that one: hardware keyboards arrive through the keymap,
@@ -266,6 +281,8 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
     keymap.of([
       { key: "End", run: (view) => endOfTitle(view, false) },
       { key: "Shift-End", run: (view) => endOfTitle(view, true) },
+      { key: "Backspace", run: (view) => backspaceAtTitleStart(view) },
+      { key: "Delete", run: (view) => deleteAtTitleEnd(view) },
       { key: "Mod-Enter", run: (view) => toggleUnderCaret(view) },
       { key: "Space", run: (view) => tryShortcut(host, view) },
     ])
@@ -277,25 +294,45 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
     return tryShortcut(host, view);
   });
 
-  function closedBlockOnHeader(view: EditorView, head: number) {
+  /** The block whose header line holds `head`, or null (also null when the layer is off). */
+  function blockOnHeader(view: EditorView, head: number) {
     if (!host.enabled() || !livePreviewOn(host, view.state)) return null;
     const line = view.state.doc.lineAt(head);
     const block = findBlockAt(view.state.doc, line.number);
-    if (!block || block.headerLine !== line.number) return null;
-    const overrides = view.state.field(field, false)?.overrides ?? new Map();
-    return openWithoutCaret(block, overrides) ? null : block;
+    return block && block.headerLine === line.number ? block : null;
   }
 
   function endOfTitle(view: EditorView, extend: boolean): boolean {
     const sel = view.state.selection.main;
-    const block = closedBlockOnHeader(view, sel.head);
-    if (!block || block.bodyTo <= block.headerTo) return false; // no folded body: default End is fine
+    const block = blockOnHeader(view, sel.head);
+    if (!block) return false;
+    const overrides = view.state.field(field, false)?.overrides ?? new Map();
+    const foldedBody = !openWithoutCaret(block, overrides) && block.bodyTo > block.headerTo;
+    if (!foldedBody && !block.boldWrap) return false; // nothing hidden after the title: default End is fine
     view.dispatch({
-      selection: extend ? EditorSelection.range(sel.anchor, block.headerTo) : EditorSelection.cursor(block.headerTo),
+      selection: extend ? EditorSelection.range(sel.anchor, block.titleTo) : EditorSelection.cursor(block.titleTo),
       scrollIntoView: true,
       userEvent: "select",
     });
     return true;
+  }
+
+  function backspaceAtTitleStart(view: EditorView): boolean {
+    const sel = view.state.selection.main;
+    if (!sel.empty) return false;
+    const block = blockOnHeader(view, sel.head);
+    if (!block || sel.head !== block.titleFrom) return false;
+    const changes = [{ from: block.headerFrom, to: block.titleFrom }];
+    if (block.boldWrap) changes.push({ from: block.titleTo, to: block.headerTo });
+    view.dispatch({ changes, selection: EditorSelection.cursor(block.headerFrom), userEvent: "delete" });
+    return true;
+  }
+
+  function deleteAtTitleEnd(view: EditorView): boolean {
+    const sel = view.state.selection.main;
+    if (!sel.empty) return false;
+    const block = blockOnHeader(view, sel.head);
+    return !!block && block.boldWrap && sel.head === block.titleTo;
   }
 
   function toggleUnderCaret(view: EditorView): boolean {

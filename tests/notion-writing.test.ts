@@ -179,6 +179,7 @@ describe("v1.8.0 notion writing — install", () => {
       notionShortcut: true,
       convertDetailsOnPaste: true,
       detailsNudge: true,
+      cleanMoreChip: false,
     });
   });
 
@@ -372,7 +373,7 @@ describe("v1.8.0 notion writing — `>` + space inserts a toggle skeleton", () =
 /* ---------- settings ---------- */
 
 describe("v1.8.0 notion writing — settings section", () => {
-  test("renders a heading and five switches with the current values", () => {
+  test("renders a heading and six switches with the current values", () => {
     const f = fake({ notionShortcut: false });
     const root = document.createElement("div");
     renderNotionWritingSettings(root, f.plugin);
@@ -385,10 +386,12 @@ describe("v1.8.0 notion writing — settings section", () => {
         "“>” + space starts a toggle",
         "Convert pasted <details> automatically",
         "Offer to convert old notes",
+        "Show “…” after a closed title",
       ])
     );
     const toggles = Array.from(root.querySelectorAll(".checkbox-container"));
-    expect(toggles.length).toBe(5);
+    expect(toggles.length).toBe(6);
+    expect(toggles[5].classList.contains("is-enabled")).toBe(false);
     expect(toggles[0].classList.contains("is-enabled")).toBe(true);
     expect(toggles[2].classList.contains("is-enabled")).toBe(false);
   });

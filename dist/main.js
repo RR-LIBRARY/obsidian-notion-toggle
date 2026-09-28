@@ -409,6 +409,7 @@ function wrapSelectionMarkdown(selection, type, fold, bold) {
 var CLEAN_HEADER_RE = /^(>[ \t]*\[!([^\]\n]+)\]([+-])[ \t]?)/;
 var CLEAN_BODY_RE = /^(>[ ]?)/;
 var FENCE_RE = /^[ \t]*(```|~~~)/;
+var BOLD_WRAP_RE = /^\*\*(\S(?:[^*\n]|\*(?!\*))*?\S|\S)\*\*[ \t]*$/;
 function insideFence(doc, lineNumber) {
   var _a;
   let open = null;
@@ -443,7 +444,7 @@ function findBlockAt(doc, lineNumber) {
   return blockFromHeader(doc, headerLine);
 }
 function blockFromHeader(doc, headerLine) {
-  var _a, _b, _c;
+  var _a, _b, _c, _d;
   const header = doc.line(headerLine);
   const m = header.text.match(CLEAN_HEADER_RE);
   if (!m)
@@ -459,16 +460,22 @@ function blockFromHeader(doc, headerLine) {
     lastLine = n;
   }
   const hasBody = lastLine > headerLine;
+  const prefixEnd = header.from + ((_b = m[1]) != null ? _b : "").length;
+  const wrap = header.text.slice(prefixEnd - header.from).match(BOLD_WRAP_RE);
+  const inner = (_c = wrap == null ? void 0 : wrap[1]) != null ? _c : "";
   return {
     key: header.from,
     headerLine,
     lastLine,
     headerFrom: header.from,
     headerTo: header.to,
-    prefixEnd: header.from + ((_b = m[1]) != null ? _b : "").length,
+    prefixEnd,
+    boldWrap: !!wrap,
+    titleFrom: wrap ? prefixEnd + 2 : prefixEnd,
+    titleTo: wrap ? prefixEnd + 2 + inner.length : header.to,
     bodyFrom: hasBody ? doc.line(headerLine + 1).from : header.to,
     bodyTo: hasBody ? doc.line(lastLine).to : header.to,
-    type: ((_c = m[2]) != null ? _c : "").trim(),
+    type: ((_d = m[2]) != null ? _d : "").trim(),
     marker: m[3],
     bodyPrefixes
   };
@@ -528,9 +535,11 @@ function planClean(doc, ranges, overrides) {
     plans.push({
       kind: "line",
       pos: block.headerFrom,
-      cls: `ntt-clean-header ntt-clean-t-${slug} ${open ? "ntt-clean-open" : "ntt-clean-closed"}`
+      cls: `ntt-clean-header ntt-clean-t-${slug} ${open ? "ntt-clean-open" : "ntt-clean-closed"}${block.boldWrap ? " ntt-clean-bold" : ""}`
     });
-    plans.push({ kind: "arrow", from: block.headerFrom, to: block.prefixEnd, key: block.key, open, type: block.type });
+    plans.push({ kind: "arrow", from: block.headerFrom, to: block.titleFrom, key: block.key, open, type: block.type });
+    if (block.boldWrap && block.titleTo < block.headerTo)
+      plans.push({ kind: "hide", from: block.titleTo, to: block.headerTo });
     const hasBody = block.bodyTo > block.headerTo;
     if (!hasBody)
       continue;
@@ -549,14 +558,31 @@ function openWithoutCaret(block, overrides) {
   const o = overrides.get(block.key);
   return o !== void 0 ? o : block.marker === "+";
 }
+function afterTitle(doc, block, overrides) {
+  var _a, _b;
+  const docEnd = doc.line(doc.lines).to;
+  const hasBody = block.bodyTo > block.headerTo;
+  if (hasBody && openWithoutCaret(block, overrides))
+    return (_b = (_a = block.bodyPrefixes[0]) == null ? void 0 : _a.to) != null ? _b : block.titleTo;
+  const last = hasBody ? block.bodyTo : block.headerTo;
+  return last < docEnd ? last + 1 : block.titleTo;
+}
 function redirectCaret(doc, move, overrides) {
-  const { anchor, head, prevHead } = move;
+  const { anchor, head, prevHead, pointer } = move;
   const line = doc.lineAt(head);
   const block = findBlockAt(doc, line.number);
   if (!block)
     return null;
+  const anchorOnHeader = anchor >= block.headerFrom && anchor <= block.headerTo;
+  const cameFromTitle = !pointer && prevHead !== void 0 && prevHead >= block.headerFrom && prevHead <= block.headerTo;
   if (line.number === block.headerLine) {
-    return head >= block.headerFrom && head < block.prefixEnd ? block.prefixEnd : null;
+    if (head >= block.headerFrom && head < block.titleFrom)
+      return block.titleFrom;
+    if (head <= block.titleTo)
+      return null;
+    if (anchor !== head)
+      return anchorOnHeader ? block.titleTo : null;
+    return cameFromTitle ? afterTitle(doc, block, overrides) : block.titleTo;
   }
   if (openWithoutCaret(block, overrides)) {
     if (anchor !== head)
@@ -564,14 +590,12 @@ function redirectCaret(doc, move, overrides) {
     const prefix = block.bodyPrefixes.find((p) => head >= p.from && head < p.to);
     return prefix ? prefix.to : null;
   }
-  const anchorOnHeader = anchor >= block.headerFrom && anchor <= block.headerTo;
   if (anchor !== head)
-    return anchorOnHeader ? block.headerTo : null;
-  const cameFromTitle = prevHead !== void 0 && prevHead >= block.headerFrom && prevHead <= block.headerTo;
+    return anchorOnHeader ? block.titleTo : null;
   if (cameFromTitle && head >= block.bodyTo && block.bodyTo < doc.line(doc.lines).to) {
     return block.bodyTo + 1;
   }
-  return block.headerTo;
+  return block.titleTo;
 }
 function isShortcutTrigger(lineText, col) {
   return lineText === ">" && col === 1;
@@ -667,17 +691,19 @@ function wireToggleClick(el2, view, key, nextOpen) {
   });
 }
 function applyToggle(view, key, open) {
+  var _a, _b;
   const spec = { effects: setToggleOpen.of({ key, open }) };
   if (!open) {
     const line = view.state.doc.lineAt(Math.min(key, view.state.doc.length));
+    const parkAt = (_b = (_a = findBlockAt(view.state.doc, line.number)) == null ? void 0 : _a.titleTo) != null ? _b : line.to;
     const sel = view.state.selection.main;
-    if (sel.head > line.to)
-      spec.selection = import_state.EditorSelection.cursor(line.to);
+    if (sel.head > parkAt)
+      spec.selection = import_state.EditorSelection.cursor(parkAt);
   }
   view.dispatch(spec);
   view.focus();
 }
-function decorationsFor(plans) {
+function decorationsFor(plans, moreChip = true) {
   const out = [];
   for (const p of plans) {
     switch (p.kind) {
@@ -696,7 +722,9 @@ function decorationsFor(plans) {
         out.push(import_view.Decoration.replace({ inclusive: false }).range(p.from, p.to));
         break;
       case "fold":
-        out.push(import_view.Decoration.replace({ widget: new MoreWidget(p.key), inclusive: false }).range(p.from, p.to));
+        out.push(
+          import_view.Decoration.replace(moreChip ? { widget: new MoreWidget(p.key), inclusive: false } : { inclusive: false }).range(p.from, p.to)
+        );
         break;
     }
   }
@@ -717,7 +745,8 @@ function compute(host, state, overrides) {
   const result = planClean(state.doc, selRanges(state), overrides);
   if (result.plans.length === 0)
     return { decorations: import_view.Decoration.none, overrides: result.overrides };
-  return { decorations: import_view.Decoration.set(decorationsFor(result.plans), true), overrides: result.overrides };
+  const chip = host.moreChip ? host.moreChip() : false;
+  return { decorations: import_view.Decoration.set(decorationsFor(result.plans, chip), true), overrides: result.overrides };
 }
 function cleanTogglesExtension(host) {
   const field = import_state.StateField.define({
@@ -763,7 +792,12 @@ function cleanTogglesExtension(host) {
     const overrides = (_b = (_a = tr.startState.field(field, false)) == null ? void 0 : _a.overrides) != null ? _b : /* @__PURE__ */ new Map();
     const target = redirectCaret(
       tr.newDoc,
-      { anchor: sel.main.anchor, head: sel.main.head, prevHead: tr.startState.selection.main.head },
+      {
+        anchor: sel.main.anchor,
+        head: sel.main.head,
+        prevHead: tr.startState.selection.main.head,
+        pointer: tr.isUserEvent("select.pointer")
+      },
       overrides
     );
     if (target === null || target === sel.main.head)
@@ -774,6 +808,8 @@ function cleanTogglesExtension(host) {
     import_view.keymap.of([
       { key: "End", run: (view) => endOfTitle(view, false) },
       { key: "Shift-End", run: (view) => endOfTitle(view, true) },
+      { key: "Backspace", run: (view) => backspaceAtTitleStart(view) },
+      { key: "Delete", run: (view) => deleteAtTitleEnd(view) },
       { key: "Mod-Enter", run: (view) => toggleUnderCaret(view) },
       { key: "Space", run: (view) => tryShortcut(host, view) }
     ])
@@ -786,28 +822,49 @@ function cleanTogglesExtension(host) {
       return false;
     return tryShortcut(host, view);
   });
-  function closedBlockOnHeader(view, head) {
-    var _a, _b;
+  function blockOnHeader(view, head) {
     if (!host.enabled() || !livePreviewOn(host, view.state))
       return null;
     const line = view.state.doc.lineAt(head);
     const block = findBlockAt(view.state.doc, line.number);
-    if (!block || block.headerLine !== line.number)
-      return null;
-    const overrides = (_b = (_a = view.state.field(field, false)) == null ? void 0 : _a.overrides) != null ? _b : /* @__PURE__ */ new Map();
-    return openWithoutCaret(block, overrides) ? null : block;
+    return block && block.headerLine === line.number ? block : null;
   }
   function endOfTitle(view, extend) {
+    var _a, _b;
     const sel = view.state.selection.main;
-    const block = closedBlockOnHeader(view, sel.head);
-    if (!block || block.bodyTo <= block.headerTo)
+    const block = blockOnHeader(view, sel.head);
+    if (!block)
+      return false;
+    const overrides = (_b = (_a = view.state.field(field, false)) == null ? void 0 : _a.overrides) != null ? _b : /* @__PURE__ */ new Map();
+    const foldedBody = !openWithoutCaret(block, overrides) && block.bodyTo > block.headerTo;
+    if (!foldedBody && !block.boldWrap)
       return false;
     view.dispatch({
-      selection: extend ? import_state.EditorSelection.range(sel.anchor, block.headerTo) : import_state.EditorSelection.cursor(block.headerTo),
+      selection: extend ? import_state.EditorSelection.range(sel.anchor, block.titleTo) : import_state.EditorSelection.cursor(block.titleTo),
       scrollIntoView: true,
       userEvent: "select"
     });
     return true;
+  }
+  function backspaceAtTitleStart(view) {
+    const sel = view.state.selection.main;
+    if (!sel.empty)
+      return false;
+    const block = blockOnHeader(view, sel.head);
+    if (!block || sel.head !== block.titleFrom)
+      return false;
+    const changes = [{ from: block.headerFrom, to: block.titleFrom }];
+    if (block.boldWrap)
+      changes.push({ from: block.titleTo, to: block.headerTo });
+    view.dispatch({ changes, selection: import_state.EditorSelection.cursor(block.headerFrom), userEvent: "delete" });
+    return true;
+  }
+  function deleteAtTitleEnd(view) {
+    const sel = view.state.selection.main;
+    if (!sel.empty)
+      return false;
+    const block = blockOnHeader(view, sel.head);
+    return !!block && block.boldWrap && sel.head === block.titleTo;
   }
   function toggleUnderCaret(view) {
     var _a, _b;
@@ -842,7 +899,8 @@ var DEFAULT_NOTION_WRITING = {
   notionLook: true,
   notionShortcut: true,
   convertDetailsOnPaste: true,
-  detailsNudge: true
+  detailsNudge: true,
+  cleanMoreChip: false
 };
 var NOTION_LOOK_CLASS = "ntt-notion-look";
 function calloutMode(plugin) {
@@ -929,7 +987,8 @@ function installNotionWriting(plugin) {
       livePreviewField: import_obsidian.editorLivePreviewField,
       enabled: () => plugin.settings.cleanEditing && calloutMode(plugin),
       shortcutEnabled: () => plugin.settings.notionShortcut && calloutMode(plugin),
-      insertToggleFromShortcut: (view) => insertToggleFromShortcut(plugin, view)
+      insertToggleFromShortcut: (view) => insertToggleFromShortcut(plugin, view),
+      moreChip: () => plugin.settings.cleanMoreChip
     })
   );
   plugin.registerEvent(
@@ -982,7 +1041,9 @@ function renderNotionWritingSettings(containerEl, plugin) {
   const save = async () => {
     await plugin.saveSettings();
   };
-  new import_obsidian.Setting(containerEl).setName("Clean editing").setDesc("While typing, show a small arrow instead of the \u201C> [!question]-\u201D code. Click the arrow to open or close the toggle.").addToggle((toggle) => {
+  new import_obsidian.Setting(containerEl).setName("Clean editing").setDesc(
+    "While typing, show a small arrow instead of the \u201C> [!question]-\u201D code (a bold title's ** are hidden too). Click the arrow to open or close the toggle."
+  ).addToggle((toggle) => {
     toggle.setValue(plugin.settings.cleanEditing);
     toggle.onChange(async (value) => {
       plugin.settings.cleanEditing = value;
@@ -1017,6 +1078,14 @@ function renderNotionWritingSettings(containerEl, plugin) {
     toggle.setValue(plugin.settings.detailsNudge);
     toggle.onChange(async (value) => {
       plugin.settings.detailsNudge = value;
+      await save();
+    });
+  });
+  new import_obsidian.Setting(containerEl).setName("Show \u201C\u2026\u201D after a closed title").setDesc("Add a small \u2026 chip after the title of a closed toggle while editing. Off = just the arrow and the title, like Notion.").addToggle((toggle) => {
+    toggle.setValue(plugin.settings.cleanMoreChip);
+    toggle.onChange(async (value) => {
+      plugin.settings.cleanMoreChip = value;
+      plugin.app.workspace.updateOptions();
       await save();
     });
   });

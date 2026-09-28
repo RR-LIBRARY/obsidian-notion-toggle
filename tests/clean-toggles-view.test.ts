@@ -25,12 +25,12 @@ const livePreview = StateField.define<boolean>({
 
 interface Harness {
   state: EditorState;
-  flags: { enabled: boolean; shortcut: boolean };
+  flags: { enabled: boolean; shortcut: boolean; moreChip: boolean };
   inserted: number;
 }
 
 function harness(doc: string, pos: number, extra: Extension[] = []): Harness {
-  const h: Harness = { state: EditorState.create({ doc }), flags: { enabled: true, shortcut: true }, inserted: 0 };
+  const h: Harness = { state: EditorState.create({ doc }), flags: { enabled: true, shortcut: true, moreChip: true }, inserted: 0 };
   const ext = cleanTogglesExtension({
     livePreviewField: livePreview,
     enabled: () => h.flags.enabled,
@@ -39,6 +39,7 @@ function harness(doc: string, pos: number, extra: Extension[] = []): Harness {
       h.inserted++;
       return true;
     },
+    moreChip: () => h.flags.moreChip,
   });
   h.state = EditorState.create({ doc, selection: EditorSelection.cursor(pos), extensions: [livePreview, ext, ...extra] });
   return h;
@@ -67,6 +68,8 @@ function seen(state: EditorState): Seen[] {
 
 const moveTo = (state: EditorState, pos: number) => state.update({ selection: EditorSelection.cursor(pos) }).state;
 const line = (state: EditorState, n: number) => state.doc.line(n);
+/** End of the visible title of the NOTE toggle (before its hidden closing `**`). */
+const titleEnd = (state: EditorState) => findBlockAt(state.doc, 2)!.titleTo;
 
 /** Minimal stand-in for the bits of EditorView the widgets touch. */
 function fakeView(h: Harness) {
@@ -86,7 +89,7 @@ describe("v1.8.0 clean editing — decorations from the real StateField", () => 
     const h = harness(NOTE, line(EditorState.create({ doc: NOTE }), 2).to);
     const d = seen(h.state);
     const arrow = d.find((x) => x.widget === "ArrowWidget")!;
-    expect(NOTE.slice(arrow.from, arrow.to)).toBe("> [!question]- ");
+    expect(NOTE.slice(arrow.from, arrow.to)).toBe("> [!question]- **");
     expect(arrow.open).toBe(false);
     const more = d.find((x) => x.widget === "MoreWidget")!;
     expect(more.from).toBe(line(h.state, 2).to);
@@ -104,7 +107,7 @@ describe("v1.8.0 clean editing — decorations from the real StateField", () => 
     expect(d.find((x) => x.widget === "ArrowWidget")?.open).toBe(true);
     expect(d.some((x) => x.widget === "MoreWidget")).toBe(false);
     const hidden = d.filter((x) => !x.cls && !x.widget && x.to > x.from);
-    expect(hidden.map((x) => NOTE.slice(x.from, x.to))).toEqual(["> ", "> "]);
+    expect(hidden.map((x) => NOTE.slice(x.from, x.to))).toEqual(["**", "> ", "> "]);
     expect(d.filter((x) => x.cls?.includes("ntt-clean-body")).length).toBe(2);
   });
 
@@ -153,7 +156,7 @@ describe("v1.8.0 clean editing — the caret never hides behind a marker", () =>
   test("Home on the title line lands after the hidden prefix", () => {
     const h = harness(NOTE, line(EditorState.create({ doc: NOTE }), 2).to);
     const s = moveTo(h.state, line(h.state, 2).from);
-    expect(s.selection.main.head).toBe(findBlockAt(textDoc(NOTE), 2)!.prefixEnd);
+    expect(s.selection.main.head).toBe(findBlockAt(textDoc(NOTE), 2)!.titleFrom);
   });
 
   test("column 0 of an open body line moves past the `> `", () => {
@@ -178,7 +181,7 @@ describe("v1.8.0 clean editing — the caret never hides behind a marker", () =>
   test("a keyboard move into a closed toggle's body from below parks the caret on the title", () => {
     const h = harness(NOTE, NOTE.length);
     const s = moveTo(h.state, line(h.state, 4).from + 3);
-    expect(s.selection.main.head).toBe(line(h.state, 2).to);
+    expect(s.selection.main.head).toBe(titleEnd(h.state));
     expect(seen(s).some((x) => x.widget === "MoreWidget")).toBe(true); // still folded
   });
 
@@ -194,7 +197,7 @@ describe("v1.8.0 clean editing — the caret never hides behind a marker", () =>
     const anchor = line(h.state, 2).from + 20;
     const s = h.state.update({ selection: EditorSelection.range(anchor, line(h.state, 4).to) }).state;
     expect(s.selection.main.anchor).toBe(anchor);
-    expect(s.selection.main.head).toBe(line(h.state, 2).to);
+    expect(s.selection.main.head).toBe(titleEnd(h.state));
   });
 
   test("a selection that starts above the toggle may cover the whole block (Notion block select)", () => {
@@ -217,15 +220,16 @@ describe("v1.8.0 clean editing — the caret never hides behind a marker", () =>
     const bindings = h.state.facet(keymap).flat();
     const end = bindings.find((b) => b.key === "End")!;
     expect(end.run!(fakeView(h))).toBe(true);
-    expect(h.state.selection.main.head).toBe(line(h.state, 2).to);
+    expect(h.state.selection.main.head).toBe(titleEnd(h.state));
     h.state = moveTo(h.state, line(h.state, 2).from + 18);
     const shiftEnd = bindings.find((b) => b.key === "Shift-End")!;
     expect(shiftEnd.run!(fakeView(h))).toBe(true);
     expect(h.state.selection.main.anchor).toBe(line(h.state, 2).from + 18);
-    expect(h.state.selection.main.head).toBe(line(h.state, 2).to);
-    // On an open toggle End is left to the editor's default.
-    const open = harness(NOTE, line(EditorState.create({ doc: NOTE }), 2).to);
-    open.state = open.state.update({ effects: setToggleOpen.of({ key: findBlockAt(textDoc(NOTE), 2)!.key, open: true }) }).state;
+    expect(h.state.selection.main.head).toBe(titleEnd(h.state));
+    // On an open toggle with a plain title End is left to the editor's default.
+    const plain = "> [!question]- Plain title\n> body";
+    const open = harness(plain, 20);
+    open.state = open.state.update({ effects: setToggleOpen.of({ key: 0, open: true }) }).state;
     expect(open.state.facet(keymap).flat().find((b) => b.key === "End")!.run!(fakeView(open))).toBe(false);
   });
 
@@ -238,7 +242,7 @@ describe("v1.8.0 clean editing — the caret never hides behind a marker", () =>
     h.state = moveTo(h.state, line(h.state, 3).to);
     expect(seen(h.state).some((x) => x.cls?.includes("ntt-clean-body"))).toBe(true);
     expect(modEnter.run!(fakeView(h))).toBe(true);
-    expect(h.state.selection.main.head).toBe(line(h.state, 2).to);
+    expect(h.state.selection.main.head).toBe(titleEnd(h.state));
     expect(seen(h.state).some((x) => x.widget === "MoreWidget")).toBe(true);
     // Outside a toggle it does nothing.
     const plain = harness(NOTE, 0);
@@ -249,7 +253,7 @@ describe("v1.8.0 clean editing — the caret never hides behind a marker", () =>
     const h = harness(NOTE, line(EditorState.create({ doc: NOTE }), 3).to);
     const key = findBlockAt(textDoc(NOTE), 2)!.key;
     applyToggle(fakeView(h), key, false);
-    expect(h.state.selection.main.head).toBe(line(h.state, 2).to);
+    expect(h.state.selection.main.head).toBe(titleEnd(h.state));
     const d = seen(h.state);
     expect(d.find((x) => x.widget === "ArrowWidget")?.open).toBe(false);
     expect(d.some((x) => x.widget === "MoreWidget")).toBe(true);
@@ -332,5 +336,68 @@ describe("v1.8.0 clean editing — `>` + space shortcut", () => {
     h.flags.shortcut = false;
     expect(space.run!(fakeView(h))).toBe(false);
     expect(h.inserted).toBe(1);
+  });
+});
+
+describe("v1.8.2 clean editing — bold titles, chip setting, Backspace / Delete", () => {
+  test("the … chip is a setting; off means the folded body is simply hidden", () => {
+    const h = harness(NOTE, line(EditorState.create({ doc: NOTE }), 2).to);
+    h.flags.moreChip = false;
+    const s = moveTo(h.state, titleEnd(h.state));
+    const d = seen(s);
+    expect(d.some((x) => x.widget === "MoreWidget")).toBe(false);
+    const fold = d.find((x) => !x.cls && !x.widget && x.from === line(s, 2).to)!;
+    expect(fold.to).toBe(line(s, 4).to);
+    expect(d.find((x) => x.widget === "ArrowWidget")?.open).toBe(false);
+  });
+
+  test("the header line carries the bold class and the closing ** is hidden", () => {
+    const h = harness(NOTE, line(EditorState.create({ doc: NOTE }), 2).to);
+    const d = seen(h.state);
+    expect(d.some((x) => x.cls?.includes("ntt-clean-bold"))).toBe(true);
+    const l2 = line(h.state, 2);
+    expect(d.some((x) => !x.cls && !x.widget && x.from === l2.to - 2 && x.to === l2.to)).toBe(true);
+  });
+
+  test("End on an OPEN bold title stops before the hidden **; Delete there is a no-op", () => {
+    const h = harness(NOTE, line(EditorState.create({ doc: NOTE }), 2).from + 18);
+    h.state = h.state.update({ effects: setToggleOpen.of({ key: findBlockAt(textDoc(NOTE), 2)!.key, open: true }) }).state;
+    const bindings = h.state.facet(keymap).flat();
+    expect(bindings.find((b) => b.key === "End")!.run!(fakeView(h))).toBe(true);
+    expect(h.state.selection.main.head).toBe(titleEnd(h.state));
+    const before = h.state.doc.toString();
+    expect(bindings.find((b) => b.key === "Delete")!.run!(fakeView(h))).toBe(true);
+    expect(h.state.doc.toString()).toBe(before);
+    // Delete in the middle of the title is left to the editor
+    h.state = moveTo(h.state, titleEnd(h.state) - 3);
+    expect(bindings.find((b) => b.key === "Delete")!.run!(fakeView(h))).toBe(false);
+  });
+
+  test("Backspace at the start of the title turns the toggle back into plain text (prefix and ** go together)", () => {
+    const h = harness(NOTE, line(EditorState.create({ doc: NOTE }), 2).to);
+    const start = findBlockAt(textDoc(NOTE), 2)!.titleFrom;
+    h.state = moveTo(h.state, start);
+    const backspace = h.state.facet(keymap).flat().find((b) => b.key === "Backspace")!;
+    expect(backspace.run!(fakeView(h))).toBe(true);
+    expect(line(h.state, 2).text).toBe("Q7. Plant?");
+    expect(h.state.selection.main.head).toBe(line(h.state, 2).from);
+    // anywhere else Backspace is the editor's business
+    h.state = moveTo(h.state, line(h.state, 2).from + 3);
+    expect(backspace.run!(fakeView(h))).toBe(false);
+  });
+
+  test("Backspace at the start of a plain title drops only the prefix", () => {
+    const solo = "> [!question]- Title\n> body";
+    const h = harness(solo, 15);
+    const backspace = h.state.facet(keymap).flat().find((b) => b.key === "Backspace")!;
+    expect(backspace.run!(fakeView(h))).toBe(true);
+    expect(line(h.state, 1).text).toBe("Title");
+    expect(h.state.selection.main.head).toBe(0);
+  });
+
+  test("a tap behind the title never skips to the next line", () => {
+    const h = harness(NOTE, titleEnd(EditorState.create({ doc: NOTE })));
+    const s = h.state.update({ selection: EditorSelection.cursor(line(h.state, 4).to), userEvent: "select.pointer" }).state;
+    expect(s.selection.main.head).toBe(titleEnd(s));
   });
 });
