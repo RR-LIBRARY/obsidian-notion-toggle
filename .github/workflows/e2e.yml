@@ -1,0 +1,17 @@
+name: E2E (real browser)
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: bun install
+      - run: bun test
+      - run: pip install playwright && python -m playwright install --with-deps chromium
+      - run: node e2e/build-workbench.mjs && python e2e/run_e2e.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: e2e-shots, path: e2e/out/shots }
