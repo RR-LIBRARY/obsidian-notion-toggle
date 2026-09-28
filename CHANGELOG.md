@@ -2,6 +2,14 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.8.6
+
+- Arrow tuned to the Notion app: smaller solid triangle, normal-weight title.
+
+## 1.8.5
+
+- Fold arrow on every toggle is now a small solid dark triangle (right when closed, down when open), like the Notion / Lovable FAQ — no coloured outline chevron.
+
 ## 1.8.4 — 2026-09-28 — Closer to the Notion / Lovable FAQ look
 
 With "Plain Notion look" on, the editing view now matches the reference accordion:

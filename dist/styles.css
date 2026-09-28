@@ -1827,3 +1827,11 @@ body.ntt-notion-look .callout.is-collapsible .callout-fold::before {
 }
 body.ntt-notion-look .callout.is-collapsible.is-collapsed .callout-fold::before { transform: none; }
 body.ntt-notion-look .ntt-clean-arrow { color: var(--text-normal); }
+
+/* v1.8.6 — tuned to the Notion app video: a smaller solid triangle
+   (about 0.45em) with a short gap, and a normal-weight title. */
+body.ntt-notion-look .callout.is-collapsible .callout-fold::before { width: 0.46em; height: 0.52em; }
+body.ntt-notion-look .callout.is-collapsible .callout-fold { width: 1.3em !important; }
+body.ntt-notion-look .ntt-clean-arrow svg { width: 0.6em; height: 0.6em; }
+body.ntt-notion-look .cm-line.ntt-clean-header.ntt-clean-bold,
+body.ntt-notion-look .callout.is-collapsible .callout-title-inner { font-weight: var(--font-normal, 400); }
