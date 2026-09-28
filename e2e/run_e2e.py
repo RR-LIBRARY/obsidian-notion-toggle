@@ -159,14 +159,15 @@ async def main():
         await put_on_title_end(page)
         await page.keyboard.press("Enter")
         await page.keyboard.type("Q2 next")
-        l5 = await page.evaluate("wb.lineText(5)")
+        check("blank line keeps toggles separate", (await page.evaluate("wb.lineText(5)")) == "")
+        l5 = await page.evaluate("wb.lineText(6)")
         check("Enter on closed title makes next toggle", l5.startswith("> [!question]-") and "Q2 next" in l5, l5)
         check("old body untouched", (await page.evaluate("wb.lineText(3)")).startswith("> **Answer"))
         # 17 Enter on empty new title -> plain line
         await page.keyboard.press("End")
         await page.keyboard.press("Enter")
         await page.keyboard.press("Enter")
-        l5 = await page.evaluate("wb.lineText(6)")
+        l5 = await page.evaluate("wb.lineText(8)")
         check("Enter on empty toggle gives plain line", "[!" not in l5, l5)
         await page.screenshot(path=str(SHOTS / "16_enter.png"))
 

@@ -336,7 +336,7 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
         return true;
       }
       const bold = block.boldWrap ? "**" : "";
-      const head = `\n> [!${block.type}]- ${bold}`;
+      const head = `\n\n> [!${block.type}]- ${bold}`;
       const at = Math.max(block.bodyTo, block.headerTo);
       view.dispatch({ changes: { from: at, insert: head + bold }, selection: EditorSelection.cursor(at + head.length), scrollIntoView: true, userEvent: "input" });
       return true;

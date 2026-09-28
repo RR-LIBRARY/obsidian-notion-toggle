@@ -2,6 +2,10 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.8.8
+
+- The new toggle made by Enter keeps an empty line above it, so Obsidian never merges it into the toggle before.
+
 ## 1.8.7
 
 - Enter like Notion: on a closed toggle title it starts the next toggle; on an empty toggle it turns into a plain line; on an open title it goes inside.

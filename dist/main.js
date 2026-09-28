@@ -860,6 +860,7 @@ function cleanTogglesExtension(host) {
       }
       const bold = block.boldWrap ? "**" : "";
       const head = `
+
 > [!${block.type}]- ${bold}`;
       const at = Math.max(block.bodyTo, block.headerTo);
       view.dispatch({ changes: { from: at, insert: head + bold }, selection: import_state.EditorSelection.cursor(at + head.length), scrollIntoView: true, userEvent: "input" });
