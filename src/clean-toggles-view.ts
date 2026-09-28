@@ -24,9 +24,12 @@ import {
 } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, keymap, type DecorationSet } from "@codemirror/view";
 import {
+  findBlockAt,
+  isOpen,
   isShortcutTrigger,
-  nudgeCaret,
+  openWithoutCaret,
   planClean,
+  redirectCaret,
   type CleanPlan,
   type OverrideMap,
   type SelRange,
@@ -63,7 +66,7 @@ function triangle(): SVGSVGElement {
   svg.setAttribute("viewBox", "0 0 16 16");
   svg.setAttribute("aria-hidden", "true");
   const path = document.createElementNS(ns, "path");
-  path.setAttribute("d", "M5 3.5 L12 8 L5 12.5 Z");
+  path.setAttribute("d", "M4.5 2.5 L13 8 L4.5 13.5 Z");
   path.setAttribute("fill", "currentColor");
   svg.appendChild(path);
   return svg;
@@ -78,11 +81,11 @@ class ArrowWidget extends WidgetType {
     super();
   }
 
-  eq(other: ArrowWidget): boolean {
+  override eq(other: ArrowWidget): boolean {
     return other.key === this.key && other.open === this.open && other.type === this.type;
   }
 
-  toDOM(view: EditorView): HTMLElement {
+  override toDOM(view: EditorView): HTMLElement {
     const el = document.createElement("span");
     el.className = `ntt-clean-arrow${this.open ? " is-open" : ""}`;
     el.setAttribute("role", "button");
@@ -95,7 +98,7 @@ class ArrowWidget extends WidgetType {
     return el;
   }
 
-  ignoreEvent(): boolean {
+  override ignoreEvent(): boolean {
     return true;
   }
 }
@@ -105,11 +108,11 @@ class MoreWidget extends WidgetType {
     super();
   }
 
-  eq(other: MoreWidget): boolean {
+  override eq(other: MoreWidget): boolean {
     return other.key === this.key;
   }
 
-  toDOM(view: EditorView): HTMLElement {
+  override toDOM(view: EditorView): HTMLElement {
     const el = document.createElement("span");
     el.className = "ntt-clean-more";
     el.textContent = "…";
@@ -120,7 +123,7 @@ class MoreWidget extends WidgetType {
     return el;
   }
 
-  ignoreEvent(): boolean {
+  override ignoreEvent(): boolean {
     return true;
   }
 }
@@ -232,28 +235,39 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
     ],
   });
 
-  // A lone caret must never rest inside a hidden `> [!type]- ` or `> ` marker:
-  // Home, a tap at the left edge or an Up/Down from column 0 would otherwise
-  // type *before* the marker and quietly break the toggle.
+  // A caret must never rest inside a hidden `> [!type]- ` or `> ` marker, and
+  // must not slip into the folded body of a closed toggle: Home, a tap at the
+  // left edge, End / Right past the "…" chip or an Up from below would otherwise
+  // type into hidden text and quietly break the toggle.
   const keepCaretVisible = EditorState.transactionFilter.of((tr) => {
     if (!tr.selection || !host.enabled() || !livePreviewOn(host, tr.state)) return tr;
+    if (tr.docChanged) return tr; // typing / Enter may legitimately land in a body
     if (tr.isUserEvent("input.type.compose") || tr.isUserEvent("select.pointer.drag")) return tr;
     const sel = tr.newSelection;
-    if (sel.ranges.length !== 1 || !sel.main.empty) return tr;
-    const target = nudgeCaret(tr.newDoc, sel.main.head, tr.startState.field(field, false)?.overrides ?? new Map());
+    if (sel.ranges.length !== 1) return tr;
+    const overrides = tr.startState.field(field, false)?.overrides ?? new Map();
+    const target = redirectCaret(
+      tr.newDoc,
+      { anchor: sel.main.anchor, head: sel.main.head, prevHead: tr.startState.selection.main.head },
+      overrides
+    );
     if (target === null || target === sel.main.head) return tr;
-    return [tr, { selection: EditorSelection.cursor(target) }];
+    return [tr, { selection: EditorSelection.range(sel.main.empty ? target : sel.main.anchor, target) }];
   });
 
-  // `>` + space on an empty line → a toggle (Notion habit). Both paths are
-  // needed: hardware keyboards arrive through the keymap, most phone keyboards
-  // through the input handler.
-  const shortcutFromKey = Prec.high(
+  // Keys that need to know about closed toggles:
+  //  - End / Shift-End on the title of a closed toggle stop at the end of the
+  //    title instead of jumping past the folded body,
+  //  - Mod-Enter opens / closes the toggle under the caret (Notion's shortcut),
+  //  - `>` + space on an empty line starts a toggle (Notion habit). Both paths
+  //    are needed for that one: hardware keyboards arrive through the keymap,
+  //    most phone keyboards through the input handler.
+  const keys = Prec.high(
     keymap.of([
-      {
-        key: "Space",
-        run: (view) => tryShortcut(host, view),
-      },
+      { key: "End", run: (view) => endOfTitle(view, false) },
+      { key: "Shift-End", run: (view) => endOfTitle(view, true) },
+      { key: "Mod-Enter", run: (view) => toggleUnderCaret(view) },
+      { key: "Space", run: (view) => tryShortcut(host, view) },
     ])
   );
   const shortcutFromInput = EditorView.inputHandler.of((view, from, to, text) => {
@@ -263,7 +277,39 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
     return tryShortcut(host, view);
   });
 
-  return [field, keepCaretVisible, shortcutFromKey, shortcutFromInput];
+  function closedBlockOnHeader(view: EditorView, head: number) {
+    if (!host.enabled() || !livePreviewOn(host, view.state)) return null;
+    const line = view.state.doc.lineAt(head);
+    const block = findBlockAt(view.state.doc, line.number);
+    if (!block || block.headerLine !== line.number) return null;
+    const overrides = view.state.field(field, false)?.overrides ?? new Map();
+    return openWithoutCaret(block, overrides) ? null : block;
+  }
+
+  function endOfTitle(view: EditorView, extend: boolean): boolean {
+    const sel = view.state.selection.main;
+    const block = closedBlockOnHeader(view, sel.head);
+    if (!block || block.bodyTo <= block.headerTo) return false; // no folded body: default End is fine
+    view.dispatch({
+      selection: extend ? EditorSelection.range(sel.anchor, block.headerTo) : EditorSelection.cursor(block.headerTo),
+      scrollIntoView: true,
+      userEvent: "select",
+    });
+    return true;
+  }
+
+  function toggleUnderCaret(view: EditorView): boolean {
+    if (!host.enabled() || !livePreviewOn(host, view.state)) return false;
+    const sel = view.state.selection.main;
+    const block = findBlockAt(view.state.doc, view.state.doc.lineAt(sel.head).number);
+    if (!block) return false;
+    const overrides = view.state.field(field, false)?.overrides ?? new Map();
+    const open = isOpen(block, [{ from: sel.from, to: sel.to, head: sel.head }], overrides);
+    applyToggle(view, block.key, !open);
+    return true;
+  }
+
+  return [field, keepCaretVisible, keys, shortcutFromInput];
 }
 
 function tryShortcut(host: CleanTogglesHost, view: EditorView): boolean {

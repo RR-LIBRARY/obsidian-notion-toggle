@@ -59,7 +59,7 @@ export function textDoc(text: string): DocLike {
     },
     lineAt(p) {
       for (const l of infos) if (p <= l.to) return l;
-      return infos[infos.length - 1];
+      return infos[infos.length - 1] ?? { number: 1, from: 0, to: 0, text: "" };
     },
   };
 }
@@ -101,7 +101,7 @@ export function insideFence(doc: DocLike, lineNumber: number): boolean {
   for (let n = 1; n < lineNumber; n++) {
     const m = doc.line(n).text.match(FENCE_RE);
     if (!m) continue;
-    if (open === null) open = m[1];
+    if (open === null) open = m[1] ?? null;
     else if (m[1] === open) open = null;
   }
   return open !== null;
@@ -140,7 +140,7 @@ export function blockFromHeader(doc: DocLike, headerLine: number): ToggleBlock |
     const line = doc.line(n);
     if (!/^>/.test(line.text) || CLEAN_HEADER_RE.test(line.text)) break;
     const bm = line.text.match(CLEAN_BODY_RE);
-    bodyPrefixes.push({ from: line.from, to: line.from + (bm ? bm[1].length : 1) });
+    bodyPrefixes.push({ from: line.from, to: line.from + (bm ? (bm[1] ?? ">").length : 1) });
     lastLine = n;
   }
   const hasBody = lastLine > headerLine;
@@ -150,10 +150,10 @@ export function blockFromHeader(doc: DocLike, headerLine: number): ToggleBlock |
     lastLine,
     headerFrom: header.from,
     headerTo: header.to,
-    prefixEnd: header.from + m[1].length,
+    prefixEnd: header.from + (m[1] ?? "").length,
     bodyFrom: hasBody ? doc.line(headerLine + 1).from : header.to,
     bodyTo: hasBody ? doc.line(lastLine).to : header.to,
-    type: m[2].trim(),
+    type: (m[2] ?? "").trim(),
     marker: m[3] as "+" | "-",
     bodyPrefixes,
   };
@@ -210,7 +210,7 @@ export type OverrideMap = ReadonlyMap<number, boolean>;
 export interface CleanPlanResult {
   plans: CleanPlan[];
   blocks: ToggleBlock[];
-  /** Overrides that still belong to a touched block (the rest are dropped). */
+  /** All remembered arrow choices, updated for the touched blocks. */
   overrides: Map<number, boolean>;
 }
 
@@ -236,7 +236,9 @@ export function typeSlug(type: string): string {
 export function planClean(doc: DocLike, ranges: readonly SelRange[], overrides: OverrideMap): CleanPlanResult {
   const blocks = blocksTouching(doc, ranges);
   const plans: CleanPlan[] = [];
-  const kept = new Map<number, boolean>();
+  // Arrow choices are remembered for the whole session (mapped through edits),
+  // so a toggle the writer opened stays open when the caret wanders off and back.
+  const kept = new Map<number, boolean>(overrides);
   for (const block of blocks) {
     const inBody = selectionInBody(block, ranges);
     const prior = overrides.get(block.key);
@@ -266,21 +268,62 @@ export function planClean(doc: DocLike, ranges: readonly SelRange[], overrides: 
   return { plans, blocks, overrides: kept };
 }
 
+/** Is the block open on its own — marker or arrow choice — ignoring where the caret is? */
+export function openWithoutCaret(block: ToggleBlock, overrides: OverrideMap): boolean {
+  const o = overrides.get(block.key);
+  return o !== undefined ? o : block.marker === "+";
+}
+
+export interface CaretMove {
+  /** Selection anchor (equals `head` for a plain caret). */
+  anchor: number;
+  head: number;
+  /** Where the main caret was before this move (undefined for a fresh state). */
+  prevHead?: number;
+}
+
 /**
- * Where a lone caret must go so it never sits inside a hidden marker.
- * Returns null when the caret is already somewhere visible.
+ * Where a caret must go so it never sits inside a hidden marker, and never
+ * slips into the folded body of a closed toggle by keyboard.
+ *
+ * Rules (Notion parity):
+ *  - header line: anything inside the hidden `> [!type]- ` prefix → after it;
+ *  - open toggle: column 0 of a body line → after the hidden `> `;
+ *  - closed toggle: a caret arriving in the folded body from the title while
+ *    moving forward (Right / End) skips to the line after the toggle; any other
+ *    arrival (Up from below, Left from the next line, a click past the chip)
+ *    parks it at the end of the title. A selection anchored on the title that
+ *    reaches into the folded body is clamped to the title so typing can never
+ *    replace hidden text.
+ *
+ * Returns the new head, or null when nothing needs to change.
  */
-export function nudgeCaret(doc: DocLike, head: number, overrides: OverrideMap): number | null {
+export function redirectCaret(doc: DocLike, move: CaretMove, overrides: OverrideMap): number | null {
+  const { anchor, head, prevHead } = move;
   const line = doc.lineAt(head);
   const block = findBlockAt(doc, line.number);
   if (!block) return null;
   if (line.number === block.headerLine) {
     return head >= block.headerFrom && head < block.prefixEnd ? block.prefixEnd : null;
   }
-  const open = isOpen(block, [{ from: head, to: head }], overrides);
-  if (!open) return block.headerTo;
-  const prefix = block.bodyPrefixes.find((p) => head >= p.from && head < p.to);
-  return prefix ? prefix.to : null;
+  if (openWithoutCaret(block, overrides)) {
+    if (anchor !== head) return null;
+    const prefix = block.bodyPrefixes.find((p) => head >= p.from && head < p.to);
+    return prefix ? prefix.to : null;
+  }
+  // Closed toggle: the body is not a place for the caret.
+  const anchorOnHeader = anchor >= block.headerFrom && anchor <= block.headerTo;
+  if (anchor !== head) return anchorOnHeader ? block.headerTo : null;
+  const cameFromTitle = prevHead !== undefined && prevHead >= block.headerFrom && prevHead <= block.headerTo;
+  if (cameFromTitle && head >= block.bodyTo && block.bodyTo < doc.line(doc.lines).to) {
+    return block.bodyTo + 1;
+  }
+  return block.headerTo;
+}
+
+/** Backwards-compatible caret-only form of `redirectCaret`. */
+export function nudgeCaret(doc: DocLike, head: number, overrides: OverrideMap): number | null {
+  return redirectCaret(doc, { anchor: head, head }, overrides);
 }
 
 /* ---------- the `>` + space shortcut (Notion parity) ---------- */

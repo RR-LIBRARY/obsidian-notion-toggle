@@ -94,10 +94,12 @@ describe("v1.8.0 clean editing — decorations from the real StateField", () => 
     expect(d.some((x) => x.cls?.includes("ntt-clean-header"))).toBe(true);
   });
 
-  test("moving the caret into the answer opens it: `> ` prefixes vanish, body lines get their class", () => {
+  test("after opening with the arrow, a caret in the answer hides every `> ` and marks body lines", () => {
     const h = harness(NOTE, 0);
     expect(seen(h.state)).toEqual([]); // caret on the heading: nothing to hide
-    const s = moveTo(h.state, line(h.state, 3).to);
+    const key = findBlockAt(textDoc(NOTE), 2)!.key;
+    const opened = h.state.update({ effects: setToggleOpen.of({ key, open: true }) }).state;
+    const s = moveTo(opened, line(h.state, 3).to);
     const d = seen(s);
     expect(d.find((x) => x.widget === "ArrowWidget")?.open).toBe(true);
     expect(d.some((x) => x.widget === "MoreWidget")).toBe(false);
@@ -171,6 +173,76 @@ describe("v1.8.0 clean editing — the caret never hides behind a marker", () =>
     h.flags.enabled = false;
     const s = moveTo(h.state, line(h.state, 2).from);
     expect(s.selection.main.head).toBe(line(h.state, 2).from);
+  });
+
+  test("a keyboard move into a closed toggle's body from below parks the caret on the title", () => {
+    const h = harness(NOTE, NOTE.length);
+    const s = moveTo(h.state, line(h.state, 4).from + 3);
+    expect(s.selection.main.head).toBe(line(h.state, 2).to);
+    expect(seen(s).some((x) => x.widget === "MoreWidget")).toBe(true); // still folded
+  });
+
+  test("Right / End past the chip from the title skips to the line after the toggle", () => {
+    const h = harness(NOTE, line(EditorState.create({ doc: NOTE }), 2).to);
+    const s = moveTo(h.state, line(h.state, 4).to); // where an atomic Right lands
+    expect(s.selection.main.head).toBe(line(h.state, 5).from);
+    expect(seen(s)).toEqual([]);
+  });
+
+  test("a selection anchored on the title cannot reach into the folded answer", () => {
+    const h = harness(NOTE, line(EditorState.create({ doc: NOTE }), 2).to);
+    const anchor = line(h.state, 2).from + 20;
+    const s = h.state.update({ selection: EditorSelection.range(anchor, line(h.state, 4).to) }).state;
+    expect(s.selection.main.anchor).toBe(anchor);
+    expect(s.selection.main.head).toBe(line(h.state, 2).to);
+  });
+
+  test("a selection that starts above the toggle may cover the whole block (Notion block select)", () => {
+    const h = harness(NOTE, 0);
+    const s = h.state.update({ selection: EditorSelection.range(0, line(h.state, 4).to) }).state;
+    expect(s.selection.main.head).toBe(line(h.state, 4).to);
+  });
+
+  test("Enter at the end of the title (a doc change) lands in the new answer line and opens the toggle", () => {
+    const solo = "> [!question]- Title\n> old";
+    const h = harness(solo, 20);
+    const s = h.state.update({ changes: { from: 20, insert: "\n> " }, selection: EditorSelection.cursor(23) }).state;
+    expect(s.selection.main.head).toBe(23);
+    expect(seen(s).find((x) => x.widget === "ArrowWidget")?.open).toBe(true);
+    expect(seen(s).some((x) => x.widget === "MoreWidget")).toBe(false);
+  });
+
+  test("End key on a closed title stops at the end of the title; Shift-End selects only the title", () => {
+    const h = harness(NOTE, line(EditorState.create({ doc: NOTE }), 2).from + 18);
+    const bindings = h.state.facet(keymap).flat();
+    const end = bindings.find((b) => b.key === "End")!;
+    expect(end.run!(fakeView(h))).toBe(true);
+    expect(h.state.selection.main.head).toBe(line(h.state, 2).to);
+    h.state = moveTo(h.state, line(h.state, 2).from + 18);
+    const shiftEnd = bindings.find((b) => b.key === "Shift-End")!;
+    expect(shiftEnd.run!(fakeView(h))).toBe(true);
+    expect(h.state.selection.main.anchor).toBe(line(h.state, 2).from + 18);
+    expect(h.state.selection.main.head).toBe(line(h.state, 2).to);
+    // On an open toggle End is left to the editor's default.
+    const open = harness(NOTE, line(EditorState.create({ doc: NOTE }), 2).to);
+    open.state = open.state.update({ effects: setToggleOpen.of({ key: findBlockAt(textDoc(NOTE), 2)!.key, open: true }) }).state;
+    expect(open.state.facet(keymap).flat().find((b) => b.key === "End")!.run!(fakeView(open))).toBe(false);
+  });
+
+  test("Mod-Enter opens and closes the toggle under the caret", () => {
+    const h = harness(NOTE, line(EditorState.create({ doc: NOTE }), 2).to);
+    const modEnter = h.state.facet(keymap).flat().find((b) => b.key === "Mod-Enter")!;
+    expect(modEnter.run!(fakeView(h))).toBe(true);
+    expect(seen(h.state).find((x) => x.widget === "ArrowWidget")?.open).toBe(true);
+    // Down into the answer now works, and Mod-Enter from inside closes it and parks the caret on the title.
+    h.state = moveTo(h.state, line(h.state, 3).to);
+    expect(seen(h.state).some((x) => x.cls?.includes("ntt-clean-body"))).toBe(true);
+    expect(modEnter.run!(fakeView(h))).toBe(true);
+    expect(h.state.selection.main.head).toBe(line(h.state, 2).to);
+    expect(seen(h.state).some((x) => x.widget === "MoreWidget")).toBe(true);
+    // Outside a toggle it does nothing.
+    const plain = harness(NOTE, 0);
+    expect(plain.state.facet(keymap).flat().find((b) => b.key === "Mod-Enter")!.run!(fakeView(plain))).toBe(false);
   });
 
   test("closing from the answer parks the caret on the title", () => {

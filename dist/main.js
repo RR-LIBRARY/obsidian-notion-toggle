@@ -91,23 +91,24 @@ ${bodyLines2.join("\n")}`;
   return out;
 }
 function convertCalloutsToDetails(doc) {
+  var _a, _b, _c, _d, _e;
   const lines = doc.split("\n");
   const out = [];
   let i = 0;
   let changed = false;
   while (i < lines.length) {
-    const line = lines[i];
+    const line = (_a = lines[i]) != null ? _a : "";
     const m = line.match(/^>\s*\[!([^\]]+)\]([+-])\s?(.*)$/);
     if (m) {
       const _type = m[1];
       const marker = m[2];
-      const title = m[3].trim();
+      const title = ((_b = m[3]) != null ? _b : "").trim();
       const body = [];
       i++;
-      while (i < lines.length && /^>\s?/.test(lines[i])) {
-        if (/^>\s*\[![^\]]+\][+-]/.test(lines[i]))
+      while (i < lines.length && /^>\s?/.test((_c = lines[i]) != null ? _c : "")) {
+        if (/^>\s*\[![^\]]+\][+-]/.test((_d = lines[i]) != null ? _d : ""))
           break;
-        const bodyLine = lines[i].replace(/^>\s?/, "");
+        const bodyLine = ((_e = lines[i]) != null ? _e : "").replace(/^>\s?/, "");
         body.push(bodyLine);
         i++;
       }
@@ -132,12 +133,12 @@ function cleanInlineHtml(text) {
 var NUMBERED_HEADER = /^(>\s*\[![^\]]+\][+-]\s*(?:\*\*)?)(\d+)\.\s?/;
 var NUMBERED_SUMMARY = /^(\s*<summary>(?:<b>)?)(\d+)\.\s?/;
 function nextToggleNumber(lines) {
-  var _a;
+  var _a, _b;
   let last = 0;
   for (const line of lines) {
     const m = (_a = line.match(NUMBERED_HEADER)) != null ? _a : line.match(NUMBERED_SUMMARY);
     if (m)
-      last = parseInt(m[2], 10);
+      last = parseInt((_b = m[2]) != null ? _b : "0", 10);
   }
   return last + 1;
 }
@@ -305,15 +306,15 @@ ${calloutHeader}${bold}${num}${bold}`;
   return { from: "cursor", insert: "\n> ", cursorOffset: 3 };
 }
 function planBackspace(text, col, opts) {
-  var _a, _b;
+  var _a, _b, _c, _d, _e, _f, _g, _h;
   if (opts.format === "details") {
     const emptySummary = /^\s*<summary>(<b>)?\s*(<\/b>)?<\/summary>\s*$/;
     if (emptySummary.test(text)) {
       return { insert: "", cursorOffset: 0 };
     }
     const sm = text.match(/^(\s*<summary>(?:<b>)?)([\s\S]*?)((?:<\/b>)?<\/summary>\s*)$/);
-    if (sm && col === sm[1].length && sm[2].length > 0) {
-      return { insert: sm[2], cursorOffset: 0 };
+    if (sm && col === ((_a = sm[1]) != null ? _a : "").length && ((_b = sm[2]) != null ? _b : "").length > 0) {
+      return { insert: (_c = sm[2]) != null ? _c : "", cursorOffset: 0 };
     }
     return null;
   }
@@ -326,12 +327,12 @@ function planBackspace(text, col, opts) {
     return { insert: "> ", cursorOffset: 2 };
   }
   const optionMatch = text.match(/^(>\s*-\s\[[ xX]\]\s)(\S[\s\S]*)$/);
-  if (!isHeader && optionMatch && col === optionMatch[1].length) {
+  if (!isHeader && optionMatch && col === ((_d = optionMatch[1]) != null ? _d : "").length) {
     return { insert: `> ${optionMatch[2]}`, cursorOffset: 2 };
   }
   if (isHeader && headerMatch) {
-    const prefix = headerMatch[1] + ((_a = headerMatch[2]) != null ? _a : "");
-    const title = (_b = headerMatch[3]) != null ? _b : "";
+    const prefix = headerMatch[1] + ((_e = headerMatch[2]) != null ? _e : "");
+    const title = (_f = headerMatch[3]) != null ? _f : "";
     if (title.length === 0 || /^\d+\.\s*$/.test(title)) {
       return { insert: "", cursorOffset: 0 };
     }
@@ -341,8 +342,8 @@ function planBackspace(text, col, opts) {
     return null;
   }
   const bodyMatch = text.match(/^(>\s)([\s\S]+)$/);
-  if (!isHeader && bodyMatch && col === bodyMatch[1].length) {
-    return { insert: bodyMatch[2], cursorOffset: 0 };
+  if (!isHeader && bodyMatch && col === ((_g = bodyMatch[1]) != null ? _g : "").length) {
+    return { insert: (_h = bodyMatch[2]) != null ? _h : "", cursorOffset: 0 };
   }
   return null;
 }
@@ -379,23 +380,25 @@ ${summaryOpen}${num}${summaryClose}
   };
 }
 function questionBlockPlan(kind, opts, lineHasText) {
+  var _a;
   const prefix = lineHasText ? "\n" : "";
   const built = kind === "mcq" ? buildMcqBlock(opts) : buildMatchBlock(opts);
   const head = built.text.slice(0, built.cursorOffset).split("\n");
   return {
     block: `${prefix}${built.text}`,
     lineOffset: (lineHasText ? 1 : 0) + head.length - 1,
-    ch: head[head.length - 1].length
+    ch: ((_a = head[head.length - 1]) != null ? _a : "").length
   };
 }
 function wrapSelectionMarkdown(selection, type, fold, bold) {
+  var _a, _b;
   const lines = selection.split("\n");
   const at = lines.findIndex((l) => l.trim().length > 0);
   if (at < 0)
     return null;
-  const title = bold(lines[at].trim());
+  const title = bold(((_a = lines[at]) != null ? _a : "").trim());
   const bodyLines2 = lines.slice(at + 1);
-  while (bodyLines2.length > 0 && bodyLines2[0].trim().length === 0)
+  while (bodyLines2.length > 0 && ((_b = bodyLines2[0]) != null ? _b : "").trim().length === 0)
     bodyLines2.shift();
   const body = bodyLines2.length > 0 ? "\n" + bodyLines2.map((l) => `> ${l}`.replace(/>\s+$/, ">")).join("\n") : "";
   return `> [!${type}]${fold} ${title}${body}
@@ -407,13 +410,14 @@ var CLEAN_HEADER_RE = /^(>[ \t]*\[!([^\]\n]+)\]([+-])[ \t]?)/;
 var CLEAN_BODY_RE = /^(>[ ]?)/;
 var FENCE_RE = /^[ \t]*(```|~~~)/;
 function insideFence(doc, lineNumber) {
+  var _a;
   let open = null;
   for (let n = 1; n < lineNumber; n++) {
     const m = doc.line(n).text.match(FENCE_RE);
     if (!m)
       continue;
     if (open === null)
-      open = m[1];
+      open = (_a = m[1]) != null ? _a : null;
     else if (m[1] === open)
       open = null;
   }
@@ -439,6 +443,7 @@ function findBlockAt(doc, lineNumber) {
   return blockFromHeader(doc, headerLine);
 }
 function blockFromHeader(doc, headerLine) {
+  var _a, _b, _c;
   const header = doc.line(headerLine);
   const m = header.text.match(CLEAN_HEADER_RE);
   if (!m)
@@ -450,7 +455,7 @@ function blockFromHeader(doc, headerLine) {
     if (!/^>/.test(line.text) || CLEAN_HEADER_RE.test(line.text))
       break;
     const bm = line.text.match(CLEAN_BODY_RE);
-    bodyPrefixes.push({ from: line.from, to: line.from + (bm ? bm[1].length : 1) });
+    bodyPrefixes.push({ from: line.from, to: line.from + (bm ? ((_a = bm[1]) != null ? _a : ">").length : 1) });
     lastLine = n;
   }
   const hasBody = lastLine > headerLine;
@@ -460,10 +465,10 @@ function blockFromHeader(doc, headerLine) {
     lastLine,
     headerFrom: header.from,
     headerTo: header.to,
-    prefixEnd: header.from + m[1].length,
+    prefixEnd: header.from + ((_b = m[1]) != null ? _b : "").length,
     bodyFrom: hasBody ? doc.line(headerLine + 1).from : header.to,
     bodyTo: hasBody ? doc.line(lastLine).to : header.to,
-    type: m[2].trim(),
+    type: ((_c = m[2]) != null ? _c : "").trim(),
     marker: m[3],
     bodyPrefixes
   };
@@ -510,7 +515,7 @@ function typeSlug(type) {
 function planClean(doc, ranges, overrides) {
   const blocks = blocksTouching(doc, ranges);
   const plans = [];
-  const kept = /* @__PURE__ */ new Map();
+  const kept = new Map(overrides);
   for (const block of blocks) {
     const inBody = selectionInBody(block, ranges);
     const prior = overrides.get(block.key);
@@ -540,7 +545,12 @@ function planClean(doc, ranges, overrides) {
   }
   return { plans, blocks, overrides: kept };
 }
-function nudgeCaret(doc, head, overrides) {
+function openWithoutCaret(block, overrides) {
+  const o = overrides.get(block.key);
+  return o !== void 0 ? o : block.marker === "+";
+}
+function redirectCaret(doc, move, overrides) {
+  const { anchor, head, prevHead } = move;
   const line = doc.lineAt(head);
   const block = findBlockAt(doc, line.number);
   if (!block)
@@ -548,11 +558,20 @@ function nudgeCaret(doc, head, overrides) {
   if (line.number === block.headerLine) {
     return head >= block.headerFrom && head < block.prefixEnd ? block.prefixEnd : null;
   }
-  const open = isOpen(block, [{ from: head, to: head }], overrides);
-  if (!open)
-    return block.headerTo;
-  const prefix = block.bodyPrefixes.find((p) => head >= p.from && head < p.to);
-  return prefix ? prefix.to : null;
+  if (openWithoutCaret(block, overrides)) {
+    if (anchor !== head)
+      return null;
+    const prefix = block.bodyPrefixes.find((p) => head >= p.from && head < p.to);
+    return prefix ? prefix.to : null;
+  }
+  const anchorOnHeader = anchor >= block.headerFrom && anchor <= block.headerTo;
+  if (anchor !== head)
+    return anchorOnHeader ? block.headerTo : null;
+  const cameFromTitle = prevHead !== void 0 && prevHead >= block.headerFrom && prevHead <= block.headerTo;
+  if (cameFromTitle && head >= block.bodyTo && block.bodyTo < doc.line(doc.lines).to) {
+    return block.bodyTo + 1;
+  }
+  return block.headerTo;
 }
 function isShortcutTrigger(lineText, col) {
   return lineText === ">" && col === 1;
@@ -583,7 +602,7 @@ function triangle() {
   svg.setAttribute("viewBox", "0 0 16 16");
   svg.setAttribute("aria-hidden", "true");
   const path = document.createElementNS(ns, "path");
-  path.setAttribute("d", "M5 3.5 L12 8 L5 12.5 Z");
+  path.setAttribute("d", "M4.5 2.5 L13 8 L4.5 13.5 Z");
   path.setAttribute("fill", "currentColor");
   svg.appendChild(path);
   return svg;
@@ -734,22 +753,29 @@ function cleanTogglesExtension(host) {
     var _a, _b;
     if (!tr.selection || !host.enabled() || !livePreviewOn(host, tr.state))
       return tr;
+    if (tr.docChanged)
+      return tr;
     if (tr.isUserEvent("input.type.compose") || tr.isUserEvent("select.pointer.drag"))
       return tr;
     const sel = tr.newSelection;
-    if (sel.ranges.length !== 1 || !sel.main.empty)
+    if (sel.ranges.length !== 1)
       return tr;
-    const target = nudgeCaret(tr.newDoc, sel.main.head, (_b = (_a = tr.startState.field(field, false)) == null ? void 0 : _a.overrides) != null ? _b : /* @__PURE__ */ new Map());
+    const overrides = (_b = (_a = tr.startState.field(field, false)) == null ? void 0 : _a.overrides) != null ? _b : /* @__PURE__ */ new Map();
+    const target = redirectCaret(
+      tr.newDoc,
+      { anchor: sel.main.anchor, head: sel.main.head, prevHead: tr.startState.selection.main.head },
+      overrides
+    );
     if (target === null || target === sel.main.head)
       return tr;
-    return [tr, { selection: import_state.EditorSelection.cursor(target) }];
+    return [tr, { selection: import_state.EditorSelection.range(sel.main.empty ? target : sel.main.anchor, target) }];
   });
-  const shortcutFromKey = import_state.Prec.high(
+  const keys = import_state.Prec.high(
     import_view.keymap.of([
-      {
-        key: "Space",
-        run: (view) => tryShortcut(host, view)
-      }
+      { key: "End", run: (view) => endOfTitle(view, false) },
+      { key: "Shift-End", run: (view) => endOfTitle(view, true) },
+      { key: "Mod-Enter", run: (view) => toggleUnderCaret(view) },
+      { key: "Space", run: (view) => tryShortcut(host, view) }
     ])
   );
   const shortcutFromInput = import_view.EditorView.inputHandler.of((view, from, to, text) => {
@@ -760,7 +786,43 @@ function cleanTogglesExtension(host) {
       return false;
     return tryShortcut(host, view);
   });
-  return [field, keepCaretVisible, shortcutFromKey, shortcutFromInput];
+  function closedBlockOnHeader(view, head) {
+    var _a, _b;
+    if (!host.enabled() || !livePreviewOn(host, view.state))
+      return null;
+    const line = view.state.doc.lineAt(head);
+    const block = findBlockAt(view.state.doc, line.number);
+    if (!block || block.headerLine !== line.number)
+      return null;
+    const overrides = (_b = (_a = view.state.field(field, false)) == null ? void 0 : _a.overrides) != null ? _b : /* @__PURE__ */ new Map();
+    return openWithoutCaret(block, overrides) ? null : block;
+  }
+  function endOfTitle(view, extend) {
+    const sel = view.state.selection.main;
+    const block = closedBlockOnHeader(view, sel.head);
+    if (!block || block.bodyTo <= block.headerTo)
+      return false;
+    view.dispatch({
+      selection: extend ? import_state.EditorSelection.range(sel.anchor, block.headerTo) : import_state.EditorSelection.cursor(block.headerTo),
+      scrollIntoView: true,
+      userEvent: "select"
+    });
+    return true;
+  }
+  function toggleUnderCaret(view) {
+    var _a, _b;
+    if (!host.enabled() || !livePreviewOn(host, view.state))
+      return false;
+    const sel = view.state.selection.main;
+    const block = findBlockAt(view.state.doc, view.state.doc.lineAt(sel.head).number);
+    if (!block)
+      return false;
+    const overrides = (_b = (_a = view.state.field(field, false)) == null ? void 0 : _a.overrides) != null ? _b : /* @__PURE__ */ new Map();
+    const open = isOpen(block, [{ from: sel.from, to: sel.to, head: sel.head }], overrides);
+    applyToggle(view, block.key, !open);
+    return true;
+  }
+  return [field, keepCaretVisible, keys, shortcutFromInput];
 }
 function tryShortcut(host, view) {
   if (!host.shortcutEnabled())

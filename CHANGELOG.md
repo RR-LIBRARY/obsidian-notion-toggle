@@ -2,6 +2,20 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.8.1 — 2026-09-28 — Caret fixes on closed toggles + workbench
+
+### Fixed
+- On a closed toggle title, `End` / `Right` no longer move the caret into the hidden answer (which also opened the toggle). `End` now stops at the end of the title; `Right` at the title end jumps to the next line after the toggle.
+
+### Added
+- `Ctrl/Cmd+Enter` opens / closes the toggle under the caret.
+- `Shift+End` selects only the title of a closed toggle.
+- Web preview page (workbench) that runs the real plugin code in the browser for quick visual checks.
+
+### Changed
+- Open/closed choices made with the arrow are remembered for the whole session.
+- The toggle arrow is slightly larger and easier to tap.
+
 ## 1.8.0 — 2026-09-28 — Notion-like writing: no more visible `>` / `[!question]-` while typing
 
 Why: a toggle is stored as `> [!question]- Title` + `> answer` (or as a `<details>` block). Reading view already shows an arrow, but the moment you start typing Live Preview reveals the raw code — non-technical writers found that uncomfortable, and it is the biggest visual difference from Notion. Research for this release (Obsidian API docs, CodeMirror 6 docs, Notion's shortcut docs and Obsidian forum CSS threads) is summarised in `NOTION-WRITING-RESEARCH.md`.

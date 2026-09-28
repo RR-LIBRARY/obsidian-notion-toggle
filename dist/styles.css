@@ -1663,8 +1663,8 @@ body.ntt-focus-run .workspace-drawer-backdrop {
   transition: background-color 0.1s ease;
 }
 .ntt-clean-arrow svg {
-  width: 0.9em;
-  height: 0.9em;
+  width: 1.1em;
+  height: 1.1em;
   transition: transform 0.15s ease;
 }
 .ntt-clean-arrow.is-open svg { transform: rotate(90deg); }

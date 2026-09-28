@@ -16,7 +16,9 @@ import {
   insideFence,
   isShortcutTrigger,
   nudgeCaret,
+  openWithoutCaret,
   planClean,
+  redirectCaret,
   textDoc,
   typeSlug,
   type CleanPlan,
@@ -153,10 +155,12 @@ describe("v1.8.0 clean toggles — plans", () => {
     expect((backOnTitle.plans[1] as Extract<CleanPlan, { kind: "arrow" }>).open).toBe(true);
   });
 
-  test("overrides for blocks the selection left are dropped (no unbounded growth)", () => {
-    const stale = new Map([[9999, true]]);
-    const { overrides } = planClean(doc, caretAt(line(2).to), stale);
-    expect(overrides.has(9999)).toBe(false);
+  test("arrow choices for other blocks are remembered, so an opened toggle stays open when the caret wanders off", () => {
+    const other = findBlockAt(doc, 7)!.key;
+    const { overrides } = planClean(doc, caretAt(line(2).to), new Map([[other, false]]));
+    expect(overrides.get(other)).toBe(false);
+    const back = planClean(doc, caretAt(line(7).to), overrides);
+    expect((back.plans[1] as Extract<CleanPlan, { kind: "arrow" }>).open).toBe(false);
   });
 
   test("blocks the caret is not in get no plans (Obsidian renders them itself)", () => {
@@ -207,6 +211,44 @@ describe("v1.8.0 clean toggles — caret never hides inside a marker", () => {
 
   test("outside a toggle nothing happens", () => {
     expect(nudgeCaret(doc, line(6).from, new Map())).toBeNull();
+  });
+
+  test("openWithoutCaret: override, then marker", () => {
+    const closed = findBlockAt(doc, 2)!;
+    const open = findBlockAt(doc, 7)!;
+    expect(openWithoutCaret(closed, new Map())).toBe(false);
+    expect(openWithoutCaret(open, new Map())).toBe(true);
+    expect(openWithoutCaret(closed, new Map([[closed.key, true]]))).toBe(true);
+    expect(openWithoutCaret(open, new Map([[open.key, false]]))).toBe(false);
+  });
+
+  test("redirectCaret on a closed toggle: forward from the title skips the body, anything else parks on the title", () => {
+    const b = findBlockAt(doc, 2)!;
+    const none = new Map();
+    // Right / End from the title → the line after the block
+    expect(redirectCaret(doc, { anchor: b.bodyTo, head: b.bodyTo, prevHead: b.headerTo }, none)).toBe(line(5).from);
+    // Up from below into the body → end of the title
+    expect(redirectCaret(doc, { anchor: line(3).from + 4, head: line(3).from + 4, prevHead: line(6).from }, none)).toBe(b.headerTo);
+    // No history (a click past the chip) → end of the title
+    expect(redirectCaret(doc, { anchor: b.bodyTo, head: b.bodyTo }, none)).toBe(b.headerTo);
+    // Selection anchored on the title reaching into the body → clamp head to the title
+    expect(redirectCaret(doc, { anchor: b.headerFrom + 20, head: b.bodyTo, prevHead: b.headerTo }, none)).toBe(b.headerTo);
+    // Selection anchored above the block → untouched (whole-block selection)
+    expect(redirectCaret(doc, { anchor: 0, head: b.bodyTo, prevHead: 0 }, none)).toBeNull();
+  });
+
+  test("redirectCaret on an open toggle only guards the hidden `> ` prefixes", () => {
+    const b = findBlockAt(doc, 7)!; // `+` block
+    expect(redirectCaret(doc, { anchor: line(8).from, head: line(8).from, prevHead: line(7).to }, new Map())).toBe(line(8).from + 2);
+    expect(redirectCaret(doc, { anchor: line(8).to, head: line(8).to, prevHead: line(7).to }, new Map())).toBeNull();
+    // selections inside an open body are left alone
+    expect(redirectCaret(doc, { anchor: b.headerTo, head: line(8).from, prevHead: b.headerTo }, new Map())).toBeNull();
+  });
+
+  test("forward skip stays put when the toggle is the last thing in the note", () => {
+    const tail = textDoc("> [!q]- last\n> body");
+    const b = findBlockAt(tail, 1)!;
+    expect(redirectCaret(tail, { anchor: b.bodyTo, head: b.bodyTo, prevHead: b.headerTo }, new Map())).toBe(b.headerTo);
   });
 });
 

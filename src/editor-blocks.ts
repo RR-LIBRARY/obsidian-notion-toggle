@@ -67,20 +67,20 @@ export function convertCalloutsToDetails(doc: string): string {
   let changed = false;
 
   while (i < lines.length) {
-    const line = lines[i];
+    const line = lines[i] ?? "";
     // Match a collapsible callout start:  > [!type]+/- Title...
     const m = line.match(/^>\s*\[!([^\]]+)\]([+-])\s?(.*)$/);
     if (m) {
       const _type = m[1];
       const marker = m[2];
-      const title = m[3].trim();
+      const title = (m[3] ?? "").trim();
       const body: string[] = [];
       i++;
       // Collect contiguous callout body lines (lines starting with > )
-      while (i < lines.length && /^>\s?/.test(lines[i])) {
+      while (i < lines.length && /^>\s?/.test(lines[i] ?? "")) {
         // stop if we hit another callout start
-        if (/^>\s*\[![^\]]+\][+-]/.test(lines[i])) break;
-        const bodyLine = lines[i].replace(/^>\s?/, "");
+        if (/^>\s*\[![^\]]+\][+-]/.test(lines[i] ?? "")) break;
+        const bodyLine = (lines[i] ?? "").replace(/^>\s?/, "");
         body.push(bodyLine);
         i++;
       }
@@ -131,7 +131,7 @@ export function nextToggleNumber(lines: string[]): number {
   let last = 0;
   for (const line of lines) {
     const m = line.match(NUMBERED_HEADER) ?? line.match(NUMBERED_SUMMARY);
-    if (m) last = parseInt(m[2], 10);
+    if (m) last = parseInt(m[2] ?? "0", 10);
   }
   return last + 1;
 }
@@ -397,8 +397,8 @@ export function planBackspace(text: string, col: number, opts: EnterOptions): Ba
     }
     // Caret right at the start of the summary text -> unwrap to plain text
     const sm = text.match(/^(\s*<summary>(?:<b>)?)([\s\S]*?)((?:<\/b>)?<\/summary>\s*)$/);
-    if (sm && col === sm[1].length && sm[2].length > 0) {
-      return { insert: sm[2], cursorOffset: 0 };
+    if (sm && col === (sm[1] ?? "").length && (sm[2] ?? "").length > 0) {
+      return { insert: sm[2] ?? "", cursorOffset: 0 };
     }
     return null;
   }
@@ -423,7 +423,7 @@ export function planBackspace(text: string, col: number, opts: EnterOptions): Ba
 
   // Caret right before an option's text -> drop the checkbox marker, keep the text
   const optionMatch = text.match(/^(>\s*-\s\[[ xX]\]\s)(\S[\s\S]*)$/);
-  if (!isHeader && optionMatch && col === optionMatch[1].length) {
+  if (!isHeader && optionMatch && col === (optionMatch[1] ?? "").length) {
     return { insert: `> ${optionMatch[2]}`, cursorOffset: 2 };
   }
 
@@ -444,8 +444,8 @@ export function planBackspace(text: string, col: number, opts: EnterOptions): Ba
 
   // Answer line with content, caret right after "> " -> unwrap that line only
   const bodyMatch = text.match(/^(>\s)([\s\S]+)$/);
-  if (!isHeader && bodyMatch && col === bodyMatch[1].length) {
-    return { insert: bodyMatch[2], cursorOffset: 0 };
+  if (!isHeader && bodyMatch && col === (bodyMatch[1] ?? "").length) {
+    return { insert: bodyMatch[2] ?? "", cursorOffset: 0 };
   }
 
   return null;
@@ -526,7 +526,7 @@ export function questionBlockPlan(
   return {
     block: `${prefix}${built.text}`,
     lineOffset: (lineHasText ? 1 : 0) + head.length - 1,
-    ch: head[head.length - 1].length,
+    ch: (head[head.length - 1] ?? "").length,
   };
 }
 
@@ -544,9 +544,9 @@ export function wrapSelectionMarkdown(
   const lines = selection.split("\n");
   const at = lines.findIndex((l) => l.trim().length > 0);
   if (at < 0) return null;
-  const title = bold(lines[at].trim());
+  const title = bold((lines[at] ?? "").trim());
   const bodyLines = lines.slice(at + 1);
-  while (bodyLines.length > 0 && bodyLines[0].trim().length === 0) bodyLines.shift();
+  while (bodyLines.length > 0 && (bodyLines[0] ?? "").trim().length === 0) bodyLines.shift();
   const body =
     bodyLines.length > 0 ? "\n" + bodyLines.map((l) => `> ${l}`.replace(/>\s+$/, ">")).join("\n") : "";
   return `> [!${type}]${fold} ${title}${body}\n`;
