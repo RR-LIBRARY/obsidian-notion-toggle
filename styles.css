@@ -1806,3 +1806,24 @@ body.ntt-notion-look .callout[data-callout="question"].is-collapsible .callout-c
   .ntt-clean-arrow svg,
   body.ntt-notion-look .callout.is-collapsible .callout-fold svg { transition: none !important; }
 }
+
+/* v1.8.5 — the fold arrow on every toggle callout now matches the Notion /
+   Lovable FAQ video: one small solid dark triangle (right when closed, down
+   when open), never Obsidian's coloured outline chevron. */
+body.ntt-notion-look .callout.is-collapsible .callout-fold {
+  display: inline-flex;
+  color: var(--text-normal) !important;
+  background: transparent !important;
+}
+body.ntt-notion-look .callout.is-collapsible .callout-fold svg { display: none !important; }
+body.ntt-notion-look .callout.is-collapsible .callout-fold::before {
+  content: "";
+  width: 0.55em;
+  height: 0.62em;
+  background-color: currentColor;
+  clip-path: polygon(10% 0, 100% 50%, 10% 100%);
+  transform: rotate(90deg);
+  transition: transform 120ms ease;
+}
+body.ntt-notion-look .callout.is-collapsible.is-collapsed .callout-fold::before { transform: none; }
+body.ntt-notion-look .ntt-clean-arrow { color: var(--text-normal); }
