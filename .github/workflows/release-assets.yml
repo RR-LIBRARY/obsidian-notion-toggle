@@ -8,13 +8,14 @@ on:
         required: false
         default: ""
   release:
-    types: [published, created, edited]
-  push:
-    tags:
-      - "*"
+    types: [published]
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-assets-${{ github.event.release.tag_name || github.event.inputs.tag || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   upload-assets:
