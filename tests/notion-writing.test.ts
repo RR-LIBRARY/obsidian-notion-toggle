@@ -440,7 +440,8 @@ describe("v1.8.0 notion writing — stylesheet", () => {
   test("plain Notion look is scoped to the body class and to collapsible callouts only", () => {
     const rules = css.match(/body\.ntt-notion-look[^{]+\{/g) ?? [];
     expect(rules.length).toBeGreaterThan(5);
-    for (const r of rules) expect(r).toContain(".is-collapsible");
+    // rendered-callout rules stay on collapsible callouts; v1.8.4 editing rules stay on clean-editing classes
+    for (const r of rules) expect(r.includes(".is-collapsible") || r.includes(".ntt-clean-")).toBe(true);
     expect(css).toMatch(/body\.ntt-notion-look[\s\S]{0,600}\.callout-icon[\s\S]{0,200}display:\s*none/);
   });
 
