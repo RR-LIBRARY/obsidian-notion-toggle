@@ -34,7 +34,12 @@ import {
   type CleanPlan,
   type OverrideMap,
   type SelRange,
+  blankAt,
+  markerDepth,
+  markerEnd,
+  markersFor,
 } from "./clean-toggles";
+import { dropUnit, indentUnit, moveUnit, outdentUnit, unitAt, type DropMode, type MoveResult } from "./block-move";
 
 export interface CleanTogglesHost {
   /** Obsidian's `editorLivePreviewField` (null in tests / source-only hosts). */
@@ -49,6 +54,8 @@ export interface CleanTogglesHost {
   moreChip?(): boolean;
   /** v1.8.7 setting: Notion-style Enter on toggles (default on). */
   autoContinue?(): boolean;
+  /** v1.8.9 setting: Tab / Shift+Tab / drag rearrange blocks and shove them into toggles (default on). */
+  blockMoves?(): boolean;
 }
 
 /** Click on the arrow / the "…" chip: remember the choice for this block. */
@@ -100,6 +107,12 @@ class ArrowWidget extends WidgetType {
     el.title = this.open ? "Close toggle" : "Open toggle";
     el.appendChild(triangle());
     wireToggleClick(el, view, this.key, () => !this.open);
+    // v1.8.9 — the arrow doubles as Notion's drag handle
+    el.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || !dragHost || !dragAllowed(dragHost, view)) return;
+      const line = view.state.doc.lineAt(Math.min(this.key, view.state.doc.length)).number - 1;
+      startDrag(view, e, line, true);
+    });
     return el;
   }
 
@@ -213,7 +226,13 @@ function compute(host: CleanTogglesHost, state: EditorState, overrides: Override
 
 /* ---------- the extension ---------- */
 
+let dragHost: CleanTogglesHost | null = null;
+function dragAllowed(host: CleanTogglesHost, view: EditorView): boolean {
+  return host.enabled() && livePreviewOn(host, view.state) && (!host.blockMoves || host.blockMoves());
+}
+
 export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
+  dragHost = host;
   const field = StateField.define<CleanState>({
     create(state) {
       return compute(host, state, new Map());
@@ -290,6 +309,12 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
       { key: "Mod-Enter", run: (view) => toggleUnderCaret(view) },
       { key: "Enter", run: (view) => enterLikeNotion(view) },
       { key: "Space", run: (view) => tryShortcut(host, view) },
+      { key: "Tab", run: (view) => moveKey(view, "in") },
+      { key: "Shift-Tab", run: (view) => moveKey(view, "out") },
+      { key: "Mod-Shift-ArrowUp", run: (view) => moveKey(view, "up") },
+      { key: "Mod-Shift-ArrowDown", run: (view) => moveKey(view, "down") },
+      { key: "Alt-Shift-ArrowUp", run: (view) => moveKey(view, "up") },
+      { key: "Alt-Shift-ArrowDown", run: (view) => moveKey(view, "down") },
     ])
   );
   const shortcutFromInput = EditorView.inputHandler.of((view, from, to, text) => {
@@ -332,17 +357,20 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
       if (sel.head < block.titleTo) return false; // mid-title: default split
       const overrides = view.state.field(field, false)?.overrides ?? new Map();
       if (openWithoutCaret(block, overrides)) {
-        view.dispatch({ changes: { from: block.headerTo, insert: "\n> " }, selection: EditorSelection.cursor(block.headerTo + 3), scrollIntoView: true, userEvent: "input" });
+        const ins = "\n" + markersFor(block.depth);
+        view.dispatch({ changes: { from: block.headerTo, insert: ins }, selection: EditorSelection.cursor(block.headerTo + ins.length), scrollIntoView: true, userEvent: "input" });
         return true;
       }
       const bold = block.boldWrap ? "**" : "";
-      const head = `\n\n> [!${block.type}]- ${bold}`;
+      const head = `\n${blankAt(block.depth - 1)}\n${markersFor(block.depth - 1)}> [!${block.type}]- ${bold}`;
       const at = Math.max(block.bodyTo, block.headerTo);
       view.dispatch({ changes: { from: at, insert: head + bold }, selection: EditorSelection.cursor(at + head.length), scrollIntoView: true, userEvent: "input" });
       return true;
     }
-    if (/^>\s*$/.test(line.text) && line.number === block.lastLine) {
-      view.dispatch({ changes: { from: line.from, to: line.to, insert: "" }, selection: EditorSelection.cursor(line.from), userEvent: "input" });
+    const cut = markerEnd(line.text, block.depth);
+    if (markerDepth(line.text) === block.depth && cut >= 0 && line.text.slice(cut).trim() === "" && line.number === block.lastLine) {
+      const out = blankAt(block.depth - 1);
+      view.dispatch({ changes: { from: line.from, to: line.to, insert: out }, selection: EditorSelection.cursor(line.from + out.length), userEvent: "input" });
       return true;
     }
     return false;
@@ -387,9 +415,10 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
     if (!sel.empty) return false;
     const block = blockOnHeader(view, sel.head);
     if (!block || sel.head !== block.titleFrom) return false;
-    const changes = [{ from: block.headerFrom, to: block.titleFrom }];
+    const keep = markerEnd(view.state.doc.sliceString(block.headerFrom, block.headerTo), block.depth - 1);
+    const changes = [{ from: block.headerFrom + Math.max(0, keep), to: block.titleFrom }];
     if (block.boldWrap) changes.push({ from: block.titleTo, to: block.headerTo });
-    view.dispatch({ changes, selection: EditorSelection.cursor(block.headerFrom), userEvent: "delete" });
+    view.dispatch({ changes, selection: EditorSelection.cursor(block.headerFrom + Math.max(0, keep)), userEvent: "delete" });
     return true;
   }
 
@@ -411,7 +440,229 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
     return true;
   }
 
-  return [field, keepCaretVisible, keys, shortcutFromInput];
+  function moveKey(view: EditorView, how: MoveHow): boolean {
+    if (!host.enabled() || !livePreviewOn(host, view.state)) return false;
+    if (host.blockMoves && !host.blockMoves()) return false;
+    const sel = view.state.selection.main;
+    if (!sel.empty && view.state.doc.lineAt(sel.from).number !== view.state.doc.lineAt(sel.to).number) return false;
+    return runBlockMove(view, how);
+  }
+
+  return [field, keepCaretVisible, keys, shortcutFromInput, blockDrag(host, field)];
+}
+
+/* ---------- v1.8.9: rearrange + shove into toggle ---------- */
+
+export type MoveHow = "up" | "down" | "in" | "out";
+
+/** Replace the doc with a move result; keep the caret on the same text; open the toggle shoved into. */
+export function applyMove(view: EditorView, before: { line: number; col: number; unitStart: number; oldCd: number }, r: MoveResult): void {
+  const doc = view.state.doc;
+  const text = r.lines.join("\n");
+  const old = doc.toString();
+  // Smallest changed span keeps undo history tidy.
+  let a = 0;
+  while (a < old.length && a < text.length && old[a] === text[a]) a++;
+  let b = 0;
+  while (b < old.length - a && b < text.length - a && old[old.length - 1 - b] === text[text.length - 1 - b]) b++;
+  const offsetLine = r.at + (before.line - before.unitStart);
+  let pos = 0;
+  for (let i = 0; i < offsetLine && i < r.lines.length; i++) pos += (r.lines[i] ?? "").length + 1;
+  const lineText = r.lines[offsetLine] ?? "";
+  const col = Math.max(markerEnd(lineText, r.cd) < 0 ? 0 : markerEnd(lineText, r.cd), before.col + (markerEnd(lineText, r.cd) - Math.max(0, before.oldCd)));
+  pos += Math.min(lineText.length, Math.max(0, col));
+  const effects = [];
+  if (r.openHeader >= 0) {
+    let hp = 0;
+    for (let i = 0; i < r.openHeader; i++) hp += (r.lines[i] ?? "").length + 1;
+    effects.push(setToggleOpen.of({ key: hp, open: true }));
+  }
+  view.dispatch({
+    changes: { from: a, to: old.length - b, insert: text.slice(a, text.length - b) },
+    selection: EditorSelection.cursor(pos),
+    effects,
+    scrollIntoView: true,
+    userEvent: "move",
+  });
+}
+
+/** Move the block under the caret. Returns false when there is nothing to do (the key falls through). */
+export function runBlockMove(view: EditorView, how: MoveHow): boolean {
+  const doc = view.state.doc;
+  const head = view.state.selection.main.head;
+  const line = doc.lineAt(head);
+  const lines = doc.toString().split("\n");
+  const n = line.number - 1;
+  const r = how === "up" ? moveUnit(lines, n, -1) : how === "down" ? moveUnit(lines, n, 1) : how === "in" ? indentUnit(lines, n) : outdentUnit(lines, n);
+  if (!r) return false;
+  const unit = unitStartAndCd(lines, n);
+  // prefix length before the move (column within visible text is preserved)
+  const oldPrefix = markerEnd(line.text, unit.cd);
+  applyMove(view, { line: n, col: head - line.from, unitStart: unit.start, oldCd: Math.max(0, oldPrefix) }, r);
+  return true;
+}
+
+function unitStartAndCd(lines: string[], n: number): { start: number; cd: number } {
+  const u = unitAt(lines, n);
+  return { start: u?.start ?? n, cd: u?.cd ?? 0 };
+}
+
+/**
+ * Drag a block like Notion: press and hold a line (touch or mouse, ~0.4 s) or
+ * drag a toggle's arrow straight away. A blue line shows where it will land;
+ * hovering the middle of a toggle highlights it, and letting go there shoves the
+ * block inside that toggle.
+ */
+function blockDrag(host: CleanTogglesHost, _field: StateField<CleanState>): Extension {
+  return EditorView.domEventHandlers({
+    pointerdown(e, view) {
+      if (!dragAllowed(host, view) || e.button !== 0) return false;
+      const onArrow = false;
+      const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+      if (pos === null) return false;
+      startDrag(view, e, view.state.doc.lineAt(pos).number - 1, onArrow);
+      return false;
+    },
+  });
+}
+
+function startDrag(view: EditorView, down: PointerEvent, srcLine: number, onArrow: boolean): void {
+  const x0 = down.clientX;
+  const y0 = down.clientY;
+  let active = false;
+  let ghost: HTMLElement | null = null;
+  let marker: HTMLElement | null = null;
+  let drop: { line: number; mode: DropMode } | null = null;
+  const holdMs = down.pointerType === "mouse" ? 450 : 400;
+  const timer = window.setTimeout(() => begin(), holdMs);
+
+  function begin(): void {
+    if (active) return;
+    active = true;
+    const lines = view.state.doc.toString().split("\n");
+    const u = unitAt(lines, srcLine);
+    if (!u || u.blank) return cleanup();
+    view.dom.classList.add("ntt-dragging");
+    ghost = document.createElement("div");
+    ghost.className = "ntt-drag-ghost";
+    const first = lines[u.start] ?? "";
+    ghost.textContent = first.replace(/^(?:>[ \t]*)*(\[![^\]]+\][+-]\s*)?/, "").replace(/\*\*/g, "") || " ";
+    document.body.appendChild(ghost);
+    marker = document.createElement("div");
+    marker.className = "ntt-drop-marker";
+    document.body.appendChild(marker);
+    if (navigator.vibrate) try { navigator.vibrate(10); } catch { /* ignore */ }
+  }
+
+  function move(e: PointerEvent): void {
+    if (!active) {
+      const moved = Math.hypot(e.clientX - x0, e.clientY - y0);
+      if (onArrow && moved > 5) begin();
+      else if (moved > 8) return cleanup(); // a scroll or a text selection, not a drag
+      if (!active) return;
+    }
+    e.preventDefault();
+    if (ghost) {
+      ghost.style.left = `${e.clientX + 8}px`;
+      ghost.style.top = `${e.clientY - 12}px`;
+    }
+    drop = dropTarget(view, e.clientX, e.clientY);
+    paintMarker(view, marker, drop);
+  }
+
+  function up(e: PointerEvent): void {
+    const wasActive = active;
+    const d = drop;
+    cleanup();
+    if (!wasActive) return;
+    // the click that follows a drag must not open / close the arrow
+    const eat = (c: Event) => { c.preventDefault(); c.stopPropagation(); };
+    window.addEventListener("click", eat, { capture: true, once: true });
+    window.setTimeout(() => window.removeEventListener("click", eat, true), 400);
+    if (!d) return;
+    e.preventDefault();
+    const lines = view.state.doc.toString().split("\n");
+    const r = dropUnit(lines, srcLine, d.line, d.mode);
+    if (!r) return;
+    const u = unitAt(lines, srcLine);
+    const line = view.state.doc.line(srcLine + 1);
+    const start = u?.start ?? srcLine;
+    applyMove(view, { line: start, col: markerEnd(line.text, u?.cd ?? 0), unitStart: start, oldCd: Math.max(0, markerEnd(line.text, u?.cd ?? 0)) }, r);
+    view.focus();
+  }
+
+  function stopTouch(e: TouchEvent): void {
+    if (active) e.preventDefault();
+  }
+  function noMenu(e: Event): void {
+    if (active) e.preventDefault();
+  }
+
+  function cleanup(): void {
+    window.clearTimeout(timer);
+    active = false;
+    ghost?.remove();
+    marker?.remove();
+    ghost = marker = null;
+    view.dom.classList.remove("ntt-dragging");
+    window.removeEventListener("pointermove", move, true);
+    window.removeEventListener("pointerup", up, true);
+    window.removeEventListener("pointercancel", cleanup, true);
+    window.removeEventListener("touchmove", stopTouch, true);
+    window.removeEventListener("contextmenu", noMenu, true);
+  }
+
+  window.addEventListener("pointermove", move, true);
+  window.addEventListener("pointerup", up, true);
+  window.addEventListener("pointercancel", cleanup, true);
+  window.addEventListener("touchmove", stopTouch, { capture: true, passive: false });
+  window.addEventListener("contextmenu", noMenu, true);
+}
+
+/** Where a drop at (x, y) lands: top part of a line = before, bottom = after, middle of a toggle = into. */
+export function dropTarget(view: EditorView, x: number, y: number): { line: number; mode: DropMode } | null {
+  const rect = view.contentDOM.getBoundingClientRect();
+  const pos = view.posAtCoords({ x: Math.max(rect.left + 4, Math.min(x, rect.right - 4)), y });
+  if (pos === null) return null;
+  const line = view.state.doc.lineAt(pos);
+  const lines = view.state.doc.toString().split("\n");
+  const u = unitAt(lines, line.number - 1);
+  if (!u) return null;
+  const block = view.lineBlockAt(line.from);
+  const top = view.documentTop + block.top;
+  const frac = (y - top) / Math.max(1, block.height);
+  if (u.toggle && line.number - 1 === u.start) {
+    if (frac < 0.25) return { line: u.start, mode: "before" };
+    if (frac > 0.75) return { line: u.start, mode: "after" };
+    return { line: u.start, mode: "into" };
+  }
+  return { line: line.number - 1, mode: frac < 0.5 ? "before" : "after" };
+}
+
+function paintMarker(view: EditorView, el: HTMLElement | null, d: { line: number; mode: DropMode } | null): void {
+  if (!el) return;
+  if (!d) {
+    el.style.display = "none";
+    return;
+  }
+  const lines = view.state.doc.toString().split("\n");
+  const u = unitAt(lines, d.line);
+  const rect = view.contentDOM.getBoundingClientRect();
+  const first = view.lineBlockAt(view.state.doc.line(d.line + 1).from);
+  const lastLine = d.mode === "after" && u ? u.end : d.line;
+  const last = view.lineBlockAt(view.state.doc.line(Math.min(lastLine + 1, view.state.doc.lines)).from);
+  el.style.display = "block";
+  el.style.left = `${rect.left}px`;
+  el.style.width = `${rect.width}px`;
+  el.classList.toggle("is-into", d.mode === "into");
+  if (d.mode === "into") {
+    el.style.top = `${view.documentTop + first.top}px`;
+    el.style.height = `${first.height}px`;
+  } else {
+    const yy = d.mode === "before" ? view.documentTop + first.top : view.documentTop + last.bottom;
+    el.style.top = `${yy - 1}px`;
+    el.style.height = "2px";
+  }
 }
 
 function tryShortcut(host: CleanTogglesHost, view: EditorView): boolean {

@@ -66,11 +66,54 @@ export function textDoc(text: string): DocLike {
 
 /* ---------- block detection ---------- */
 
-/** `> [!type]- Title` — a toggle header (fold marker required). Group 1 = prefix. */
-export const CLEAN_HEADER_RE = /^(>[ \t]*\[!([^\]\n]+)\]([+-])[ \t]?)/;
+/**
+ * `> [!type]- Title` — a toggle header (fold marker required). Group 1 = prefix.
+ * v1.8.9: one or more `>` markers are allowed, so a toggle nested inside another
+ * toggle (`> > [!type]- Title`) is a header too.
+ */
+export const CLEAN_HEADER_RE = /^((?:>[ \t]*)+\[!([^\]\n]+)\]([+-])[ \t]?)/;
 /** `> body` — group 1 = the marker that gets hidden (`>` plus one optional space). */
 export const CLEAN_BODY_RE = /^(>[ ]?)/;
 const FENCE_RE = /^[ \t]*(```|~~~)/;
+
+/** How many `>` markers open the line (0 = not a quote line). */
+export function markerDepth(text: string): number {
+  let depth = 0;
+  let i = 0;
+  while (text.charCodeAt(i) === 62 /* > */) {
+    depth++;
+    i++;
+    while (text[i] === " " || text[i] === "\t") i++;
+  }
+  return depth;
+}
+
+/**
+ * Offset just past the `depth`-th `>` marker and one optional space after it
+ * (`> > text`, depth 2 → 4). -1 when the line has fewer markers; 0 for depth 0.
+ */
+export function markerEnd(text: string, depth: number): number {
+  if (depth <= 0) return 0;
+  let i = 0;
+  for (let k = 1; k <= depth; k++) {
+    if (text[i] !== ">") return -1;
+    i++;
+    if (k < depth) {
+      while (text[i] === " " || text[i] === "\t") i++;
+    } else if (text[i] === " ") i++;
+  }
+  return i;
+}
+
+/** `> ` repeated `depth` times — the prefix a body line at that depth carries. */
+export function markersFor(depth: number): string {
+  return "> ".repeat(Math.max(0, depth));
+}
+
+/** An empty line at `depth` (`>` / `> >` / "" for depth 0). */
+export function blankAt(depth: number): string {
+  return markersFor(depth).trimEnd();
+}
 /**
  * v1.8.2 — a title stored as `**Title**` (the "Bold the question" setting).
  * Group 1 = the inner text. The inner text may not contain another `**`, and
@@ -98,7 +141,9 @@ export interface ToggleBlock {
   bodyTo: number;
   type: string;
   marker: "+" | "-";
-  /** Hidden `> ` prefixes, one per body line. */
+  /** v1.8.9 — how many `>` markers the header carries (1 = top-level toggle, 2 = nested once, …). */
+  depth: number;
+  /** Hidden `> ` prefixes (all `depth` markers), one per body line. */
   bodyPrefixes: { from: number; to: number }[];
 }
 
@@ -119,25 +164,69 @@ export function insideFence(doc: DocLike, lineNumber: number): boolean {
 }
 
 /**
- * The toggle block that contains `lineNumber`, or null.
+ * Walk up from `fromLine` to the header of the innermost block a line at
+ * `maxDepth` markers sits in. A header only counts when no shallower quote line
+ * lies between it and the start (`minDepth` tracks that), so a sibling nested
+ * toggle that already ended is never mistaken for the container.
+ */
+function headerAbove(doc: DocLike, fromLine: number, maxDepth: number): number {
+  let minDepth = maxDepth;
+  for (let n = fromLine; n >= 1; n--) {
+    const text = doc.line(n).text;
+    const d = markerDepth(text);
+    if (d === 0) return -1;
+    if (d <= minDepth && CLEAN_HEADER_RE.test(text)) return n;
+    if (d < minDepth) minDepth = d;
+  }
+  return -1;
+}
+
+/**
+ * The innermost toggle block that contains `lineNumber`, or null.
  *
- * Walks up over `>` lines to the nearest header, then down over the body. A
- * second header line ends the block (matching `convertCalloutsToDetails`).
+ * Walks up over `>` lines to the nearest header at the line's depth or less,
+ * then down over the body. A header at the same depth ends the block; a deeper
+ * header (a nested toggle) is part of the body.
  */
 export function findBlockAt(doc: DocLike, lineNumber: number): ToggleBlock | null {
   if (lineNumber < 1 || lineNumber > doc.lines) return null;
-  let headerLine = -1;
-  for (let n = lineNumber; n >= 1; n--) {
-    const text = doc.line(n).text;
-    if (CLEAN_HEADER_RE.test(text)) {
-      headerLine = n;
-      break;
-    }
-    if (!/^>/.test(text)) return null;
-  }
+  const text = doc.line(lineNumber).text;
+  const depth = markerDepth(text);
+  if (depth === 0) return null;
+  const headerLine = CLEAN_HEADER_RE.test(text) ? lineNumber : headerAbove(doc, lineNumber - 1, depth);
   if (headerLine < 0) return null;
   if (insideFence(doc, headerLine)) return null;
   return blockFromHeader(doc, headerLine);
+}
+
+/** The toggle a nested block sits in, or null for a top-level toggle. */
+export function parentOf(doc: DocLike, block: ToggleBlock): ToggleBlock | null {
+  if (block.depth <= 1) return null;
+  const headerLine = headerAbove(doc, block.headerLine - 1, block.depth - 1);
+  return headerLine < 0 ? null : blockFromHeader(doc, headerLine);
+}
+
+/** The outermost toggle around a block (the block itself when top-level). */
+export function rootOf(doc: DocLike, block: ToggleBlock): ToggleBlock {
+  let cur = block;
+  for (;;) {
+    const parent = parentOf(doc, cur);
+    if (!parent) return cur;
+    cur = parent;
+  }
+}
+
+/** Every toggle nested anywhere inside `block` (any depth), in document order. */
+export function descendantsOf(doc: DocLike, block: ToggleBlock): ToggleBlock[] {
+  const out: ToggleBlock[] = [];
+  for (let n = block.headerLine + 1; n <= block.lastLine; n++) {
+    const text = doc.line(n).text;
+    if (markerDepth(text) > block.depth && CLEAN_HEADER_RE.test(text)) {
+      const b = blockFromHeader(doc, n);
+      if (b) out.push(b);
+    }
+  }
+  return out;
 }
 
 /** Build the block record for a header line that is known to match. */
@@ -145,13 +234,15 @@ export function blockFromHeader(doc: DocLike, headerLine: number): ToggleBlock |
   const header = doc.line(headerLine);
   const m = header.text.match(CLEAN_HEADER_RE);
   if (!m) return null;
+  const depth = markerDepth(header.text);
   const bodyPrefixes: { from: number; to: number }[] = [];
   let lastLine = headerLine;
   for (let n = headerLine + 1; n <= doc.lines; n++) {
     const line = doc.line(n);
-    if (!/^>/.test(line.text) || CLEAN_HEADER_RE.test(line.text)) break;
-    const bm = line.text.match(CLEAN_BODY_RE);
-    bodyPrefixes.push({ from: line.from, to: line.from + (bm ? (bm[1] ?? ">").length : 1) });
+    const d = markerDepth(line.text);
+    if (d < depth) break;
+    if (d === depth && CLEAN_HEADER_RE.test(line.text)) break;
+    bodyPrefixes.push({ from: line.from, to: line.from + markerEnd(line.text, depth) });
     lastLine = n;
   }
   const hasBody = lastLine > headerLine;
@@ -172,6 +263,7 @@ export function blockFromHeader(doc: DocLike, headerLine: number): ToggleBlock |
     bodyTo: hasBody ? doc.line(lastLine).to : header.to,
     type: (m[2] ?? "").trim(),
     marker: m[3] as "+" | "-",
+    depth,
     bodyPrefixes,
   };
 }
@@ -182,22 +274,32 @@ export interface SelRange {
   head?: number;
 }
 
-/** Every toggle block that at least one selection range touches, in document order. */
+/**
+ * Every toggle block the selection touches, in document order. v1.8.9: when a
+ * touched toggle is nested — or contains nested toggles — the whole family
+ * (outermost ancestor plus every descendant) comes along, because Obsidian
+ * shows the entire outer callout as raw text while the caret is anywhere in it.
+ */
 export function blocksTouching(doc: DocLike, ranges: readonly SelRange[]): ToggleBlock[] {
   const seen = new Set<number>();
   const out: ToggleBlock[] = [];
+  const add = (b: ToggleBlock) => {
+    if (seen.has(b.key)) return;
+    seen.add(b.key);
+    out.push(b);
+  };
   for (const r of ranges) {
     const first = doc.lineAt(Math.min(r.from, r.to)).number;
     const last = doc.lineAt(Math.max(r.from, r.to)).number;
     for (let n = first; n <= last; n++) {
       const block = findBlockAt(doc, n);
-      if (!block || seen.has(block.key)) {
-        if (block) n = block.lastLine;
-        continue;
+      if (!block) continue;
+      const root = rootOf(doc, block);
+      if (!seen.has(root.key)) {
+        add(root);
+        for (const d of descendantsOf(doc, root)) add(d);
       }
-      seen.add(block.key);
-      out.push(block);
-      n = block.lastLine;
+      n = root.lastLine;
     }
   }
   return out.sort((a, b) => a.key - b.key);
@@ -256,33 +358,39 @@ export function planClean(doc: DocLike, ranges: readonly SelRange[], overrides: 
   // Arrow choices are remembered for the whole session (mapped through edits),
   // so a toggle the writer opened stays open when the caret wanders off and back.
   const kept = new Map<number, boolean>(overrides);
+  // v1.8.9 — nested toggles: a closed toggle hides its whole body (nested ones
+  // included), and a body line that belongs to a nested toggle is dressed by
+  // that toggle, not by every ancestor (their decorations would overlap).
+  const folded: { from: number; to: number }[] = [];
+  const nestedHeads = blocks.filter((b) => b.depth > 1);
   for (const block of blocks) {
+    if (folded.some((f) => block.headerFrom > f.from && block.headerFrom <= f.to)) continue;
     const inBody = selectionInBody(block, ranges);
     const prior = overrides.get(block.key);
-    // A caret in the body makes the toggle sticky-open, so moving back up to
-    // the title never snaps the answer shut mid-edit.
     if (inBody) kept.set(block.key, true);
     else if (prior !== undefined) kept.set(block.key, prior);
     const open = isOpen(block, ranges, kept);
     const slug = typeSlug(block.type);
+    const depthCls = block.depth > 1 ? ` ntt-clean-d${Math.min(block.depth, 6)}` : "";
     plans.push({
       kind: "line",
       pos: block.headerFrom,
-      cls: `ntt-clean-header ntt-clean-t-${slug} ${open ? "ntt-clean-open" : "ntt-clean-closed"}${block.boldWrap ? " ntt-clean-bold" : ""}`,
+      cls: `ntt-clean-header ntt-clean-t-${slug} ${open ? "ntt-clean-open" : "ntt-clean-closed"}${block.boldWrap ? " ntt-clean-bold" : ""}${depthCls}`,
     });
-    // The arrow swallows the opening `**` of a bold title too; the closing pair
-    // is hidden on its own so the title reads as plain text with a bold look.
     plans.push({ kind: "arrow", from: block.headerFrom, to: block.titleFrom, key: block.key, open, type: block.type });
     if (block.boldWrap && block.titleTo < block.headerTo) plans.push({ kind: "hide", from: block.titleTo, to: block.headerTo });
     const hasBody = block.bodyTo > block.headerTo;
     if (!hasBody) continue;
     if (!open) {
       plans.push({ kind: "fold", from: block.headerTo, to: block.bodyTo, key: block.key });
+      folded.push({ from: block.headerTo, to: block.bodyTo });
       continue;
     }
+    const inner = nestedHeads.filter((b) => b.depth > block.depth && b.headerFrom > block.headerFrom && b.headerFrom <= block.bodyTo);
     for (const p of block.bodyPrefixes) {
-      plans.push({ kind: "line", pos: p.from, cls: `ntt-clean-body ntt-clean-t-${slug}` });
-      plans.push({ kind: "hide", from: p.from, to: p.to });
+      if (inner.some((b) => p.from >= b.headerFrom && p.from <= b.bodyTo)) continue;
+      plans.push({ kind: "line", pos: p.from, cls: `ntt-clean-body ntt-clean-t-${slug}${depthCls}` });
+      if (p.to > p.from) plans.push({ kind: "hide", from: p.from, to: p.to });
     }
   }
   return { plans, blocks, overrides: kept };

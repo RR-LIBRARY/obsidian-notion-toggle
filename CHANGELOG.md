@@ -2,6 +2,18 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.8.9
+
+**Rearrange + shove into toggle, like Notion.**
+
+- Press and hold a line (or drag a toggle's arrow) to move it. A blue line shows where it lands; hover the middle of a toggle to see a blue box — let go there and the block goes inside that toggle.
+- Tab puts the line (or a whole toggle) inside the toggle right above it; Shift+Tab takes it back out.
+- Ctrl/Cmd+Shift+↑/↓ (or Alt+Shift+↑/↓) moves a block up or down; a toggle moves with everything inside it.
+- Four new commands: Move block up / down, Put block inside the toggle above, Move block out of its toggle.
+- Nested toggles now look clean while editing too: each level steps in, no `>` markers shown. Enter and Backspace work inside nested toggles.
+- Blank separator lines are added automatically so moved toggles never merge into each other.
+- New setting "Rearrange and shove into toggles" (on by default).
+
 ## 1.8.8
 
 - The new toggle made by Enter keeps an empty line above it, so Obsidian never merges it into the toggle before.

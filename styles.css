@@ -1835,3 +1835,38 @@ body.ntt-notion-look .callout.is-collapsible .callout-fold { width: 1.3em !impor
 body.ntt-notion-look .ntt-clean-arrow svg { width: 0.6em; height: 0.6em; }
 body.ntt-notion-look .cm-line.ntt-clean-header.ntt-clean-bold,
 body.ntt-notion-look .callout.is-collapsible .callout-title-inner { font-weight: var(--font-normal, 400); }
+
+/* v1.8.9 — nested toggles while editing: each level steps in by one arrow width */
+.markdown-source-view.mod-cm6 .cm-line.ntt-clean-d2 { margin-inline-start: 1.8em !important; }
+.markdown-source-view.mod-cm6 .cm-line.ntt-clean-d3 { margin-inline-start: 3.6em !important; }
+.markdown-source-view.mod-cm6 .cm-line.ntt-clean-d4 { margin-inline-start: 5.4em !important; }
+.markdown-source-view.mod-cm6 .cm-line.ntt-clean-d5,
+.markdown-source-view.mod-cm6 .cm-line.ntt-clean-d6 { margin-inline-start: 7.2em !important; }
+.is-mobile .markdown-source-view.mod-cm6 .cm-line.ntt-clean-d2 { margin-inline-start: 2.2em !important; }
+.is-mobile .markdown-source-view.mod-cm6 .cm-line.ntt-clean-d3 { margin-inline-start: 4.4em !important; }
+.is-mobile .markdown-source-view.mod-cm6 .cm-line.ntt-clean-d4 { margin-inline-start: 6.6em !important; }
+
+/* v1.8.9 — drag to rearrange (Notion look: faded ghost, blue line / blue box) */
+.ntt-dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+.ntt-drag-ghost {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  max-width: 70vw;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  opacity: 0.45;
+  color: var(--text-normal);
+  font-size: var(--font-text-size, 16px);
+}
+.ntt-drop-marker {
+  position: fixed;
+  z-index: 9998;
+  pointer-events: none;
+  display: none;
+  border-radius: 1px;
+  background-color: var(--interactive-accent, rgb(35, 131, 226));
+  opacity: 0.6;
+}
+.ntt-drop-marker.is-into { opacity: 0.18; border-radius: var(--radius-s, 4px); }

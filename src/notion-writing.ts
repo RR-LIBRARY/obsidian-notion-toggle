@@ -23,7 +23,7 @@
 import { MarkdownView, Notice, Setting, editorLivePreviewField, type TFile } from "obsidian";
 import type { EditorView } from "@codemirror/view";
 import type NotionTogglePlugin from "../main";
-import { cleanTogglesExtension } from "./clean-toggles-view";
+import { cleanTogglesExtension, runBlockMove, type MoveHow } from "./clean-toggles-view";
 import { convertPastedText, detailsBlockCount, flipFoldMarker } from "./clean-toggles";
 import { convertDetailsToCallouts, newTogglePlan, nextToggleNumber } from "./editor-blocks";
 
@@ -42,6 +42,8 @@ export interface NotionWritingSettings {
   detailsNudge: boolean;
   /** v1.8.2: show a small "…" chip after the title of a closed toggle while editing (off = Notion: arrow + title only). */
   cleanMoreChip: boolean;
+  /** v1.8.9: Tab / Shift+Tab, Ctrl/Cmd+Shift+↑/↓ and press-and-drag rearrange blocks and shove them into toggles. */
+  blockMoves: boolean;
 }
 
 export const DEFAULT_NOTION_WRITING: NotionWritingSettings = {
@@ -51,6 +53,7 @@ export const DEFAULT_NOTION_WRITING: NotionWritingSettings = {
   convertDetailsOnPaste: true,
   detailsNudge: true,
   cleanMoreChip: false,
+  blockMoves: true,
 };
 
 /** Body class the stylesheet keys off; themes and CSS snippets can build on it too. */
@@ -153,8 +156,28 @@ export function installNotionWriting(plugin: NotionTogglePlugin): void {
       shortcutEnabled: () => plugin.settings.notionShortcut && calloutMode(plugin),
       insertToggleFromShortcut: (view) => insertToggleFromShortcut(plugin, view),
       moreChip: () => plugin.settings.cleanMoreChip,
+      autoContinue: () => plugin.settings.autoContinue,
+      blockMoves: () => plugin.settings.blockMoves !== false,
     })
   );
+
+  const moves: [MoveHow, string, string, string][] = [
+    ["up", "move-block-up", "Move block up", "arrow-up"],
+    ["down", "move-block-down", "Move block down", "arrow-down"],
+    ["in", "shove-into-toggle", "Put block inside the toggle above", "indent"],
+    ["out", "move-out-of-toggle", "Move block out of its toggle", "outdent"],
+  ];
+  for (const [how, id, name, icon] of moves) {
+    plugin.addCommand({
+      id,
+      name,
+      icon,
+      editorCallback: (editor) => {
+        const cm = (editor as unknown as { cm?: EditorView }).cm;
+        if (!cm || !runBlockMove(cm, how)) new Notice(how === "in" ? "There is no toggle right above this line." : "Nothing to move here.");
+      },
+    });
+  }
 
   plugin.registerEvent(
     plugin.app.workspace.on("editor-paste", (evt, editor) => {
@@ -270,6 +293,19 @@ export function renderNotionWritingSettings(containerEl: HTMLElement, plugin: No
       toggle.setValue(plugin.settings.detailsNudge);
       toggle.onChange(async (value) => {
         plugin.settings.detailsNudge = value;
+        await save();
+      });
+    });
+
+  new Setting(containerEl)
+    .setName("Rearrange and shove into toggles")
+    .setDesc(
+      "Like Notion: press and hold a line (or drag a toggle's arrow) to move it — let go on a toggle to put it inside. Tab puts a line inside the toggle above, Shift+Tab takes it out, Ctrl/Cmd+Shift+↑/↓ moves it."
+    )
+    .addToggle((toggle) => {
+      toggle.setValue(plugin.settings.blockMoves !== false);
+      toggle.onChange(async (value) => {
+        plugin.settings.blockMoves = value;
         await save();
       });
     });

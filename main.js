@@ -406,9 +406,41 @@ function wrapSelectionMarkdown(selection, type, fold, bold) {
 }
 
 // src/clean-toggles.ts
-var CLEAN_HEADER_RE = /^(>[ \t]*\[!([^\]\n]+)\]([+-])[ \t]?)/;
-var CLEAN_BODY_RE = /^(>[ ]?)/;
+var CLEAN_HEADER_RE = /^((?:>[ \t]*)+\[!([^\]\n]+)\]([+-])[ \t]?)/;
 var FENCE_RE = /^[ \t]*(```|~~~)/;
+function markerDepth(text) {
+  let depth = 0;
+  let i = 0;
+  while (text.charCodeAt(i) === 62) {
+    depth++;
+    i++;
+    while (text[i] === " " || text[i] === "	")
+      i++;
+  }
+  return depth;
+}
+function markerEnd(text, depth) {
+  if (depth <= 0)
+    return 0;
+  let i = 0;
+  for (let k = 1; k <= depth; k++) {
+    if (text[i] !== ">")
+      return -1;
+    i++;
+    if (k < depth) {
+      while (text[i] === " " || text[i] === "	")
+        i++;
+    } else if (text[i] === " ")
+      i++;
+  }
+  return i;
+}
+function markersFor(depth) {
+  return "> ".repeat(Math.max(0, depth));
+}
+function blankAt(depth) {
+  return markersFor(depth).trimEnd();
+}
 var BOLD_WRAP_RE = /^\*\*(\S(?:[^*\n]|\*(?!\*))*?\S|\S)\*\*[ \t]*$/;
 function insideFence(doc, lineNumber) {
   var _a;
@@ -424,45 +456,84 @@ function insideFence(doc, lineNumber) {
   }
   return open !== null;
 }
+function headerAbove(doc, fromLine, maxDepth) {
+  let minDepth = maxDepth;
+  for (let n = fromLine; n >= 1; n--) {
+    const text = doc.line(n).text;
+    const d = markerDepth(text);
+    if (d === 0)
+      return -1;
+    if (d <= minDepth && CLEAN_HEADER_RE.test(text))
+      return n;
+    if (d < minDepth)
+      minDepth = d;
+  }
+  return -1;
+}
 function findBlockAt(doc, lineNumber) {
   if (lineNumber < 1 || lineNumber > doc.lines)
     return null;
-  let headerLine = -1;
-  for (let n = lineNumber; n >= 1; n--) {
-    const text = doc.line(n).text;
-    if (CLEAN_HEADER_RE.test(text)) {
-      headerLine = n;
-      break;
-    }
-    if (!/^>/.test(text))
-      return null;
-  }
+  const text = doc.line(lineNumber).text;
+  const depth = markerDepth(text);
+  if (depth === 0)
+    return null;
+  const headerLine = CLEAN_HEADER_RE.test(text) ? lineNumber : headerAbove(doc, lineNumber - 1, depth);
   if (headerLine < 0)
     return null;
   if (insideFence(doc, headerLine))
     return null;
   return blockFromHeader(doc, headerLine);
 }
+function parentOf(doc, block) {
+  if (block.depth <= 1)
+    return null;
+  const headerLine = headerAbove(doc, block.headerLine - 1, block.depth - 1);
+  return headerLine < 0 ? null : blockFromHeader(doc, headerLine);
+}
+function rootOf(doc, block) {
+  let cur = block;
+  for (; ; ) {
+    const parent = parentOf(doc, cur);
+    if (!parent)
+      return cur;
+    cur = parent;
+  }
+}
+function descendantsOf(doc, block) {
+  const out = [];
+  for (let n = block.headerLine + 1; n <= block.lastLine; n++) {
+    const text = doc.line(n).text;
+    if (markerDepth(text) > block.depth && CLEAN_HEADER_RE.test(text)) {
+      const b = blockFromHeader(doc, n);
+      if (b)
+        out.push(b);
+    }
+  }
+  return out;
+}
 function blockFromHeader(doc, headerLine) {
-  var _a, _b, _c, _d;
+  var _a, _b, _c;
   const header = doc.line(headerLine);
   const m = header.text.match(CLEAN_HEADER_RE);
   if (!m)
     return null;
+  const depth = markerDepth(header.text);
   const bodyPrefixes = [];
   let lastLine = headerLine;
   for (let n = headerLine + 1; n <= doc.lines; n++) {
     const line = doc.line(n);
-    if (!/^>/.test(line.text) || CLEAN_HEADER_RE.test(line.text))
+    const d = markerDepth(line.text);
+    if (d < depth)
       break;
-    const bm = line.text.match(CLEAN_BODY_RE);
-    bodyPrefixes.push({ from: line.from, to: line.from + (bm ? ((_a = bm[1]) != null ? _a : ">").length : 1) });
+    if (d === depth && CLEAN_HEADER_RE.test(line.text))
+      break;
+    bodyPrefixes.push({ from: line.from, to: line.from + markerEnd(line.text, depth) });
     lastLine = n;
   }
   const hasBody = lastLine > headerLine;
-  const prefixEnd = header.from + ((_b = m[1]) != null ? _b : "").length;
+  const prefixEnd = header.from + ((_a = m[1]) != null ? _a : "").length;
   const wrap = header.text.slice(prefixEnd - header.from).match(BOLD_WRAP_RE);
-  const inner = (_c = wrap == null ? void 0 : wrap[1]) != null ? _c : "";
+  const inner = (_b = wrap == null ? void 0 : wrap[1]) != null ? _b : "";
   return {
     key: header.from,
     headerLine,
@@ -475,27 +546,35 @@ function blockFromHeader(doc, headerLine) {
     titleTo: wrap ? prefixEnd + 2 + inner.length : header.to,
     bodyFrom: hasBody ? doc.line(headerLine + 1).from : header.to,
     bodyTo: hasBody ? doc.line(lastLine).to : header.to,
-    type: ((_d = m[2]) != null ? _d : "").trim(),
+    type: ((_c = m[2]) != null ? _c : "").trim(),
     marker: m[3],
+    depth,
     bodyPrefixes
   };
 }
 function blocksTouching(doc, ranges) {
   const seen = /* @__PURE__ */ new Set();
   const out = [];
+  const add = (b) => {
+    if (seen.has(b.key))
+      return;
+    seen.add(b.key);
+    out.push(b);
+  };
   for (const r of ranges) {
     const first = doc.lineAt(Math.min(r.from, r.to)).number;
     const last = doc.lineAt(Math.max(r.from, r.to)).number;
     for (let n = first; n <= last; n++) {
       const block = findBlockAt(doc, n);
-      if (!block || seen.has(block.key)) {
-        if (block)
-          n = block.lastLine;
+      if (!block)
         continue;
+      const root = rootOf(doc, block);
+      if (!seen.has(root.key)) {
+        add(root);
+        for (const d of descendantsOf(doc, root))
+          add(d);
       }
-      seen.add(block.key);
-      out.push(block);
-      n = block.lastLine;
+      n = root.lastLine;
     }
   }
   return out.sort((a, b) => a.key - b.key);
@@ -523,7 +602,11 @@ function planClean(doc, ranges, overrides) {
   const blocks = blocksTouching(doc, ranges);
   const plans = [];
   const kept = new Map(overrides);
+  const folded = [];
+  const nestedHeads = blocks.filter((b) => b.depth > 1);
   for (const block of blocks) {
+    if (folded.some((f) => block.headerFrom > f.from && block.headerFrom <= f.to))
+      continue;
     const inBody = selectionInBody(block, ranges);
     const prior = overrides.get(block.key);
     if (inBody)
@@ -532,10 +615,11 @@ function planClean(doc, ranges, overrides) {
       kept.set(block.key, prior);
     const open = isOpen(block, ranges, kept);
     const slug = typeSlug(block.type);
+    const depthCls = block.depth > 1 ? ` ntt-clean-d${Math.min(block.depth, 6)}` : "";
     plans.push({
       kind: "line",
       pos: block.headerFrom,
-      cls: `ntt-clean-header ntt-clean-t-${slug} ${open ? "ntt-clean-open" : "ntt-clean-closed"}${block.boldWrap ? " ntt-clean-bold" : ""}`
+      cls: `ntt-clean-header ntt-clean-t-${slug} ${open ? "ntt-clean-open" : "ntt-clean-closed"}${block.boldWrap ? " ntt-clean-bold" : ""}${depthCls}`
     });
     plans.push({ kind: "arrow", from: block.headerFrom, to: block.titleFrom, key: block.key, open, type: block.type });
     if (block.boldWrap && block.titleTo < block.headerTo)
@@ -545,11 +629,16 @@ function planClean(doc, ranges, overrides) {
       continue;
     if (!open) {
       plans.push({ kind: "fold", from: block.headerTo, to: block.bodyTo, key: block.key });
+      folded.push({ from: block.headerTo, to: block.bodyTo });
       continue;
     }
+    const inner = nestedHeads.filter((b) => b.depth > block.depth && b.headerFrom > block.headerFrom && b.headerFrom <= block.bodyTo);
     for (const p of block.bodyPrefixes) {
-      plans.push({ kind: "line", pos: p.from, cls: `ntt-clean-body ntt-clean-t-${slug}` });
-      plans.push({ kind: "hide", from: p.from, to: p.to });
+      if (inner.some((b) => p.from >= b.headerFrom && p.from <= b.bodyTo))
+        continue;
+      plans.push({ kind: "line", pos: p.from, cls: `ntt-clean-body ntt-clean-t-${slug}${depthCls}` });
+      if (p.to > p.from)
+        plans.push({ kind: "hide", from: p.from, to: p.to });
     }
   }
   return { plans, blocks, overrides: kept };
@@ -615,6 +704,249 @@ function flipFoldMarker(line) {
   return line.replace(/^(>[ \t]*\[![^\]\n]+\])([+-])/, (_m, head, marker) => `${head}${marker === "-" ? "+" : "-"}`);
 }
 
+// src/block-move.ts
+function isHeaderAt(text, depth) {
+  return markerDepth(text) === depth && CLEAN_HEADER_RE.test(text);
+}
+function contentAfter(text, cd) {
+  const end = markerEnd(text, cd);
+  return end < 0 ? text : text.slice(end);
+}
+function parseUnits(lines, from, to, cd) {
+  var _a, _b;
+  const out = [];
+  let i = from;
+  while (i <= to) {
+    const text = (_a = lines[i]) != null ? _a : "";
+    if (isHeaderAt(text, cd + 1)) {
+      let j = i + 1;
+      while (j <= to) {
+        const t = (_b = lines[j]) != null ? _b : "";
+        const d = markerDepth(t);
+        if (d < cd + 1 || d === cd + 1 && CLEAN_HEADER_RE.test(t))
+          break;
+        j++;
+      }
+      out.push({ start: i, end: j - 1, cd, toggle: true, blank: false });
+      i = j;
+    } else {
+      out.push({ start: i, end: i, cd, toggle: false, blank: contentAfter(text, cd).trim() === "" });
+      i++;
+    }
+  }
+  return out;
+}
+function locate(lines, n) {
+  if (n < 0 || n >= lines.length)
+    return null;
+  let from = 0;
+  let to = lines.length - 1;
+  let cd = 0;
+  let parentHeader = -1;
+  for (; ; ) {
+    const units = parseUnits(lines, from, to, cd);
+    const unit = units.find((u) => u.start <= n && n <= u.end);
+    if (!unit)
+      return null;
+    if (unit.toggle && n > unit.start) {
+      parentHeader = unit.start;
+      from = unit.start + 1;
+      to = unit.end;
+      cd += 1;
+      continue;
+    }
+    return { units, unit, parentHeader };
+  }
+}
+function unitAt(lines, n) {
+  var _a, _b;
+  return (_b = (_a = locate(lines, n)) == null ? void 0 : _a.unit) != null ? _b : null;
+}
+function reprefix(block, from, to) {
+  return block.map((t) => {
+    const rest = contentAfter(t, from);
+    if (rest === "")
+      return blankAt(to);
+    return markersFor(to) + rest;
+  });
+}
+function needsGap(a, b, cd, aToggle, bToggle) {
+  if (a === void 0 || b === void 0)
+    return false;
+  if (cd > 0 && isHeaderAt(a, cd))
+    return false;
+  if (markerDepth(a) < cd || markerDepth(b) < cd)
+    return false;
+  if (contentAfter(a, cd).trim() === "" || contentAfter(b, cd).trim() === "")
+    return false;
+  return aToggle || bToggle;
+}
+function insertBlock(lines, at, block, cd, blockToggle, prevToggle, nextToggle) {
+  const before = lines.slice(0, at);
+  const after = lines.slice(at);
+  const out = [...before];
+  if (needsGap(before[before.length - 1], block[0], cd, prevToggle, blockToggle))
+    out.push(blankAt(cd));
+  const start = out.length;
+  out.push(...block);
+  if (needsGap(block[block.length - 1], after[0], cd, blockToggle, nextToggle))
+    out.push(blankAt(cd));
+  out.push(...after);
+  return { lines: out, at: start };
+}
+function toggleEndingAt(lines, i, cd) {
+  if (i < 0)
+    return false;
+  const u = unitAt(lines, i);
+  if (!u)
+    return false;
+  let cur = u;
+  while (cur && cur.cd > cd) {
+    const loc = locate(lines, cur.start);
+    if (!loc || loc.parentHeader < 0)
+      break;
+    cur = unitAt(lines, loc.parentHeader);
+  }
+  return !!cur && cur.cd === cd && cur.toggle;
+}
+function toggleStartingAt(lines, i, cd) {
+  var _a;
+  return i >= 0 && i < lines.length && isHeaderAt((_a = lines[i]) != null ? _a : "", cd + 1);
+}
+function removeUnit(lines, u) {
+  let from = u.start;
+  let count = u.end - u.start + 1;
+  const isBlank = (t) => t !== void 0 && markerDepth(t) <= u.cd && contentAfter(t, Math.min(u.cd, markerDepth(t))).trim() === "";
+  const prev = lines[from - 1];
+  const next = lines[u.end + 1];
+  const edgePrev = prev === void 0 || markerDepth(prev) < u.cd || u.cd > 0 && isHeaderAt(prev, u.cd);
+  const edgeNext = next === void 0 || markerDepth(next) < u.cd;
+  if (isBlank(next) && (isBlank(prev) || edgePrev))
+    count++;
+  else if (isBlank(prev) && edgeNext) {
+    from--;
+    count++;
+  }
+  return { lines: lines.slice(0, from).concat(lines.slice(from + count)), removedFrom: from, removedCount: count };
+}
+function moveUnit(lines, n, dir) {
+  var _a;
+  const loc = locate(lines, n);
+  if (!loc || loc.unit.blank)
+    return null;
+  const { units, unit } = loc;
+  const idx = units.indexOf(unit);
+  let j = idx + dir;
+  while ((_a = units[j]) == null ? void 0 : _a.blank)
+    j += dir;
+  const other = units[j];
+  if (!other)
+    return null;
+  const [a, b] = dir < 0 ? [other, unit] : [unit, other];
+  const aLines = lines.slice(a.start, a.end + 1);
+  const bLines = lines.slice(b.start, b.end + 1);
+  const gap = lines.slice(a.end + 1, b.start);
+  const head = lines.slice(0, a.start);
+  const tail = lines.slice(b.end + 1);
+  let mid = gap;
+  if (mid.length === 0 && (a.toggle || b.toggle))
+    mid = [blankAt(unit.cd)];
+  const cd = unit.cd;
+  const lead = needsGap(head[head.length - 1], bLines[0], cd, toggleEndingAt(lines, a.start - 1, cd), b.toggle) ? [blankAt(cd)] : [];
+  const trail = needsGap(aLines[aLines.length - 1], tail[0], cd, a.toggle, toggleStartingAt(lines, b.end + 1, cd)) ? [blankAt(cd)] : [];
+  const out = [...head, ...lead, ...bLines, ...mid, ...aLines, ...trail, ...tail];
+  const at = dir < 0 ? a.start + lead.length : a.start + lead.length + bLines.length + mid.length;
+  return { lines: out, at, cd: unit.cd, openHeader: -1 };
+}
+function indentUnit(lines, n) {
+  var _a;
+  const loc = locate(lines, n);
+  if (!loc || loc.unit.blank)
+    return null;
+  const { units, unit } = loc;
+  let j = units.indexOf(unit) - 1;
+  while ((_a = units[j]) == null ? void 0 : _a.blank)
+    j--;
+  const target = units[j];
+  if (!target || !target.toggle)
+    return null;
+  const moved = reprefix(lines.slice(unit.start, unit.end + 1), unit.cd, unit.cd + 1);
+  const out = lines.slice(0, target.end + 1).concat(lines.slice(unit.end + 1));
+  const lastBody = target.end > target.start ? target.end : -1;
+  const prevToggle = lastBody >= 0 && toggleEndingAt(out, lastBody, unit.cd + 1);
+  const ins = insertBlock(out, target.end + 1, moved, unit.cd + 1, unit.toggle, prevToggle, false);
+  let res = ins.lines;
+  const afterIdx = ins.at + moved.length;
+  const follower = res[afterIdx];
+  if (follower !== void 0 && markerDepth(follower) <= unit.cd && contentAfter(follower, unit.cd).trim() !== "") {
+    res = res.slice(0, afterIdx).concat([blankAt(unit.cd)], res.slice(afterIdx));
+  }
+  return { lines: res, at: ins.at, cd: unit.cd + 1, openHeader: target.start };
+}
+function outdentUnit(lines, n) {
+  const loc = locate(lines, n);
+  if (!loc || loc.parentHeader < 0)
+    return null;
+  const { unit } = loc;
+  const parent = unitAt(lines, loc.parentHeader);
+  if (!parent || unit.blank)
+    return null;
+  const moved = reprefix(lines.slice(unit.start, unit.end + 1), unit.cd, unit.cd - 1);
+  const rm = removeUnit(lines, unit);
+  const parentEnd = parent.end - rm.removedCount;
+  let insertAt = parentEnd + 1;
+  const sep = rm.lines[insertAt];
+  if (sep !== void 0 && markerDepth(sep) === unit.cd - 1 && contentAfter(sep, unit.cd - 1).trim() === "")
+    insertAt++;
+  const nextToggle = toggleStartingAt(rm.lines, insertAt, unit.cd - 1);
+  const ins = insertBlock(rm.lines, insertAt, moved, unit.cd - 1, unit.toggle, true, nextToggle);
+  return { lines: ins.lines, at: ins.at, cd: unit.cd - 1, openHeader: -1 };
+}
+function dropUnit(lines, src, target, mode) {
+  const s = unitAt(lines, src);
+  const t = unitAt(lines, target);
+  if (!s || !t || s.blank)
+    return null;
+  if (t.start >= s.start && t.end <= s.end)
+    return null;
+  if (mode === "into" && !t.toggle)
+    mode = "after";
+  const destCd = mode === "into" ? t.cd + 1 : t.cd;
+  const moved = reprefix(lines.slice(s.start, s.end + 1), s.cd, destCd);
+  const rm = removeUnit(lines, s);
+  const shift = (i) => i > rm.removedFrom ? i - rm.removedCount : i;
+  const tStart = shift(t.start);
+  const t2 = unitAt(rm.lines, tStart);
+  if (!t2)
+    return null;
+  let at;
+  let prevToggle;
+  let nextToggle;
+  if (mode === "before") {
+    at = t2.start;
+    prevToggle = toggleEndingAt(rm.lines, at - 1, destCd);
+    nextToggle = t2.toggle;
+  } else if (mode === "after") {
+    at = t2.end + 1;
+    prevToggle = t2.toggle;
+    nextToggle = toggleStartingAt(rm.lines, at, destCd);
+  } else {
+    at = t2.end + 1;
+    prevToggle = t2.end > t2.start && toggleEndingAt(rm.lines, t2.end, destCd);
+    nextToggle = false;
+  }
+  const ins = insertBlock(rm.lines, at, moved, destCd, s.toggle, prevToggle, nextToggle);
+  let res = ins.lines;
+  if (mode === "into") {
+    const afterIdx = ins.at + moved.length;
+    const follower = res[afterIdx];
+    if (follower !== void 0 && markerDepth(follower) <= t2.cd && contentAfter(follower, t2.cd).trim() !== "") {
+      res = res.slice(0, afterIdx).concat([blankAt(t2.cd)], res.slice(afterIdx));
+    }
+  }
+  return { lines: res, at: ins.at, cd: destCd, openHeader: mode === "into" ? t2.start : -1 };
+}
+
 // src/clean-toggles-view.ts
 var setToggleOpen = import_state.StateEffect.define({
   map: (v, mapping) => ({ key: mapping.mapPos(v.key, 1), open: v.open })
@@ -651,6 +983,12 @@ var ArrowWidget = class extends import_view.WidgetType {
     el2.title = this.open ? "Close toggle" : "Open toggle";
     el2.appendChild(triangle());
     wireToggleClick(el2, view, this.key, () => !this.open);
+    el2.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || !dragHost || !dragAllowed(dragHost, view))
+        return;
+      const line = view.state.doc.lineAt(Math.min(this.key, view.state.doc.length)).number - 1;
+      startDrag(view, e, line, true);
+    });
     return el2;
   }
   ignoreEvent() {
@@ -748,7 +1086,12 @@ function compute(host, state, overrides) {
   const chip = host.moreChip ? host.moreChip() : false;
   return { decorations: import_view.Decoration.set(decorationsFor(result.plans, chip), true), overrides: result.overrides };
 }
+var dragHost = null;
+function dragAllowed(host, view) {
+  return host.enabled() && livePreviewOn(host, view.state) && (!host.blockMoves || host.blockMoves());
+}
 function cleanTogglesExtension(host) {
+  dragHost = host;
   const field = import_state.StateField.define({
     create(state) {
       return compute(host, state, /* @__PURE__ */ new Map());
@@ -813,7 +1156,13 @@ function cleanTogglesExtension(host) {
       { key: "Delete", run: (view) => deleteAtTitleEnd(view) },
       { key: "Mod-Enter", run: (view) => toggleUnderCaret(view) },
       { key: "Enter", run: (view) => enterLikeNotion(view) },
-      { key: "Space", run: (view) => tryShortcut(host, view) }
+      { key: "Space", run: (view) => tryShortcut(host, view) },
+      { key: "Tab", run: (view) => moveKey(view, "in") },
+      { key: "Shift-Tab", run: (view) => moveKey(view, "out") },
+      { key: "Mod-Shift-ArrowUp", run: (view) => moveKey(view, "up") },
+      { key: "Mod-Shift-ArrowDown", run: (view) => moveKey(view, "down") },
+      { key: "Alt-Shift-ArrowUp", run: (view) => moveKey(view, "up") },
+      { key: "Alt-Shift-ArrowDown", run: (view) => moveKey(view, "down") }
     ])
   );
   const shortcutFromInput = import_view.EditorView.inputHandler.of((view, from, to, text) => {
@@ -855,19 +1204,22 @@ function cleanTogglesExtension(host) {
         return false;
       const overrides = (_b = (_a = view.state.field(field, false)) == null ? void 0 : _a.overrides) != null ? _b : /* @__PURE__ */ new Map();
       if (openWithoutCaret(block, overrides)) {
-        view.dispatch({ changes: { from: block.headerTo, insert: "\n> " }, selection: import_state.EditorSelection.cursor(block.headerTo + 3), scrollIntoView: true, userEvent: "input" });
+        const ins = "\n" + markersFor(block.depth);
+        view.dispatch({ changes: { from: block.headerTo, insert: ins }, selection: import_state.EditorSelection.cursor(block.headerTo + ins.length), scrollIntoView: true, userEvent: "input" });
         return true;
       }
       const bold = block.boldWrap ? "**" : "";
       const head = `
-
-> [!${block.type}]- ${bold}`;
+${blankAt(block.depth - 1)}
+${markersFor(block.depth - 1)}> [!${block.type}]- ${bold}`;
       const at = Math.max(block.bodyTo, block.headerTo);
       view.dispatch({ changes: { from: at, insert: head + bold }, selection: import_state.EditorSelection.cursor(at + head.length), scrollIntoView: true, userEvent: "input" });
       return true;
     }
-    if (/^>\s*$/.test(line.text) && line.number === block.lastLine) {
-      view.dispatch({ changes: { from: line.from, to: line.to, insert: "" }, selection: import_state.EditorSelection.cursor(line.from), userEvent: "input" });
+    const cut = markerEnd(line.text, block.depth);
+    if (markerDepth(line.text) === block.depth && cut >= 0 && line.text.slice(cut).trim() === "" && line.number === block.lastLine) {
+      const out = blankAt(block.depth - 1);
+      view.dispatch({ changes: { from: line.from, to: line.to, insert: out }, selection: import_state.EditorSelection.cursor(line.from + out.length), userEvent: "input" });
       return true;
     }
     return false;
@@ -914,10 +1266,11 @@ function cleanTogglesExtension(host) {
     const block = blockOnHeader(view, sel.head);
     if (!block || sel.head !== block.titleFrom)
       return false;
-    const changes = [{ from: block.headerFrom, to: block.titleFrom }];
+    const keep = markerEnd(view.state.doc.sliceString(block.headerFrom, block.headerTo), block.depth - 1);
+    const changes = [{ from: block.headerFrom + Math.max(0, keep), to: block.titleFrom }];
     if (block.boldWrap)
       changes.push({ from: block.titleTo, to: block.headerTo });
-    view.dispatch({ changes, selection: import_state.EditorSelection.cursor(block.headerFrom), userEvent: "delete" });
+    view.dispatch({ changes, selection: import_state.EditorSelection.cursor(block.headerFrom + Math.max(0, keep)), userEvent: "delete" });
     return true;
   }
   function deleteAtTitleEnd(view) {
@@ -940,7 +1293,235 @@ function cleanTogglesExtension(host) {
     applyToggle(view, block.key, !open);
     return true;
   }
-  return [field, keepCaretVisible, keys, shortcutFromInput];
+  function moveKey(view, how) {
+    if (!host.enabled() || !livePreviewOn(host, view.state))
+      return false;
+    if (host.blockMoves && !host.blockMoves())
+      return false;
+    const sel = view.state.selection.main;
+    if (!sel.empty && view.state.doc.lineAt(sel.from).number !== view.state.doc.lineAt(sel.to).number)
+      return false;
+    return runBlockMove(view, how);
+  }
+  return [field, keepCaretVisible, keys, shortcutFromInput, blockDrag(host, field)];
+}
+function applyMove(view, before, r) {
+  var _a, _b, _c;
+  const doc = view.state.doc;
+  const text = r.lines.join("\n");
+  const old = doc.toString();
+  let a = 0;
+  while (a < old.length && a < text.length && old[a] === text[a])
+    a++;
+  let b = 0;
+  while (b < old.length - a && b < text.length - a && old[old.length - 1 - b] === text[text.length - 1 - b])
+    b++;
+  const offsetLine = r.at + (before.line - before.unitStart);
+  let pos = 0;
+  for (let i = 0; i < offsetLine && i < r.lines.length; i++)
+    pos += ((_a = r.lines[i]) != null ? _a : "").length + 1;
+  const lineText = (_b = r.lines[offsetLine]) != null ? _b : "";
+  const col = Math.max(markerEnd(lineText, r.cd) < 0 ? 0 : markerEnd(lineText, r.cd), before.col + (markerEnd(lineText, r.cd) - Math.max(0, before.oldCd)));
+  pos += Math.min(lineText.length, Math.max(0, col));
+  const effects = [];
+  if (r.openHeader >= 0) {
+    let hp = 0;
+    for (let i = 0; i < r.openHeader; i++)
+      hp += ((_c = r.lines[i]) != null ? _c : "").length + 1;
+    effects.push(setToggleOpen.of({ key: hp, open: true }));
+  }
+  view.dispatch({
+    changes: { from: a, to: old.length - b, insert: text.slice(a, text.length - b) },
+    selection: import_state.EditorSelection.cursor(pos),
+    effects,
+    scrollIntoView: true,
+    userEvent: "move"
+  });
+}
+function runBlockMove(view, how) {
+  const doc = view.state.doc;
+  const head = view.state.selection.main.head;
+  const line = doc.lineAt(head);
+  const lines = doc.toString().split("\n");
+  const n = line.number - 1;
+  const r = how === "up" ? moveUnit(lines, n, -1) : how === "down" ? moveUnit(lines, n, 1) : how === "in" ? indentUnit(lines, n) : outdentUnit(lines, n);
+  if (!r)
+    return false;
+  const unit = unitStartAndCd(lines, n);
+  const oldPrefix = markerEnd(line.text, unit.cd);
+  applyMove(view, { line: n, col: head - line.from, unitStart: unit.start, oldCd: Math.max(0, oldPrefix) }, r);
+  return true;
+}
+function unitStartAndCd(lines, n) {
+  var _a, _b;
+  const u = unitAt(lines, n);
+  return { start: (_a = u == null ? void 0 : u.start) != null ? _a : n, cd: (_b = u == null ? void 0 : u.cd) != null ? _b : 0 };
+}
+function blockDrag(host, _field) {
+  return import_view.EditorView.domEventHandlers({
+    pointerdown(e, view) {
+      if (!dragAllowed(host, view) || e.button !== 0)
+        return false;
+      const onArrow = false;
+      const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+      if (pos === null)
+        return false;
+      startDrag(view, e, view.state.doc.lineAt(pos).number - 1, onArrow);
+      return false;
+    }
+  });
+}
+function startDrag(view, down, srcLine, onArrow) {
+  const x0 = down.clientX;
+  const y0 = down.clientY;
+  let active = false;
+  let ghost = null;
+  let marker = null;
+  let drop = null;
+  const holdMs = down.pointerType === "mouse" ? 450 : 400;
+  const timer = window.setTimeout(() => begin(), holdMs);
+  function begin() {
+    var _a;
+    if (active)
+      return;
+    active = true;
+    const lines = view.state.doc.toString().split("\n");
+    const u = unitAt(lines, srcLine);
+    if (!u || u.blank)
+      return cleanup();
+    view.dom.classList.add("ntt-dragging");
+    ghost = document.createElement("div");
+    ghost.className = "ntt-drag-ghost";
+    const first = (_a = lines[u.start]) != null ? _a : "";
+    ghost.textContent = first.replace(/^(?:>[ \t]*)*(\[![^\]]+\][+-]\s*)?/, "").replace(/\*\*/g, "") || " ";
+    document.body.appendChild(ghost);
+    marker = document.createElement("div");
+    marker.className = "ntt-drop-marker";
+    document.body.appendChild(marker);
+    if (navigator.vibrate)
+      try {
+        navigator.vibrate(10);
+      } catch (e) {
+      }
+  }
+  function move(e) {
+    if (!active) {
+      const moved = Math.hypot(e.clientX - x0, e.clientY - y0);
+      if (onArrow && moved > 5)
+        begin();
+      else if (moved > 8)
+        return cleanup();
+      if (!active)
+        return;
+    }
+    e.preventDefault();
+    if (ghost) {
+      ghost.style.left = `${e.clientX + 8}px`;
+      ghost.style.top = `${e.clientY - 12}px`;
+    }
+    drop = dropTarget(view, e.clientX, e.clientY);
+    paintMarker(view, marker, drop);
+  }
+  function up(e) {
+    var _a, _b, _c;
+    const wasActive = active;
+    const d = drop;
+    cleanup();
+    if (!wasActive)
+      return;
+    const eat = (c) => {
+      c.preventDefault();
+      c.stopPropagation();
+    };
+    window.addEventListener("click", eat, { capture: true, once: true });
+    window.setTimeout(() => window.removeEventListener("click", eat, true), 400);
+    if (!d)
+      return;
+    e.preventDefault();
+    const lines = view.state.doc.toString().split("\n");
+    const r = dropUnit(lines, srcLine, d.line, d.mode);
+    if (!r)
+      return;
+    const u = unitAt(lines, srcLine);
+    const line = view.state.doc.line(srcLine + 1);
+    const start = (_a = u == null ? void 0 : u.start) != null ? _a : srcLine;
+    applyMove(view, { line: start, col: markerEnd(line.text, (_b = u == null ? void 0 : u.cd) != null ? _b : 0), unitStart: start, oldCd: Math.max(0, markerEnd(line.text, (_c = u == null ? void 0 : u.cd) != null ? _c : 0)) }, r);
+    view.focus();
+  }
+  function stopTouch(e) {
+    if (active)
+      e.preventDefault();
+  }
+  function noMenu(e) {
+    if (active)
+      e.preventDefault();
+  }
+  function cleanup() {
+    window.clearTimeout(timer);
+    active = false;
+    ghost == null ? void 0 : ghost.remove();
+    marker == null ? void 0 : marker.remove();
+    ghost = marker = null;
+    view.dom.classList.remove("ntt-dragging");
+    window.removeEventListener("pointermove", move, true);
+    window.removeEventListener("pointerup", up, true);
+    window.removeEventListener("pointercancel", cleanup, true);
+    window.removeEventListener("touchmove", stopTouch, true);
+    window.removeEventListener("contextmenu", noMenu, true);
+  }
+  window.addEventListener("pointermove", move, true);
+  window.addEventListener("pointerup", up, true);
+  window.addEventListener("pointercancel", cleanup, true);
+  window.addEventListener("touchmove", stopTouch, { capture: true, passive: false });
+  window.addEventListener("contextmenu", noMenu, true);
+}
+function dropTarget(view, x, y) {
+  const rect = view.contentDOM.getBoundingClientRect();
+  const pos = view.posAtCoords({ x: Math.max(rect.left + 4, Math.min(x, rect.right - 4)), y });
+  if (pos === null)
+    return null;
+  const line = view.state.doc.lineAt(pos);
+  const lines = view.state.doc.toString().split("\n");
+  const u = unitAt(lines, line.number - 1);
+  if (!u)
+    return null;
+  const block = view.lineBlockAt(line.from);
+  const top = view.documentTop + block.top;
+  const frac = (y - top) / Math.max(1, block.height);
+  if (u.toggle && line.number - 1 === u.start) {
+    if (frac < 0.25)
+      return { line: u.start, mode: "before" };
+    if (frac > 0.75)
+      return { line: u.start, mode: "after" };
+    return { line: u.start, mode: "into" };
+  }
+  return { line: line.number - 1, mode: frac < 0.5 ? "before" : "after" };
+}
+function paintMarker(view, el2, d) {
+  if (!el2)
+    return;
+  if (!d) {
+    el2.style.display = "none";
+    return;
+  }
+  const lines = view.state.doc.toString().split("\n");
+  const u = unitAt(lines, d.line);
+  const rect = view.contentDOM.getBoundingClientRect();
+  const first = view.lineBlockAt(view.state.doc.line(d.line + 1).from);
+  const lastLine = d.mode === "after" && u ? u.end : d.line;
+  const last = view.lineBlockAt(view.state.doc.line(Math.min(lastLine + 1, view.state.doc.lines)).from);
+  el2.style.display = "block";
+  el2.style.left = `${rect.left}px`;
+  el2.style.width = `${rect.width}px`;
+  el2.classList.toggle("is-into", d.mode === "into");
+  if (d.mode === "into") {
+    el2.style.top = `${view.documentTop + first.top}px`;
+    el2.style.height = `${first.height}px`;
+  } else {
+    const yy = d.mode === "before" ? view.documentTop + first.top : view.documentTop + last.bottom;
+    el2.style.top = `${yy - 1}px`;
+    el2.style.height = "2px";
+  }
 }
 function tryShortcut(host, view) {
   if (!host.shortcutEnabled())
@@ -961,7 +1542,8 @@ var DEFAULT_NOTION_WRITING = {
   notionShortcut: true,
   convertDetailsOnPaste: true,
   detailsNudge: true,
-  cleanMoreChip: false
+  cleanMoreChip: false,
+  blockMoves: true
 };
 var NOTION_LOOK_CLASS = "ntt-notion-look";
 function calloutMode(plugin) {
@@ -1050,9 +1632,28 @@ function installNotionWriting(plugin) {
       shortcutEnabled: () => plugin.settings.notionShortcut && calloutMode(plugin),
       insertToggleFromShortcut: (view) => insertToggleFromShortcut(plugin, view),
       moreChip: () => plugin.settings.cleanMoreChip,
-      autoContinue: () => plugin.settings.autoContinue
+      autoContinue: () => plugin.settings.autoContinue,
+      blockMoves: () => plugin.settings.blockMoves !== false
     })
   );
+  const moves = [
+    ["up", "move-block-up", "Move block up", "arrow-up"],
+    ["down", "move-block-down", "Move block down", "arrow-down"],
+    ["in", "shove-into-toggle", "Put block inside the toggle above", "indent"],
+    ["out", "move-out-of-toggle", "Move block out of its toggle", "outdent"]
+  ];
+  for (const [how, id, name, icon] of moves) {
+    plugin.addCommand({
+      id,
+      name,
+      icon,
+      editorCallback: (editor) => {
+        const cm = editor.cm;
+        if (!cm || !runBlockMove(cm, how))
+          new import_obsidian.Notice(how === "in" ? "There is no toggle right above this line." : "Nothing to move here.");
+      }
+    });
+  }
   plugin.registerEvent(
     plugin.app.workspace.on("editor-paste", (evt, editor) => {
       var _a, _b;
@@ -1140,6 +1741,15 @@ function renderNotionWritingSettings(containerEl, plugin) {
     toggle.setValue(plugin.settings.detailsNudge);
     toggle.onChange(async (value) => {
       plugin.settings.detailsNudge = value;
+      await save();
+    });
+  });
+  new import_obsidian.Setting(containerEl).setName("Rearrange and shove into toggles").setDesc(
+    "Like Notion: press and hold a line (or drag a toggle's arrow) to move it \u2014 let go on a toggle to put it inside. Tab puts a line inside the toggle above, Shift+Tab takes it out, Ctrl/Cmd+Shift+\u2191/\u2193 moves it."
+  ).addToggle((toggle) => {
+    toggle.setValue(plugin.settings.blockMoves !== false);
+    toggle.onChange(async (value) => {
+      plugin.settings.blockMoves = value;
       await save();
     });
   });

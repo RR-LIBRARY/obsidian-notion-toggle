@@ -174,6 +174,7 @@ describe("v1.8.0 notion writing — install", () => {
 
   test("defaults: everything on (the whole point of the release)", () => {
     expect(DEFAULT_NOTION_WRITING).toEqual({
+      blockMoves: true,
       cleanEditing: true,
       notionLook: true,
       notionShortcut: true,
@@ -387,11 +388,13 @@ describe("v1.8.0 notion writing — settings section", () => {
         "Convert pasted <details> automatically",
         "Offer to convert old notes",
         "Show “…” after a closed title",
+        "Rearrange and shove into toggles",
       ])
     );
     const toggles = Array.from(root.querySelectorAll(".checkbox-container"));
-    expect(toggles.length).toBe(6);
-    expect(toggles[5].classList.contains("is-enabled")).toBe(false);
+    expect(toggles.length).toBe(7);
+    expect(toggles[5].classList.contains("is-enabled")).toBe(true);
+    expect(toggles[6].classList.contains("is-enabled")).toBe(false);
     expect(toggles[0].classList.contains("is-enabled")).toBe(true);
     expect(toggles[2].classList.contains("is-enabled")).toBe(false);
   });
