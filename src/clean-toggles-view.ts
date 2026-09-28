@@ -24,6 +24,7 @@ import {
 } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, keymap, type DecorationSet } from "@codemirror/view";
 import {
+  afterTitle,
   findBlockAt,
   isOpen,
   isShortcutTrigger,
@@ -281,6 +282,7 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
     keymap.of([
       { key: "End", run: (view) => endOfTitle(view, false) },
       { key: "Shift-End", run: (view) => endOfTitle(view, true) },
+      { key: "ArrowRight", run: (view) => rightFromTitleEnd(view) },
       { key: "Backspace", run: (view) => backspaceAtTitleStart(view) },
       { key: "Delete", run: (view) => deleteAtTitleEnd(view) },
       { key: "Mod-Enter", run: (view) => toggleUnderCaret(view) },
@@ -314,6 +316,25 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
       scrollIntoView: true,
       userEvent: "select",
     });
+    return true;
+  }
+
+  /**
+   * v1.8.3 — Right at the end of a title whose tail is hidden (closing `**` or a
+   * folded body). Letting CodeMirror move by character here depends on DOM
+   * measurement around the hidden range and sometimes leaves the caret stuck.
+   */
+  function rightFromTitleEnd(view: EditorView): boolean {
+    const sel = view.state.selection.main;
+    if (!sel.empty) return false;
+    const block = blockOnHeader(view, sel.head);
+    if (!block || sel.head !== block.titleTo) return false;
+    const overrides = view.state.field(field, false)?.overrides ?? new Map();
+    const folded = !openWithoutCaret(block, overrides) && block.bodyTo > block.headerTo;
+    if (!folded && !block.boldWrap) return false;
+    const target = afterTitle(view.state.doc, block, overrides);
+    if (target === sel.head) return false;
+    view.dispatch({ selection: EditorSelection.cursor(target), scrollIntoView: true, userEvent: "select" });
     return true;
   }
 

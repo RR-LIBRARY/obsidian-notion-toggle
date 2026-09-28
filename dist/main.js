@@ -808,6 +808,7 @@ function cleanTogglesExtension(host) {
     import_view.keymap.of([
       { key: "End", run: (view) => endOfTitle(view, false) },
       { key: "Shift-End", run: (view) => endOfTitle(view, true) },
+      { key: "ArrowRight", run: (view) => rightFromTitleEnd(view) },
       { key: "Backspace", run: (view) => backspaceAtTitleStart(view) },
       { key: "Delete", run: (view) => deleteAtTitleEnd(view) },
       { key: "Mod-Enter", run: (view) => toggleUnderCaret(view) },
@@ -844,6 +845,24 @@ function cleanTogglesExtension(host) {
       scrollIntoView: true,
       userEvent: "select"
     });
+    return true;
+  }
+  function rightFromTitleEnd(view) {
+    var _a, _b;
+    const sel = view.state.selection.main;
+    if (!sel.empty)
+      return false;
+    const block = blockOnHeader(view, sel.head);
+    if (!block || sel.head !== block.titleTo)
+      return false;
+    const overrides = (_b = (_a = view.state.field(field, false)) == null ? void 0 : _a.overrides) != null ? _b : /* @__PURE__ */ new Map();
+    const folded = !openWithoutCaret(block, overrides) && block.bodyTo > block.headerTo;
+    if (!folded && !block.boldWrap)
+      return false;
+    const target = afterTitle(view.state.doc, block, overrides);
+    if (target === sel.head)
+      return false;
+    view.dispatch({ selection: import_state.EditorSelection.cursor(target), scrollIntoView: true, userEvent: "select" });
     return true;
   }
   function backspaceAtTitleStart(view) {

@@ -2,6 +2,11 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.8.3 — 2026-09-28 — Real-browser E2E + Right-arrow fix
+
+- Fix: Right at the end of a bold or closed title sometimes left the caret stuck; it now always moves to the first body character (open) or the line after the toggle (closed).
+- New real-browser E2E suite (`e2e/`): Chromium at phone width drives the shipped clean-editing code — no visible `**`/`[!question]`/`>`, End+type, Ctrl/Cmd+Enter, Right/Home/Delete/Backspace, arrow tap, hanging indent, chip setting, `>` + space. 22/22 checks; runs in GitHub Actions on every push.
+
 ## 1.8.2 — 2026-09-28 — Bold titles without `**`, hanging indent, quieter header
 
 ### Fixed

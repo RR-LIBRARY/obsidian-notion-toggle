@@ -305,7 +305,7 @@ export interface CaretMove {
 }
 
 /** The first visible spot after a title, or the title end when there is none. */
-function afterTitle(doc: DocLike, block: ToggleBlock, overrides: OverrideMap): number {
+export function afterTitle(doc: DocLike, block: ToggleBlock, overrides: OverrideMap): number {
   const docEnd = doc.line(doc.lines).to;
   const hasBody = block.bodyTo > block.headerTo;
   if (hasBody && openWithoutCaret(block, overrides)) return block.bodyPrefixes[0]?.to ?? block.titleTo;
