@@ -67,6 +67,18 @@ async def main():
         bodies = await page.locator(".cm-line.ntt-clean-body").all_inner_texts()
         check("body lines have no visible '> '", bodies and all(not t.startswith(">") for t in bodies), str(bodies))
 
+        # 4b Notion look: small triangle, body text starts under title text, no guide line
+        svg = await page.locator(".ntt-clean-arrow svg").first.bounding_box()
+        check("triangle is small (Notion size)", svg and svg["width"] <= 13, str(svg))
+        title_x = await page.evaluate("wb.view.coordsAtPos(wb.lineFrom(2) + wb.lineText(2).indexOf('Q1')).left")
+        body_x = await page.evaluate("wb.view.coordsAtPos(wb.lineFrom(3) + 2).left")
+        check("body text aligned under title text", abs(title_x - body_x) <= 3, f"{title_x} vs {body_x}")
+        c = await page.evaluate("(() => { const a=document.querySelector('.ntt-clean-arrow svg').getBoundingClientRect(); const t=wb.view.coordsAtPos(wb.lineFrom(2) + wb.lineText(2).indexOf('Q1')); return [(a.top+a.bottom)/2, (t.top+t.bottom)/2] })()")
+        check("triangle centred on title text", abs(c[0] - c[1]) <= 2.5, str(c))
+        border = await page.locator(".cm-line.ntt-clean-body").first.evaluate("e => getComputedStyle(e).borderLeftStyle")
+        check("no body guide line", border == "none", border)
+        await page.screenshot(path=str(SHOTS / "4_open.png"))
+
         # 5 Right from title end goes to first body char (after hidden '> ')
         await put_on_title_end(page)
         await page.keyboard.press("ArrowRight")

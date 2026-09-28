@@ -2,6 +2,14 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.8.4 — 2026-09-28 — Closer to the Notion / Lovable FAQ look
+
+With "Plain Notion look" on, the editing view now matches the reference accordion:
+- small solid triangle (same big tap target), centred on the title text, no hover box,
+- medium-weight title instead of heavy bold,
+- body text starts exactly under the title text, no guide line.
+E2E grew to 26 real-browser checks (size, centring, alignment, no guide line).
+
 ## 1.8.3 — 2026-09-28 — Real-browser E2E + Right-arrow fix
 
 - Fix: Right at the end of a bold or closed title sometimes left the caret stuck; it now always moves to the first body character (open) or the line after the toggle (closed).

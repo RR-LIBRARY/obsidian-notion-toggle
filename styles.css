@@ -1681,6 +1681,22 @@ body.ntt-focus-run .workspace-drawer-backdrop {
 .ntt-clean-arrow:hover { background-color: var(--background-modifier-hover); }
 .is-mobile .ntt-clean-arrow { width: 1.9em; height: 1.9em; }
 
+
+/* v1.8.4 — closer to the Notion / Lovable FAQ look (measured against the
+   reference video): a small solid triangle inside the same tap target,
+   medium-weight title, and body text that starts exactly under the title
+   text with no guide line. */
+body.ntt-notion-look .ntt-clean-arrow svg { width: 0.72em; height: 0.72em; }
+body.ntt-notion-look .ntt-clean-arrow:hover { background-color: transparent; }
+body.ntt-notion-look .ntt-clean-arrow { height: 1.2em; vertical-align: -0.05em; }
+body.ntt-notion-look .cm-line.ntt-clean-header.ntt-clean-bold { font-weight: var(--font-medium, 500); }
+body.ntt-notion-look .markdown-source-view.mod-cm6 .cm-line.ntt-clean-body {
+  margin-inline-start: 0;
+  padding-inline-start: 1.8em !important;
+  border-inline-start: none !important;
+}
+body.ntt-notion-look.is-mobile .markdown-source-view.mod-cm6 .cm-line.ntt-clean-body { padding-inline-start: 2.2em !important; }
+
 /* the "…" chip standing in for a folded body */
 .ntt-clean-more {
   display: inline-block;
