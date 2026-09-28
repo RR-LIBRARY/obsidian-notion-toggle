@@ -812,6 +812,7 @@ function cleanTogglesExtension(host) {
       { key: "Backspace", run: (view) => backspaceAtTitleStart(view) },
       { key: "Delete", run: (view) => deleteAtTitleEnd(view) },
       { key: "Mod-Enter", run: (view) => toggleUnderCaret(view) },
+      { key: "Enter", run: (view) => enterLikeNotion(view) },
       { key: "Space", run: (view) => tryShortcut(host, view) }
     ])
   );
@@ -829,6 +830,46 @@ function cleanTogglesExtension(host) {
     const line = view.state.doc.lineAt(head);
     const block = findBlockAt(view.state.doc, line.number);
     return block && block.headerLine === line.number ? block : null;
+  }
+  function enterLikeNotion(view) {
+    var _a, _b;
+    if (host.autoContinue && !host.autoContinue())
+      return false;
+    if (!host.enabled() || !livePreviewOn(host, view.state))
+      return false;
+    const sel = view.state.selection.main;
+    if (!sel.empty)
+      return false;
+    const doc = view.state.doc;
+    const line = doc.lineAt(sel.head);
+    const block = findBlockAt(doc, line.number);
+    if (!block)
+      return false;
+    if (block.headerLine === line.number) {
+      const titleText = doc.sliceString(block.titleFrom, block.titleTo).replace(/\*/g, "").trim();
+      if (!titleText) {
+        view.dispatch({ changes: { from: line.from, to: line.to, insert: "" }, selection: import_state.EditorSelection.cursor(line.from), userEvent: "input" });
+        return true;
+      }
+      if (sel.head < block.titleTo)
+        return false;
+      const overrides = (_b = (_a = view.state.field(field, false)) == null ? void 0 : _a.overrides) != null ? _b : /* @__PURE__ */ new Map();
+      if (openWithoutCaret(block, overrides)) {
+        view.dispatch({ changes: { from: block.headerTo, insert: "\n> " }, selection: import_state.EditorSelection.cursor(block.headerTo + 3), scrollIntoView: true, userEvent: "input" });
+        return true;
+      }
+      const bold = block.boldWrap ? "**" : "";
+      const head = `
+> [!${block.type}]- ${bold}`;
+      const at = Math.max(block.bodyTo, block.headerTo);
+      view.dispatch({ changes: { from: at, insert: head + bold }, selection: import_state.EditorSelection.cursor(at + head.length), scrollIntoView: true, userEvent: "input" });
+      return true;
+    }
+    if (/^>\s*$/.test(line.text) && line.number === block.lastLine) {
+      view.dispatch({ changes: { from: line.from, to: line.to, insert: "" }, selection: import_state.EditorSelection.cursor(line.from), userEvent: "input" });
+      return true;
+    }
+    return false;
   }
   function endOfTitle(view, extend) {
     var _a, _b;
@@ -1007,7 +1048,8 @@ function installNotionWriting(plugin) {
       enabled: () => plugin.settings.cleanEditing && calloutMode(plugin),
       shortcutEnabled: () => plugin.settings.notionShortcut && calloutMode(plugin),
       insertToggleFromShortcut: (view) => insertToggleFromShortcut(plugin, view),
-      moreChip: () => plugin.settings.cleanMoreChip
+      moreChip: () => plugin.settings.cleanMoreChip,
+      autoContinue: () => plugin.settings.autoContinue
     })
   );
   plugin.registerEvent(

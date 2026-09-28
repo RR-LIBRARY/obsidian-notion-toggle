@@ -154,6 +154,22 @@ async def main():
         await page.evaluate("wb.set(0)")
         check("untouched blocks undecorated", await page.locator(".ntt-clean-header").count() == 0)
 
+        # 16 Notion Enter: closed title -> next closed toggle after the body
+        await fresh(page)
+        await put_on_title_end(page)
+        await page.keyboard.press("Enter")
+        await page.keyboard.type("Q2 next")
+        l5 = await page.evaluate("wb.lineText(5)")
+        check("Enter on closed title makes next toggle", l5.startswith("> [!question]-") and "Q2 next" in l5, l5)
+        check("old body untouched", (await page.evaluate("wb.lineText(3)")).startswith("> **Answer"))
+        # 17 Enter on empty new title -> plain line
+        await page.keyboard.press("End")
+        await page.keyboard.press("Enter")
+        await page.keyboard.press("Enter")
+        l5 = await page.evaluate("wb.lineText(6)")
+        check("Enter on empty toggle gives plain line", "[!" not in l5, l5)
+        await page.screenshot(path=str(SHOTS / "16_enter.png"))
+
         check("no page errors", not errors, "; ".join(errors))
         await b.close()
 

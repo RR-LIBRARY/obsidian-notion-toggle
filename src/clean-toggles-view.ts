@@ -47,6 +47,8 @@ export interface CleanTogglesHost {
   insertToggleFromShortcut(view: EditorView): boolean;
   /** v1.8.2 setting: show a "…" chip after a closed title? (default off — Notion shows nothing). */
   moreChip?(): boolean;
+  /** v1.8.7 setting: Notion-style Enter on toggles (default on). */
+  autoContinue?(): boolean;
 }
 
 /** Click on the arrow / the "…" chip: remember the choice for this block. */
@@ -286,6 +288,7 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
       { key: "Backspace", run: (view) => backspaceAtTitleStart(view) },
       { key: "Delete", run: (view) => deleteAtTitleEnd(view) },
       { key: "Mod-Enter", run: (view) => toggleUnderCaret(view) },
+      { key: "Enter", run: (view) => enterLikeNotion(view) },
       { key: "Space", run: (view) => tryShortcut(host, view) },
     ])
   );
@@ -302,6 +305,47 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
     const line = view.state.doc.lineAt(head);
     const block = findBlockAt(view.state.doc, line.number);
     return block && block.headerLine === line.number ? block : null;
+  }
+
+  /**
+   * v1.8.7 — Enter like Notion:
+   *  - empty title            -> the toggle becomes a plain line
+   *  - closed toggle title    -> a new closed toggle right after this one
+   *  - open toggle title      -> a new line inside the toggle
+   *  - empty last body line   -> leave the toggle (plain line)
+   */
+  function enterLikeNotion(view: EditorView): boolean {
+    if (host.autoContinue && !host.autoContinue()) return false;
+    if (!host.enabled() || !livePreviewOn(host, view.state)) return false;
+    const sel = view.state.selection.main;
+    if (!sel.empty) return false;
+    const doc = view.state.doc;
+    const line = doc.lineAt(sel.head);
+    const block = findBlockAt(doc, line.number);
+    if (!block) return false;
+    if (block.headerLine === line.number) {
+      const titleText = doc.sliceString(block.titleFrom, block.titleTo).replace(/\*/g, "").trim();
+      if (!titleText) {
+        view.dispatch({ changes: { from: line.from, to: line.to, insert: "" }, selection: EditorSelection.cursor(line.from), userEvent: "input" });
+        return true;
+      }
+      if (sel.head < block.titleTo) return false; // mid-title: default split
+      const overrides = view.state.field(field, false)?.overrides ?? new Map();
+      if (openWithoutCaret(block, overrides)) {
+        view.dispatch({ changes: { from: block.headerTo, insert: "\n> " }, selection: EditorSelection.cursor(block.headerTo + 3), scrollIntoView: true, userEvent: "input" });
+        return true;
+      }
+      const bold = block.boldWrap ? "**" : "";
+      const head = `\n> [!${block.type}]- ${bold}`;
+      const at = Math.max(block.bodyTo, block.headerTo);
+      view.dispatch({ changes: { from: at, insert: head + bold }, selection: EditorSelection.cursor(at + head.length), scrollIntoView: true, userEvent: "input" });
+      return true;
+    }
+    if (/^>\s*$/.test(line.text) && line.number === block.lastLine) {
+      view.dispatch({ changes: { from: line.from, to: line.to, insert: "" }, selection: EditorSelection.cursor(line.from), userEvent: "input" });
+      return true;
+    }
+    return false;
   }
 
   function endOfTitle(view: EditorView, extend: boolean): boolean {

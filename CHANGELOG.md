@@ -2,6 +2,10 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.8.7
+
+- Enter like Notion: on a closed toggle title it starts the next toggle; on an empty toggle it turns into a plain line; on an open title it goes inside.
+
 ## 1.8.6
 
 - Arrow tuned to the Notion app: smaller solid triangle, normal-weight title.
