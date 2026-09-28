@@ -78,7 +78,7 @@ function triangle(): SVGSVGElement {
   svg.setAttribute("viewBox", "0 0 16 16");
   svg.setAttribute("aria-hidden", "true");
   const path = document.createElementNS(ns, "path");
-  path.setAttribute("d", "M4.5 2.5 L13 8 L4.5 13.5 Z");
+  path.setAttribute("d", "M4.4 1.6 L14.6 8 L4.4 14.4 Z");
   path.setAttribute("fill", "currentColor");
   svg.appendChild(path);
   return svg;

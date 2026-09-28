@@ -2,6 +2,11 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.8.10
+
+- Arrow direction fixed: closed toggles always show ▶, open ones ▼. On the phone some closed toggles showed ▲ because Obsidian turned the arrow a second time.
+- Arrow shape is now the Notion triangle (solid, slightly wider), the same while reading and while editing.
+
 ## 1.8.9
 
 **Rearrange + shove into toggle, like Notion.**

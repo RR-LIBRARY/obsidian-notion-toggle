@@ -1870,3 +1870,18 @@ body.ntt-notion-look .callout.is-collapsible .callout-title-inner { font-weight:
   opacity: 0.6;
 }
 .ntt-drop-marker.is-into { opacity: 0.18; border-radius: var(--radius-s, 4px); }
+
+/* v1.8.10 — arrow direction always right: ▶ closed, ▼ open. Obsidian (and some
+   themes / the mobile app) also rotate the fold element or its svg; that extra
+   turn made closed toggles point up (▲). Only our triangle turns now. */
+body.ntt-notion-look .callout.is-collapsible .callout-fold,
+body.ntt-notion-look .callout.is-collapsible .callout-fold.is-collapsed,
+body.ntt-notion-look .callout.is-collapsible .callout-fold svg { transform: none !important; rotate: none !important; }
+body.ntt-notion-look .callout.is-collapsible .callout-fold::before {
+  clip-path: polygon(15% 5%, 95% 50%, 15% 95%);
+  transform: rotate(90deg) !important;
+}
+body.ntt-notion-look .callout.is-collapsible.is-collapsed .callout-fold::before,
+body.ntt-notion-look .callout.is-collapsible .callout-fold.is-collapsed::before { transform: rotate(0deg) !important; }
+body.ntt-notion-look .ntt-clean-arrow svg { transform: none; }
+body.ntt-notion-look .ntt-clean-arrow.is-open svg { transform: rotate(90deg); }

@@ -228,6 +228,13 @@ async def main():
         check("nested title steps in, its body under it", xi - xo > 15 and abs(xb - xi) <= 3, f"{xo} {xi} {xb}")
         await page.screenshot(path=str(SHOTS / "22_nested.png"))
 
+        # 23 v1.8.10 rendered callout arrow: ▶ closed, ▼ open, even when Obsidian rotates the fold itself
+        html = '<div class="callout is-collapsible is-collapsed" data-callout="question"><div class="callout-title"><div class="callout-fold is-collapsed" style="transform:rotate(-90deg)"><svg></svg></div><div class="callout-title-inner">Q</div></div></div><div class="callout is-collapsible" data-callout="question"><div class="callout-title"><div class="callout-fold"><svg></svg></div><div class="callout-title-inner">Q</div></div></div>'
+        await page.evaluate("h => document.body.insertAdjacentHTML('beforeend', h)", html)
+        rots = await page.evaluate("[...document.querySelectorAll('.callout-fold')].map(f => [getComputedStyle(f).transform, getComputedStyle(f, '::before').transform])")
+        check("closed callout arrow points right", rots[0][0] == "none" and rots[0][1] in ("none", "matrix(1, 0, 0, 1, 0, 0)"), str(rots))
+        check("open callout arrow points down", rots[1][0] == "none" and rots[1][1].startswith("matrix(0") or "6.12" in rots[1][1], str(rots))
+
         check("no page errors", not errors, "; ".join(errors))
         await b.close()
 
