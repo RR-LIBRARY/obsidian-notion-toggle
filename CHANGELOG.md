@@ -1,3 +1,8 @@
+## 1.8.21
+
+- Fix (phone): typing a toggle title with an Android keyboard went into the grey "Toggle" hint, so the title looked grey and the plugin saw an empty title. Enter then turned the toggle into a plain line and depth jumped around. The hint is now drawn by the line itself (can't receive typing), and Enter reads any word still being composed before deciding.
+- New browser replay of the user's Notion video (phone keyboard, 360px): what is my Name → Answer → Anuj builds the same tree as Notion.
+
 ## 1.8.20
 
 - Automatic releases: pushing a version tag (e.g. `1.8.20`) now creates the GitHub release and attaches `manifest.json`, `main.js` and `styles.css` for BRAT — no manual step.

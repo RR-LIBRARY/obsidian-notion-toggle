@@ -151,29 +151,6 @@ class MoreWidget extends WidgetType {
   }
 }
 
-/** v1.8.13 — grey "Toggle" hint on an empty title, like Notion's placeholder. Not a target: taps go to the editor. */
-class PlaceholderWidget extends WidgetType {
-  constructor(readonly key: number) {
-    super();
-  }
-
-  override eq(other: PlaceholderWidget): boolean {
-    return other.key === this.key;
-  }
-
-  override toDOM(): HTMLElement {
-    const el = document.createElement("span");
-    el.className = "ntt-clean-placeholder";
-    el.textContent = "Toggle";
-    el.setAttribute("aria-hidden", "true");
-    return el;
-  }
-
-  override ignoreEvent(): boolean {
-    return false;
-  }
-}
-
 /**
  * Open / close a block from a widget. `mousedown` is swallowed so the caret and
  * focus stay where they are; the actual flip happens on click (works for taps).
@@ -237,6 +214,21 @@ export function applyToggle(view: EditorView, key: number, open: boolean): void 
   view.focus();
 }
 
+/**
+ * v1.8.21 — Android keyboards press Enter while a word is still being composed.
+ * Read pending DOM text into the document first, so the title Enter sees what
+ * the writer actually typed (otherwise a typed title counts as empty).
+ */
+export function flushComposition(view: EditorView): void {
+  try {
+    const obs = (view as unknown as { observer?: { forceFlush?: () => void; flush?: () => void } }).observer;
+    if (obs?.forceFlush) obs.forceFlush();
+    else obs?.flush?.();
+  } catch {
+    /* best effort */
+  }
+}
+
 /* ---------- plans → decorations ---------- */
 
 /** Ranges (unsorted) for a list of plans — exported so tests can inspect them. */
@@ -264,7 +256,11 @@ export function decorationsFor(plans: CleanPlan[], moreChip = true): Range<Decor
         );
         break;
       case "placeholder":
-        out.push(Decoration.widget({ widget: new PlaceholderWidget(p.key), side: 1 }).range(p.pos));
+        // v1.8.21 — a line class + CSS ::after instead of an inline widget. Phone
+        // keyboards (Gboard composition) typed *into* the widget span, so the
+        // title looked grey and the editor still saw an empty title: Enter then
+        // turned the toggle into a plain line (seen in the user's video).
+        out.push(Decoration.line({ class: "ntt-clean-empty-title" }).range(p.key));
         break;
     }
   }
@@ -445,6 +441,7 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
    */
   function enterLikeNotion(view: EditorView): boolean {
     if (host.autoContinue && !host.autoContinue()) return false;
+    flushComposition(view);
     if (!host.enabled() || !livePreviewOn(host, view.state)) return false;
     const sel = view.state.selection.main;
     if (!sel.empty) return false;

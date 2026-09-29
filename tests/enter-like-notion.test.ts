@@ -127,7 +127,7 @@ describe("v1.8.13 Enter like the Notion app — through the real keymap", () => 
     expect(h.state.selection.main.head).toBe(caretLine(h).to);
     const w = widgets(h.state);
     expect(w.filter((x) => x.name === "ArrowWidget").map((a) => a.open)).toEqual([true, false]); // outer open, inner closed
-    expect(w.some((x) => x.name === "PlaceholderWidget")).toBe(true); // grey "Toggle" hint on the inner title
+    expect(w.some((x) => x.name === "PlaceholderWidget")).toBe(false); // 1.8.21: hint is a line class (IME-safe), never an inline widget
     expect(w.some((x) => x.name === "MoreWidget")).toBe(false);
   });
 

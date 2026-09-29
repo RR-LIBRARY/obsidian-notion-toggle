@@ -1683,6 +1683,12 @@ body.ntt-focus-run .workspace-drawer-backdrop {
 
 /* v1.8.13 — grey "Toggle" hint on an empty title (Notion shows the same). Sits
    after the caret, never catches taps, gone as soon as a letter is typed. */
+/* v1.8.21 — drawn with ::after on the line, never an editable span (IME-safe). */
+.cm-line.ntt-clean-empty-title::after {
+  content: "Toggle";
+  color: var(--text-faint);
+  pointer-events: none;
+}
 .ntt-clean-placeholder {
   color: var(--text-faint);
   pointer-events: none;

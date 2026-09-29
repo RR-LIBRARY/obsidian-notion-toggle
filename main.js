@@ -1102,25 +1102,6 @@ var MoreWidget = class extends import_view.WidgetType {
     return true;
   }
 };
-var PlaceholderWidget = class extends import_view.WidgetType {
-  constructor(key) {
-    super();
-    this.key = key;
-  }
-  eq(other) {
-    return other.key === this.key;
-  }
-  toDOM() {
-    const el2 = document.createElement("span");
-    el2.className = "ntt-clean-placeholder";
-    el2.textContent = "Toggle";
-    el2.setAttribute("aria-hidden", "true");
-    return el2;
-  }
-  ignoreEvent() {
-    return false;
-  }
-};
 function wireToggleClick(el2, view, key, nextOpen) {
   let tap = null;
   let flippedAt = 0;
@@ -1177,6 +1158,17 @@ function applyToggle(view, key, open) {
   view.dispatch(spec);
   view.focus();
 }
+function flushComposition(view) {
+  var _a;
+  try {
+    const obs = view.observer;
+    if (obs == null ? void 0 : obs.forceFlush)
+      obs.forceFlush();
+    else
+      (_a = obs == null ? void 0 : obs.flush) == null ? void 0 : _a.call(obs);
+  } catch (e) {
+  }
+}
 function decorationsFor(plans, moreChip = true) {
   const out = [];
   for (const p of plans) {
@@ -1201,7 +1193,7 @@ function decorationsFor(plans, moreChip = true) {
         );
         break;
       case "placeholder":
-        out.push(import_view.Decoration.widget({ widget: new PlaceholderWidget(p.key), side: 1 }).range(p.pos));
+        out.push(import_view.Decoration.line({ class: "ntt-clean-empty-title" }).range(p.key));
         break;
     }
   }
@@ -1352,6 +1344,7 @@ function cleanTogglesExtension(host) {
     var _a, _b;
     if (host.autoContinue && !host.autoContinue())
       return false;
+    flushComposition(view);
     if (!host.enabled() || !livePreviewOn(host, view.state))
       return false;
     const sel = view.state.selection.main;
