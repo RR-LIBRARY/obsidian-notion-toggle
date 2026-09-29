@@ -62,6 +62,20 @@ describe("writePlannedBlock — callout format (Notion placement)", () => {
     expect(ed.cursor).toEqual({ line: 3, ch: "> [!question]- ".length });
   });
 
+  test("legacy Insert toggle action uses the same safe writer and never splices a raw marker into the body", () => {
+    const ed = new FakeEditor("> [!question]- hi\n> heleo\n> ", { line: 1, ch: 2 });
+    writePlannedBlock(ed, plainToggle(), "callout");
+    expect(ed.lines).toEqual([
+      "> [!question]- hi",
+      "> heleo",
+      "> > [!question]- ",
+      "> > ",
+      "> ",
+    ]);
+    expect(ed.lines).not.toContain("> [!question]-");
+    expect(ed.cursor).toEqual({ line: 2, ch: "> > [!question]- ".length });
+  });
+
   test("on a body line: the new toggle nests inside, caret after the nested marker", () => {
     const ed = new FakeEditor("> [!question]- Parent\n> body", { line: 1, ch: 3 });
     writePlannedBlock(ed, plainToggle(), "callout");
