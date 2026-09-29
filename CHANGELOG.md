@@ -2,6 +2,12 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.8.12
+
+- Mobile: tapping a toggle arrow now opens/closes reliably (finger jitter up to ~12px allowed, no dependence on the delayed mobile click; never flips twice).
+- Mobile: dragging a block no longer selects text — any selection started by the long-press is cleared, new selection is blocked while dragging, arrow is never a text target.
+- Tests: 5 unit + 7 real-browser touch checks.
+
 ## 1.8.11
 
 **Audit release — no new features, three safety fixes.**

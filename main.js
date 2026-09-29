@@ -1018,6 +1018,28 @@ var MoreWidget = class extends import_view.WidgetType {
   }
 };
 function wireToggleClick(el2, view, key, nextOpen) {
+  let tap = null;
+  let flippedAt = 0;
+  el2.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse")
+      return;
+    tap = { x: e.clientX, y: e.clientY, t: Date.now(), id: e.pointerId };
+  });
+  el2.addEventListener("pointerup", (e) => {
+    const t = tap;
+    tap = null;
+    if (!t || e.pointerId !== t.id || e.pointerType === "mouse")
+      return;
+    if (isTapOnToggle(t, e.clientX, e.clientY, Date.now(), lastDragEnd)) {
+      e.preventDefault();
+      e.stopPropagation();
+      flippedAt = Date.now();
+      applyToggle(view, key, nextOpen());
+    }
+  });
+  el2.addEventListener("pointercancel", () => {
+    tap = null;
+  });
   el2.addEventListener("mousedown", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1025,8 +1047,18 @@ function wireToggleClick(el2, view, key, nextOpen) {
   el2.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (Date.now() - flippedAt < 700)
+      return;
     applyToggle(view, key, nextOpen());
   });
+}
+var lastDragEnd = 0;
+function isTapOnToggle(down, x, y, now, dragEnd) {
+  if (now - dragEnd < 350)
+    return false;
+  if (now - down.t > 600)
+    return false;
+  return Math.hypot(x - down.x, y - down.y) <= 12;
 }
 function applyToggle(view, key, open) {
   var _a, _b;
@@ -1414,9 +1446,10 @@ function startDrag(view, down, srcLine, onArrow) {
   let marker = null;
   let drop = null;
   const holdMs = down.pointerType === "mouse" ? 450 : 400;
+  const startSel = view.state.selection;
   const timer = window.setTimeout(() => begin(), holdMs);
   function begin() {
-    var _a;
+    var _a, _b;
     if (active)
       return;
     active = true;
@@ -1425,9 +1458,16 @@ function startDrag(view, down, srcLine, onArrow) {
     if (!u || u.blank)
       return cleanup();
     view.dom.classList.add("ntt-dragging");
+    document.body.classList.add("ntt-no-select");
+    try {
+      (_a = window.getSelection()) == null ? void 0 : _a.removeAllRanges();
+    } catch (e) {
+    }
+    if (!view.state.selection.eq(startSel))
+      view.dispatch({ selection: startSel });
     ghost = document.createElement("div");
     ghost.className = "ntt-drag-ghost";
-    const first = (_a = lines[u.start]) != null ? _a : "";
+    const first = (_b = lines[u.start]) != null ? _b : "";
     ghost.textContent = first.replace(/^(?:>[ \t]*)*(\[![^\]]+\][+-]\s*)?/, "").replace(/\*\*/g, "") || " ";
     document.body.appendChild(ghost);
     marker = document.createElement("div");
@@ -1442,9 +1482,10 @@ function startDrag(view, down, srcLine, onArrow) {
   function move(e) {
     if (!active) {
       const moved = Math.hypot(e.clientX - x0, e.clientY - y0);
-      if (onArrow && moved > 5)
+      const arrowSlop = down.pointerType === "mouse" ? 5 : 14;
+      if (onArrow && moved > arrowSlop)
         begin();
-      else if (moved > 8)
+      else if (moved > (down.pointerType === "mouse" ? 8 : 12))
         return cleanup();
       if (!active)
         return;
@@ -1464,6 +1505,7 @@ function startDrag(view, down, srcLine, onArrow) {
     cleanup();
     if (!wasActive)
       return;
+    lastDragEnd = Date.now();
     const eat = (c) => {
       c.preventDefault();
       c.stopPropagation();
@@ -1491,6 +1533,10 @@ function startDrag(view, down, srcLine, onArrow) {
     if (active)
       e.preventDefault();
   }
+  function noSelect(e) {
+    if (active)
+      e.preventDefault();
+  }
   function cleanup() {
     window.clearTimeout(timer);
     active = false;
@@ -1498,6 +1544,8 @@ function startDrag(view, down, srcLine, onArrow) {
     marker == null ? void 0 : marker.remove();
     ghost = marker = null;
     view.dom.classList.remove("ntt-dragging");
+    document.body.classList.remove("ntt-no-select");
+    document.removeEventListener("selectstart", noSelect, true);
     window.removeEventListener("pointermove", move, true);
     window.removeEventListener("pointerup", up, true);
     window.removeEventListener("pointercancel", cleanup, true);
@@ -1509,6 +1557,7 @@ function startDrag(view, down, srcLine, onArrow) {
   window.addEventListener("pointercancel", cleanup, true);
   window.addEventListener("touchmove", stopTouch, { capture: true, passive: false });
   window.addEventListener("contextmenu", noMenu, true);
+  document.addEventListener("selectstart", noSelect, true);
 }
 function dropTarget(view, x, y) {
   const rect = view.contentDOM.getBoundingClientRect();

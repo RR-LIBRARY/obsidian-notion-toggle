@@ -1885,3 +1885,18 @@ body.ntt-notion-look .callout.is-collapsible.is-collapsed .callout-fold::before,
 body.ntt-notion-look .callout.is-collapsible .callout-fold.is-collapsed::before { transform: rotate(0deg) !important; }
 body.ntt-notion-look .ntt-clean-arrow svg { transform: none; }
 body.ntt-notion-look .ntt-clean-arrow.is-open svg { transform: rotate(90deg); }
+
+/* v1.8.12 — mobile: the arrow is a button, never a text target; no selection while dragging */
+.ntt-clean-arrow, .ntt-clean-more {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+body.ntt-no-select, body.ntt-no-select * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
+.ntt-dragging .cm-selectionBackground { background: transparent !important; }

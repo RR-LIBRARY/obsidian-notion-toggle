@@ -250,6 +250,38 @@ async def main():
         t = await page.evaluate("wb.text()")
         check("Shift+Tab still moves a plain body line out", t.startswith("> [!question]+ Q\n> - item\n>   - sub\n") and t.rstrip().endswith("last") and not t.rstrip().endswith("> last"), t)
 
+        # 25 v1.8.12 mobile: finger tap on the arrow (with ~9px jitter, no synthetic click) opens / closes
+        await fresh(page)
+        await page.evaluate("wb.set(wb.lineFrom(2) + 25)")
+        TAP = """(dx) => { const a = document.querySelector('.ntt-clean-arrow'); const r = a.getBoundingClientRect();
+          const x = r.left + r.width/2, y = r.top + r.height/2;
+          const o = (t, xx) => new PointerEvent(t, {bubbles:true, cancelable:true, pointerType:'touch', pointerId:7, isPrimary:true, button:0, clientX:xx, clientY:y});
+          a.dispatchEvent(o('pointerdown', x)); window.dispatchEvent(o('pointermove', x+dx)); a.dispatchEvent(o('pointerup', x+dx)); }"""
+        await page.evaluate(TAP, 9); await page.wait_for_timeout(40)
+        check("touch tap with jitter opens toggle", "Tobacco" in await page.locator(".cm-content").inner_text())
+        await page.evaluate(TAP, 0); await page.wait_for_timeout(40)
+        check("second touch tap closes toggle", "Tobacco" not in await page.locator(".cm-content").inner_text())
+        await page.locator(".ntt-clean-arrow").first.click(); await page.wait_for_timeout(40)
+        check("mouse click still toggles once", "Tobacco" in await page.locator(".cm-content").inner_text())
+        us = await page.evaluate("getComputedStyle(document.querySelector('.ntt-clean-arrow')).userSelect")
+        check("arrow is not selectable", us == "none", us)
+        # 26 touch long-press drag: no text selection while dragging, cleared after
+        await page.goto(URL + "?doc=" + up.quote(NOTE)); await page.wait_for_function("window.wb")
+        sel0 = await page.evaluate("wb.view.state.selection.main.head")
+        pt = await page.evaluate("(() => { const c = wb.view.coordsAtPos(wb.lineFrom(6) + 2); return [c.left, (c.top + c.bottom) / 2]; })()")
+        TD = "([t, x, y]) => { const el = document.elementFromPoint(x, y); (t==='pointerdown' ? el : window).dispatchEvent(new PointerEvent(t, {bubbles:true, cancelable:true, pointerType:'touch', pointerId:9, isPrimary:true, button:0, clientX:x, clientY:y})); }"
+        await page.evaluate(TD, ["pointerdown", pt[0], pt[1]])
+        await page.evaluate("(() => { const r = document.createRange(); r.selectNodeContents(document.querySelector('.cm-content')); getSelection().removeAllRanges(); getSelection().addRange(r); })()")
+        await page.wait_for_timeout(480)
+        await page.evaluate(TD, ["pointermove", pt[0], pt[1] + 20])
+        st = await page.evaluate("[document.body.classList.contains('ntt-no-select'), String(getSelection()).length, getComputedStyle(document.querySelector('.cm-content')).userSelect]")
+        check("touch drag: selection cleared + text unselectable", st[0] and st[1] == 0 and st[2] == "none", str(st))
+        prevented = await page.evaluate("(() => { const e = new Event('selectstart', {bubbles:true, cancelable:true}); document.querySelector('.cm-content').dispatchEvent(e); return e.defaultPrevented; })()")
+        check("touch drag: new selection blocked", prevented)
+        await page.evaluate(TD, ["pointerup", pt[0], pt[1] + 20])
+        check("after drag: selection allowed again", not await page.evaluate("document.body.classList.contains('ntt-no-select')"))
+        await page.screenshot(path=str(SHOTS / "26_touch_drag.png"))
+
         check("no page errors", not errors, "; ".join(errors))
         await b.close()
 

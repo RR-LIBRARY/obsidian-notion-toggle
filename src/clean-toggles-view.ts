@@ -151,6 +151,26 @@ class MoreWidget extends WidgetType {
  * focus stay where they are; the actual flip happens on click (works for taps).
  */
 function wireToggleClick(el: HTMLElement, view: EditorView, key: number, nextOpen: () => boolean): void {
+  // v1.8.12 — touch: flip on a clean tap (pointerup) instead of trusting the
+  // synthetic click, which mobile WebViews drop or delay after preventDefault.
+  let tap: { x: number; y: number; t: number; id: number } | null = null;
+  let flippedAt = 0;
+  el.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse") return;
+    tap = { x: e.clientX, y: e.clientY, t: Date.now(), id: e.pointerId };
+  });
+  el.addEventListener("pointerup", (e) => {
+    const t = tap;
+    tap = null;
+    if (!t || e.pointerId !== t.id || e.pointerType === "mouse") return;
+    if (isTapOnToggle(t, e.clientX, e.clientY, Date.now(), lastDragEnd)) {
+      e.preventDefault();
+      e.stopPropagation();
+      flippedAt = Date.now();
+      applyToggle(view, key, nextOpen());
+    }
+  });
+  el.addEventListener("pointercancel", () => { tap = null; });
   el.addEventListener("mousedown", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -158,8 +178,22 @@ function wireToggleClick(el: HTMLElement, view: EditorView, key: number, nextOpe
   el.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (Date.now() - flippedAt < 700) return; // already flipped by the tap
     applyToggle(view, key, nextOpen());
   });
+}
+
+/** Time the last drag ended; a tap right after a drag is not a toggle. */
+let lastDragEnd = 0;
+
+/** A finger tap that should open / close: short, barely moved, not the end of a drag. */
+export function isTapOnToggle(
+  down: { x: number; y: number; t: number },
+  x: number, y: number, now: number, dragEnd: number,
+): boolean {
+  if (now - dragEnd < 350) return false;
+  if (now - down.t > 600) return false;
+  return Math.hypot(x - down.x, y - down.y) <= 12;
 }
 
 /** Dispatch the open/closed choice; closing parks the caret on the title so it never hides inside the body. */
@@ -578,6 +612,7 @@ function startDrag(view: EditorView, down: PointerEvent, srcLine: number, onArro
   let marker: HTMLElement | null = null;
   let drop: { line: number; mode: DropMode } | null = null;
   const holdMs = down.pointerType === "mouse" ? 450 : 400;
+  const startSel = view.state.selection;
   const timer = window.setTimeout(() => begin(), holdMs);
 
   function begin(): void {
@@ -587,6 +622,10 @@ function startDrag(view: EditorView, down: PointerEvent, srcLine: number, onArro
     const u = unitAt(lines, srcLine);
     if (!u || u.blank) return cleanup();
     view.dom.classList.add("ntt-dragging");
+    document.body.classList.add("ntt-no-select");
+    // the hold may already have started a native text selection: drop it
+    try { window.getSelection()?.removeAllRanges(); } catch { /* ignore */ }
+    if (!view.state.selection.eq(startSel)) view.dispatch({ selection: startSel });
     ghost = document.createElement("div");
     ghost.className = "ntt-drag-ghost";
     const first = lines[u.start] ?? "";
@@ -601,8 +640,10 @@ function startDrag(view: EditorView, down: PointerEvent, srcLine: number, onArro
   function move(e: PointerEvent): void {
     if (!active) {
       const moved = Math.hypot(e.clientX - x0, e.clientY - y0);
-      if (onArrow && moved > 5) begin();
-      else if (moved > 8) return cleanup(); // a scroll or a text selection, not a drag
+      // fingers jitter: a touch tap on the arrow may wander ~10px without being a drag
+      const arrowSlop = down.pointerType === "mouse" ? 5 : 14;
+      if (onArrow && moved > arrowSlop) begin();
+      else if (moved > (down.pointerType === "mouse" ? 8 : 12)) return cleanup(); // a scroll or a text selection, not a drag
       if (!active) return;
     }
     e.preventDefault();
@@ -619,6 +660,7 @@ function startDrag(view: EditorView, down: PointerEvent, srcLine: number, onArro
     const d = drop;
     cleanup();
     if (!wasActive) return;
+    lastDragEnd = Date.now();
     // the click that follows a drag must not open / close the arrow
     const eat = (c: Event) => { c.preventDefault(); c.stopPropagation(); };
     window.addEventListener("click", eat, { capture: true, once: true });
@@ -641,6 +683,9 @@ function startDrag(view: EditorView, down: PointerEvent, srcLine: number, onArro
   function noMenu(e: Event): void {
     if (active) e.preventDefault();
   }
+  function noSelect(e: Event): void {
+    if (active) e.preventDefault();
+  }
 
   function cleanup(): void {
     window.clearTimeout(timer);
@@ -649,6 +694,8 @@ function startDrag(view: EditorView, down: PointerEvent, srcLine: number, onArro
     marker?.remove();
     ghost = marker = null;
     view.dom.classList.remove("ntt-dragging");
+    document.body.classList.remove("ntt-no-select");
+    document.removeEventListener("selectstart", noSelect, true);
     window.removeEventListener("pointermove", move, true);
     window.removeEventListener("pointerup", up, true);
     window.removeEventListener("pointercancel", cleanup, true);
@@ -661,6 +708,7 @@ function startDrag(view: EditorView, down: PointerEvent, srcLine: number, onArro
   window.addEventListener("pointercancel", cleanup, true);
   window.addEventListener("touchmove", stopTouch, { capture: true, passive: false });
   window.addEventListener("contextmenu", noMenu, true);
+  document.addEventListener("selectstart", noSelect, true);
 }
 
 /** Where a drop at (x, y) lands: top part of a line = before, bottom = after, middle of a toggle = into. */
