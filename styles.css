@@ -1909,3 +1909,44 @@ body.ntt-no-select, body.ntt-no-select * {
   -webkit-touch-callout: none !important;
 }
 .ntt-dragging .cm-selectionBackground { background: transparent !important; }
+
+/* v1.8.16 — Notion row layout. Arrow lives in a fixed column; the title is its
+   own block, so long titles wrap with a hanging indent under the first word and
+   every arrow in a list shares one left edge (matches Notion on phone). */
+.markdown-preview-view details > summary,
+.markdown-rendered details > summary {
+  display: block;
+  list-style: none;
+  position: relative;
+  padding-inline-start: 1.6em;
+  cursor: pointer;
+}
+.markdown-preview-view details > summary::-webkit-details-marker,
+.markdown-rendered details > summary::-webkit-details-marker { display: none; }
+.markdown-preview-view details > summary::marker,
+.markdown-rendered details > summary::marker { content: ""; }
+.markdown-preview-view details > summary::before,
+.markdown-rendered details > summary::before {
+  content: "";
+  position: absolute;
+  left: 0.35em;
+  top: calc(0.675em - 0.3em + 0.1em);
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0.3em 0 0.3em 0.52em;
+  border-color: transparent transparent transparent currentColor;
+  transition: transform 120ms ease;
+  transform-origin: 35% 50%;
+}
+.markdown-preview-view details[open] > summary::before,
+.markdown-rendered details[open] > summary::before { transform: rotate(90deg); }
+.markdown-preview-view details > :not(summary),
+.markdown-rendered details > :not(summary) { margin-inline-start: 1.6em; }
+.callout.is-collapsible .callout-title { align-items: flex-start; }
+.callout.is-collapsible .callout-title .callout-fold { flex-shrink: 0; }
+.callout.is-collapsible .callout-title .callout-title-inner { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+/* Nested toggles step by the arrow column only (Notion ≈ 1.6em), so deep
+   chains stay readable on a phone instead of squeezing out at depth 8–9. */
+.markdown-preview-view details details,
+.markdown-rendered details details { padding-inline: 0; margin-block: 2px; }

@@ -2,6 +2,12 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.8.16
+
+- Toggle rows now match Notion: every arrow sits in one fixed column, long titles wrap under the first word (hanging indent), opened bodies line up with the title, arrow pinned to the first line.
+- Nested toggles step by one arrow width, so 12-level chains stay readable on phones.
+- New real-browser layout check (`e2e/layout_check.py`, 22 checks at 360px and 1280px).
+
 ## 1.8.15
 
 **Notion parity audit — and the two gaps it found.**
