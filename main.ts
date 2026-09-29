@@ -550,15 +550,11 @@ export default class NotionTogglePlugin extends Plugin {
       id: "insert-toggle",
       icon: "right-triangle",
       name: "Insert toggle (empty)",
-      editorCallback: (editor) => {
-        const fold = this.settings.defaultCollapsed ? "-" : "+";
-        const type = this.activeCallout();
-        const cursor = editor.getCursor();
-        // Insert a two-line callout; place cursor on the title line
-        editor.replaceRange(`> [!${type}]${fold} \n> \n`, cursor);
-        // Move cursor to end of the title line (after the space)
-        editor.setCursor({ line: cursor.line, ch: cursor.ch + `> [!${type}]${fold} `.length });
-      },
+      // Keep this legacy command ID for existing mobile toolbars/hotkeys, but
+      // use the same block-aware writer as "Toggle list". The old raw insertion
+      // could splice `[!question]-` into a callout body, producing the exact
+      // plain-text nested marker seen in the phone recording.
+      editorCallback: (editor) => this.insertNewToggleBelow(editor),
     });
     // Command 2: Wrap current selection (or current line) as a toggle
     this.addCommand({

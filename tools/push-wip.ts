@@ -44,6 +44,11 @@ const changes = git("status", "--porcelain", "--untracked-files=all")
   .map((l) => ({ code: l.slice(0, 2), path: l.slice(3).replace(/^"|"$/g, "") }))
   .filter((c) => !c.path.startsWith("node_modules/") && !c.path.startsWith("e2e/out/"));
 
+const tracked = Number(git("ls-files").trim().split("\n").filter(Boolean).length);
+if (tracked === 0 || (changes.length > 100 && changes.filter((c) => c.code.includes("D")).length > changes.length / 2)) {
+  throw new Error("Refusing destructive backup: plugin git index is empty or mostly deletions. Run durable.sh setup again.");
+}
+
 if (changes.length === 0) {
   console.log("nothing to push — working copy matches", base.slice(0, 7));
   process.exit(0);

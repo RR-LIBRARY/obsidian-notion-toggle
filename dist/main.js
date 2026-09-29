@@ -11720,15 +11720,11 @@ var NotionTogglePlugin = class extends import_obsidian19.Plugin {
       id: "insert-toggle",
       icon: "right-triangle",
       name: "Insert toggle (empty)",
-      editorCallback: (editor) => {
-        const fold = this.settings.defaultCollapsed ? "-" : "+";
-        const type = this.activeCallout();
-        const cursor = editor.getCursor();
-        editor.replaceRange(`> [!${type}]${fold} 
-> 
-`, cursor);
-        editor.setCursor({ line: cursor.line, ch: cursor.ch + `> [!${type}]${fold} `.length });
-      }
+      // Keep this legacy command ID for existing mobile toolbars/hotkeys, but
+      // use the same block-aware writer as "Toggle list". The old raw insertion
+      // could splice `[!question]-` into a callout body, producing the exact
+      // plain-text nested marker seen in the phone recording.
+      editorCallback: (editor) => this.insertNewToggleBelow(editor)
     });
     this.addCommand({
       id: "wrap-selection-toggle",
@@ -14685,7 +14681,10 @@ ${perfVerdict(this.perf.report())}`, 9e3);
   }
   async loadSettings() {
     const raw = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-    this.settings = migrateSettings(raw).settings;
+    const migration = migrateSettings(raw);
+    this.settings = migration.settings;
+    if (migration.changed)
+      await this.saveSettings();
     const nums = (v) => Array.isArray(v) ? v.map((n) => Math.floor(Number(n))).filter((n) => n > 0) : [];
     this.settings.scrollPicks = nums(this.settings.scrollPicks);
     this.settings.scrollRoute = nums(this.settings.scrollRoute);

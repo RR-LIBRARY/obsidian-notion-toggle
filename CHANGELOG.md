@@ -1,3 +1,8 @@
+## Next
+
+- Fixed the legacy “Insert toggle (empty)” mobile action: it now uses the same block-aware placement as “Toggle list”, so a new toggle cannot appear as raw `[!question]-` text inside the current toggle.
+- Enter continues to create same-level sibling toggles; Indent and Outdent remain the only actions that change depth.
+
 ## 1.8.24
 
 - Fresh empty toggles now show the Notion-style “Toggle” hint instead of Obsidian’s generated “Recall red” / callout-type title.

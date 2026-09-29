@@ -1990,11 +1990,15 @@ body.ntt-notion-look .callout[data-callout="recall-plain"].is-collapsible > .cal
    etc.) when a fresh callout has no title. Notion shows a quiet "Toggle"
    placeholder instead. Restrict this to an empty rendered body so real titles
    are never hidden; the active Live Preview line uses its own IME-safe hint. */
-body.ntt-notion-look .callout.is-collapsible:has(> .callout-content:empty) > .callout-title > .callout-title-inner {
+body.ntt-notion-look .callout.is-collapsible:has(> .callout-content:empty) > .callout-title > .callout-title-inner,
+body.ntt-notion-look .callout.is-collapsible:has(> .callout-content > p:only-child:empty) > .callout-title > .callout-title-inner,
+body.ntt-notion-look .callout.is-collapsible:has(> .callout-content > p:only-child > br:only-child) > .callout-title > .callout-title-inner {
   font-size: 0;
   color: var(--text-faint);
 }
-body.ntt-notion-look .callout.is-collapsible:has(> .callout-content:empty) > .callout-title > .callout-title-inner::after {
+body.ntt-notion-look .callout.is-collapsible:has(> .callout-content:empty) > .callout-title > .callout-title-inner::after,
+body.ntt-notion-look .callout.is-collapsible:has(> .callout-content > p:only-child:empty) > .callout-title > .callout-title-inner::after,
+body.ntt-notion-look .callout.is-collapsible:has(> .callout-content > p:only-child > br:only-child) > .callout-title > .callout-title-inner::after {
   content: "Toggle";
   font-size: var(--font-text-size, 16px);
   font-weight: var(--font-normal, 400);

@@ -14,7 +14,9 @@ ensure_git() {
   if [ ! -d "$GITDIR" ]; then
     git clone --quiet --bare "$REPO" "$GITDIR"
     git --git-dir="$GITDIR" config core.bare false
-    git --git-dir="$GITDIR" --work-tree="$PLUGIN" reset --quiet
+    # A bare clone has no populated index. Load HEAD explicitly so status
+    # compares the durable work tree instead of reporting every repo file deleted.
+    git --git-dir="$GITDIR" --work-tree="$PLUGIN" read-tree HEAD
   fi
 }
 
