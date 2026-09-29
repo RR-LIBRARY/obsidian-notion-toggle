@@ -91,6 +91,6 @@ describe("v1.7.8 drawer guard (yellow fade on swipe)", () => {
     const main = readFileSync("main.ts", "utf8");
     expect(main).toContain("this.drawerGuard.start()");
     expect(main).toContain("this.drawerGuard.stop()");
-    expect(main.split("\n").length).toBeLessThan(3510);
+    expect(main.split("\n").length).toBeLessThan(3560);
   });
 });

@@ -39,7 +39,7 @@ describe("research folder", () => {
     expect(new Set(imports)).toEqual(new Set(["wire", "types"]));
     // v1.7.2 — see tests/architecture.test.ts: the sticky Open all / Close all
     // logic lives in src/, main.ts only registers the wiring.
-    expect(lines("main.ts")).toBeLessThan(3510);
+    expect(lines("main.ts")).toBeLessThan(3560);
   });
 
   test("every research module stays reviewable", () => {

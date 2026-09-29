@@ -600,3 +600,64 @@ export function convertPastedText(text: string, opts: PasteOptions): string | nu
 export function flipFoldMarker(line: string): string {
   return line.replace(/^(>[ \t]*\[![^\]\n]+\])([+-])/, (_m, head: string, marker: string) => `${head}${marker === "-" ? "+" : "-"}`);
 }
+
+/* ---------- v1.8.15: Notion's Ctrl/Cmd+Alt+T — open / close every toggle ---------- */
+
+export interface ToggleAllPlan {
+  /** The note with every toggle flipped; identical to the input when there is nothing to do. */
+  doc: string;
+  /** True when the pass opened toggles, false when it closed them. */
+  opened: boolean;
+  /** How many toggle headers changed state. */
+  changed: number;
+  /** How many foldable toggles the note has in total. */
+  total: number;
+}
+
+const FOLD_HEADER = /^(\s*(?:>\s*)*>[ \t]*\[![^\]\n]+\])([+-])/;
+const DETAILS_TAG = /^(\s*)<details(\s+open)?\s*>/i;
+
+/**
+ * Notion's Ctrl/Cmd+Alt+T toggles the whole page at once: if anything is still
+ * folded it opens everything, otherwise it closes everything. Works on callout
+ * toggles at any nesting depth and on raw `<details>` blocks. Pure string in →
+ * plan out, so the behaviour is testable without an editor.
+ */
+export function planToggleAll(doc: string, force?: "open" | "close"): ToggleAllPlan {
+  const lines = String(doc ?? "").split("\n");
+  let total = 0;
+  let closed = 0;
+  for (const line of lines) {
+    const head = FOLD_HEADER.exec(line);
+    if (head) {
+      total++;
+      if (head[2] === "-") closed++;
+      continue;
+    }
+    const det = DETAILS_TAG.exec(line);
+    if (det) {
+      total++;
+      if (!det[2]) closed++;
+    }
+  }
+  const opened = force ? force === "open" : closed > 0;
+  let changed = 0;
+  const out = lines.map((line) => {
+    const head = FOLD_HEADER.exec(line);
+    if (head) {
+      const want = opened ? "+" : "-";
+      if (head[2] === want) return line;
+      changed++;
+      return line.replace(FOLD_HEADER, `$1${want}`);
+    }
+    const det = DETAILS_TAG.exec(line);
+    if (det) {
+      const isOpen = Boolean(det[2]);
+      if (isOpen === opened) return line;
+      changed++;
+      return line.replace(DETAILS_TAG, opened ? "$1<details open>" : "$1<details>");
+    }
+    return line;
+  });
+  return { doc: out.join("\n"), opened, changed, total };
+}

@@ -26,7 +26,9 @@ describe("module boundaries", () => {
     // v1.8.0 — Notion-like writing (clean editing, `>`+space, <details> paste
     // and nudge, plain look) lives in src/notion-writing.ts + src/clean-toggles*.ts;
     // main.ts gained one import, one interface mixin and one install call.
-    expect(lines("main.ts")).toBeLessThan(3510);
+    // v1.8.15 — Notion's Ctrl/Cmd+Alt+T wiring: the logic is planToggleAll in
+    // src/clean-toggles.ts, main.ts only registers the command and applies the plan.
+    expect(lines("main.ts")).toBeLessThan(3560);
   });
 
   test("extracted modules exist and stay reviewable", () => {

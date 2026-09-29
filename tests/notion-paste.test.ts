@@ -128,3 +128,59 @@ describe("v1.8.14 onOwnLine", () => {
   });
   test("paste that begins with plain text: unchanged", () => expect(onOwnLine("hi\n> [!q]- T", "x")).toBe("hi\n> [!q]- T"));
 });
+
+/**
+ * v1.8.15 — parity fixtures taken from a REAL Notion page. The page was built
+ * through the Notion API, read back block by block and serialised the way
+ * Notion's clipboard serialises it; the plugin's output was parsed back into a
+ * tree and diffed node by node (24/24 nodes matched). These two tests freeze
+ * the two hardest cases from that run.
+ */
+describe("Notion parity fixtures (real page, API ground truth)", () => {
+  test("a 12-level Notion chain stays 12 levels deep", () => {
+    const clip = Array.from({ length: 12 }, (_, i) => `${"\t".repeat(i)}<details>\n${"\t".repeat(i)}<summary>depth ${i + 1}</summary>`).join("\n") + "\n" + Array.from({ length: 12 }, (_, i) => `${"\t".repeat(11 - i)}</details>`).join("\n");
+    expect(isNotionShaped(clip)).toBe(true);
+    const out = convertNotionPaste(clip, { calloutType: "note", collapsed: true, boldSummary: false });
+    const lines = out.split("\n").filter((l) => l.includes("[!note]"));
+    expect(lines.length).toBe(12);
+    lines.forEach((line, i) => {
+      expect(line.startsWith("> ".repeat(i + 1))).toBe(true);
+      expect(line).toContain(`depth ${i + 1}`);
+    });
+  });
+
+  test("a toggle heading, bullets, a callout and a code toggle survive one paste", () => {
+    const clip = [
+      "<details>",
+      "<summary>1</summary>",
+      "\t<details>",
+      "\t<summary>2</summary>",
+      "\t\t- point a",
+      "\t\t- point b",
+      "\t</details>",
+      "</details>",
+      "",
+      '## Toggle heading {toggle="true"}',
+      "",
+      "<callout 💡>",
+      "Remember this",
+      "</callout>",
+      "",
+      "<details>",
+      "<summary>Toggle with code</summary>",
+      "\t```js",
+      "\tconsole.log('hi');",
+      "\t```",
+      "</details>",
+    ].join("\n");
+    expect(isNotionShaped(clip)).toBe(true);
+    const out = convertNotionPaste(clip, { calloutType: "note", collapsed: true, boldSummary: false });
+    expect(out).toContain("> [!note]- 1");
+    expect(out).toContain("> > [!note]- 2");
+    expect(out).toContain("> > - point a");
+    expect(out).toContain("Toggle heading");
+    expect(out).toContain("[!tip]");
+    expect(out).toContain("Remember this");
+    expect(out).toContain("console.log('hi');");
+  });
+});

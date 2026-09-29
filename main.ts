@@ -2,6 +2,7 @@ import { App, Editor, MarkdownView, Modal, Notice, Platform, Plugin, PluginSetti
 import { Prec } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
 import { DEFAULT_NOTION_WRITING, cleanLayerOwnsEnter, installNotionWriting, uninstallNotionWriting, type NotionWritingSettings } from "./src/notion-writing";
+import { planToggleAll } from "./src/clean-toggles";
 import {
   DEFAULT_POMODORO,
   POMODORO_PRESETS,
@@ -940,6 +941,14 @@ export default class NotionTogglePlugin extends Plugin {
       callback: () => this.toggleQuizPause(),
     });
     // v1.4.3 — one-tap answer control, usable from the mobile toolbar too.
+    // v1.8.15 — Notion parity: one shortcut (Ctrl/Cmd+Alt+T) flips the whole note.
+    this.addCommand({
+      id: "toggle-all-toggles",
+      icon: "chevrons-up-down",
+      name: "Open / close all toggles (Notion Ctrl+Alt+T)",
+      hotkeys: [{ modifiers: ["Mod", "Alt"], key: "t" }],
+      editorCallback: (editor) => this.runToggleAll(editor),
+    });
     this.addCommand({
       id: "answers-open-all",
       icon: "unfold-vertical",
@@ -1568,6 +1577,27 @@ export default class NotionTogglePlugin extends Plugin {
       this.renderTimer();
     }
   }
+  /**
+   * v1.8.15 — Notion's Ctrl/Cmd+Alt+T. Anything still folded means "open the
+   * whole note"; otherwise everything closes. Works at any nesting depth.
+   */
+  runToggleAll(editor: Editor) {
+    const doc = editor.getValue();
+    const plan = planToggleAll(doc);
+    if (!plan.total) {
+      new Notice("No toggles in this note");
+      return;
+    }
+    if (plan.doc !== doc) {
+      const cursor = editor.getCursor();
+      const scroll = editor.getScrollInfo?.();
+      editor.setValue(plan.doc);
+      editor.setCursor(cursor);
+      if (scroll) editor.scrollTo?.(scroll.left, scroll.top);
+    }
+    new Notice(`${plan.opened ? "Opened" : "Closed"} ${plan.changed} of ${plan.total} toggles`);
+  }
+
   /** Collapse every toggle in the active note (used on breaks / "recall again"). */
   private collapseActiveNote(notify = false) {
     const editor = this.app.workspace.activeEditor?.editor;

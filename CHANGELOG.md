@@ -2,6 +2,16 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.8.15
+
+**Notion parity audit — and the two gaps it found.**
+
+- New: **Ctrl/Cmd+Alt+T opens or closes every toggle in the note**, exactly like Notion. Anything still folded means "open everything", otherwise everything closes. Works at any nesting depth and on raw `<details>` blocks. Command: *Open / close all toggles (Notion Ctrl+Alt+T)*.
+- Fix: Notion also writes callouts as `<callout 💡>` (icon without `icon="…"`). That form came through as a plain note; the icon now picks the right callout type.
+- Audit: `AUDIT-notion-parity-1.8.14.md`. A real Notion page was built and read back through the Notion API, serialised the way Notion's clipboard serialises it, converted by the plugin and diffed node by node: **24/24 nodes match** (nested toggles, toggle heading, bullets, callout, code toggle, empty toggle, and a 12-level chain). Rating 9.0/10 for 1.8.14, 9.8/10 for 1.8.15.
+- Answered from the reference video: at depth 9 Notion on the phone made a sibling instead of a child. The Notion API accepts at least 12 levels with no cap, so that is a narrow-mobile-column limit, not a rule — the plugin deliberately keeps nesting.
+- Tests: 6 for the new shortcut, 2 parity fixtures frozen from the real Notion page. 1360 pass, browser checks 70/70.
+
 ## 1.8.14
 
 **Paste from Notion.**

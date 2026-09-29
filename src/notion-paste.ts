@@ -123,7 +123,9 @@ const ICONS: [RegExp, string][] = [
 ];
 
 function calloutType(attrs: string): string {
-  const icon = /icon="([^"]*)"/.exec(attrs)?.[1] ?? "";
+  // Notion writes either `<callout icon="💡">` or a bare `<callout 💡>`, so fall
+  // back to scanning the whole attribute string for a known icon.
+  const icon = /icon="([^"]*)"/.exec(attrs)?.[1] ?? attrs;
   for (const [re, type] of ICONS) if (re.test(icon)) return type;
   return "note";
 }

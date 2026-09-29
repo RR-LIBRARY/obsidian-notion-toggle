@@ -744,6 +744,50 @@ function convertPastedText(text, opts) {
 function flipFoldMarker(line) {
   return line.replace(/^(>[ \t]*\[![^\]\n]+\])([+-])/, (_m, head, marker) => `${head}${marker === "-" ? "+" : "-"}`);
 }
+var FOLD_HEADER = /^(\s*(?:>\s*)*>[ \t]*\[![^\]\n]+\])([+-])/;
+var DETAILS_TAG = /^(\s*)<details(\s+open)?\s*>/i;
+function planToggleAll(doc, force) {
+  const lines = String(doc != null ? doc : "").split("\n");
+  let total = 0;
+  let closed = 0;
+  for (const line of lines) {
+    const head = FOLD_HEADER.exec(line);
+    if (head) {
+      total++;
+      if (head[2] === "-")
+        closed++;
+      continue;
+    }
+    const det = DETAILS_TAG.exec(line);
+    if (det) {
+      total++;
+      if (!det[2])
+        closed++;
+    }
+  }
+  const opened = force ? force === "open" : closed > 0;
+  let changed = 0;
+  const out = lines.map((line) => {
+    const head = FOLD_HEADER.exec(line);
+    if (head) {
+      const want = opened ? "+" : "-";
+      if (head[2] === want)
+        return line;
+      changed++;
+      return line.replace(FOLD_HEADER, `$1${want}`);
+    }
+    const det = DETAILS_TAG.exec(line);
+    if (det) {
+      const isOpen2 = Boolean(det[2]);
+      if (isOpen2 === opened)
+        return line;
+      changed++;
+      return line.replace(DETAILS_TAG, opened ? "$1<details open>" : "$1<details>");
+    }
+    return line;
+  });
+  return { doc: out.join("\n"), opened, changed, total };
+}
 
 // src/block-move.ts
 function isHeaderAt(text, depth) {
@@ -1763,7 +1807,7 @@ var ICONS = [
 ];
 function calloutType(attrs) {
   var _a, _b;
-  const icon = (_b = (_a = /icon="([^"]*)"/.exec(attrs)) == null ? void 0 : _a[1]) != null ? _b : "";
+  const icon = (_b = (_a = /icon="([^"]*)"/.exec(attrs)) == null ? void 0 : _a[1]) != null ? _b : attrs;
   for (const [re, type] of ICONS)
     if (re.test(icon))
       return type;
@@ -11620,6 +11664,13 @@ var NotionTogglePlugin = class extends import_obsidian16.Plugin {
       callback: () => this.toggleQuizPause()
     });
     this.addCommand({
+      id: "toggle-all-toggles",
+      icon: "chevrons-up-down",
+      name: "Open / close all toggles (Notion Ctrl+Alt+T)",
+      hotkeys: [{ modifiers: ["Mod", "Alt"], key: "t" }],
+      editorCallback: (editor) => this.runToggleAll(editor)
+    });
+    this.addCommand({
       id: "answers-open-all",
       icon: "unfold-vertical",
       name: "Answers: open all toggles",
@@ -12261,6 +12312,28 @@ ${row}`, { line: cursor.line, ch: line.length });
       this.lastActivityAt = Date.now();
       this.renderTimer();
     }
+  }
+  /**
+   * v1.8.15 — Notion's Ctrl/Cmd+Alt+T. Anything still folded means "open the
+   * whole note"; otherwise everything closes. Works at any nesting depth.
+   */
+  runToggleAll(editor) {
+    var _a, _b;
+    const doc = editor.getValue();
+    const plan = planToggleAll(doc);
+    if (!plan.total) {
+      new import_obsidian16.Notice("No toggles in this note");
+      return;
+    }
+    if (plan.doc !== doc) {
+      const cursor = editor.getCursor();
+      const scroll = (_a = editor.getScrollInfo) == null ? void 0 : _a.call(editor);
+      editor.setValue(plan.doc);
+      editor.setCursor(cursor);
+      if (scroll)
+        (_b = editor.scrollTo) == null ? void 0 : _b.call(editor, scroll.left, scroll.top);
+    }
+    new import_obsidian16.Notice(`${plan.opened ? "Opened" : "Closed"} ${plan.changed} of ${plan.total} toggles`);
   }
   /** Collapse every toggle in the active note (used on breaks / "recall again"). */
   collapseActiveNote(notify = false) {
