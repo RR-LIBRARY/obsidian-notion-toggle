@@ -18,16 +18,21 @@ export interface ToolbarCommand {
 export const TOOLBAR_COMMANDS: ToolbarCommand[] = [
   { id: "toggle-list", name: "Toggle list", why: "Cursor par toggle banao; selected text ko toggle me badlo.", priority: 1 },
   { id: "tools-menu", name: "Tools", why: "Saare purane actions ek jagah, bina toolbar bhare.", priority: 2 },
-  { id: "smart-autoscroll", name: "Autoscroll (start / pause revision)", why: "Optional: revision ek tap se shuru ya pause.", priority: 3 },
-  { id: "smart-recall", name: "Recall (start / pause session)", why: "Optional: recall session ek tap me.", priority: 4 },
-  { id: "autoscroll-reverse", name: "Autoscroll: reverse direction", why: "Optional: reverse shortcut ke liye.", priority: 5 },
-  { id: "autoscroll-sheet", name: "Autoscroll: sheet (all controls)", why: "Optional: speed aur mode control ke liye.", priority: 6 },
+  // v1.8.23 — Notion's two nesting buttons. Enter hamesha same level par naya
+  // toggle banata hai; andar/bahar sirf inhi se (ya Tab / Shift+Tab se) hota hai.
+  { id: "shove-into-toggle", name: "Indent (nest under the toggle above)", why: "Toggle ko upar wale toggle ke andar le jao (Notion ka Indent / Tab).", priority: 3 },
+  { id: "move-out-of-toggle", name: "Outdent (move out one level)", why: "Toggle ko ek level bahar nikaalo (Notion ka Outdent / Shift+Tab).", priority: 4 },
+  { id: "smart-autoscroll", name: "Autoscroll (start / pause revision)", why: "Optional: revision ek tap se shuru ya pause.", priority: 5 },
+  { id: "smart-recall", name: "Recall (start / pause session)", why: "Optional: recall session ek tap me.", priority: 6 },
+  { id: "autoscroll-reverse", name: "Autoscroll: reverse direction", why: "Optional: reverse shortcut ke liye.", priority: 7 },
+  { id: "autoscroll-sheet", name: "Autoscroll: sheet (all controls)", why: "Optional: speed aur mode control ke liye.", priority: 8 },
 ];
 
 /** The phone toolbar itself is managed by Obsidian, not by this plugin. */
 export const TOOLBAR_STEPS: string[] = [
   "Obsidian Settings ⚙️ → Mobile → Manage toolbar kholo.",
   "Toggle list aur Tools add karo; baaki purane buttons zaroorat na ho to hata do.",
+  "Nesting ke liye Indent aur Outdent add karo (Obsidian ke apne Indent / Unindent buttons bhi toggle par yahi kaam karte hain).",
   "Recall aur Autoscroll ko sirf roz use karte ho to direct rakho.",
 ];
 

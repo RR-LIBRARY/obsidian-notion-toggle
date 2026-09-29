@@ -67,6 +67,13 @@ describe("migrateSettings", () => {
     expect("nestedEnter" in res.settings).toBe(false);
   });
 
+  test("v3 resets the old default grading colour so normal toggles are neutral", () => {
+    const res = migrateSettings({ settingsVersion: 3, color: "red" });
+    expect(res.changed).toBe(true);
+    expect(res.settings.settingsVersion).toBe(SETTINGS_VERSION);
+    expect(res.settings.color).toBe("default");
+  });
+
   test("a current file keeps its data untouched", () => {
     const current = {
       settingsVersion: SETTINGS_VERSION,

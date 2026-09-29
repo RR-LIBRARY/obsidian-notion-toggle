@@ -8,7 +8,7 @@
  * validates the nested stores, so every future change has a place to live.
  */
 
-export const SETTINGS_VERSION = 3;
+export const SETTINGS_VERSION = 4;
 
 export interface MigratableSettings {
   settingsVersion?: number;
@@ -17,6 +17,8 @@ export interface MigratableSettings {
   srs?: unknown;
   /** Removed in v3: Enter never changes depth; Tab/Shift+Tab own nesting. */
   nestedEnter?: unknown;
+  /** v4: normal Toggle list rows start neutral; grading colours are applied explicitly. */
+  color?: unknown;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -80,6 +82,10 @@ export function migrateSettings<T extends MigratableSettings>(raw: T): Migration
   }
   if (from < 3 && "nestedEnter" in settings) {
     delete settings.nestedEnter;
+    changed = true;
+  }
+  if (from < 4 && settings.color !== "default") {
+    settings.color = "default";
     changed = true;
   }
   if (settings.settingsVersion !== SETTINGS_VERSION) {

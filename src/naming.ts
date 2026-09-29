@@ -7,6 +7,8 @@
 /** IDs that stay top-level and readable. */
 export const PRIMARY_IDS = [
   "toggle-list",
+  "shove-into-toggle",
+  "move-out-of-toggle",
   "tools-menu",
   "smart-toggle",
   "smart-colour",
@@ -21,6 +23,11 @@ export type PrimaryId = (typeof PRIMARY_IDS)[number];
 
 export const PRIMARY_NAMES: Record<PrimaryId, string> = {
   "toggle-list": "Toggle list",
+  // v1.8.23 — Notion's two nesting actions, as their own toolbar buttons. The
+  // IDs are the v1.8.9 "shove / move out" commands, so hotkeys and toolbar
+  // entries made before the rename keep working.
+  "shove-into-toggle": "Indent (nest under the toggle above)",
+  "move-out-of-toggle": "Outdent (move out one level)",
   "tools-menu": "Tools",
   "smart-toggle": "Toggle (smart add)",
   "smart-colour": "Colour (red → yellow → green)",
@@ -30,6 +37,10 @@ export const PRIMARY_NAMES: Record<PrimaryId, string> = {
   "smart-quiz": "Quiz (timed question run)",
   "scroll-stats": "Autoscroll: revision stats (weak toggles)",
 };
+
+/** Command IDs of the Indent / Outdent toolbar actions (Notion's nesting controls). */
+export const INDENT_COMMAND_ID = "shove-into-toggle";
+export const OUTDENT_COMMAND_ID = "move-out-of-toggle";
 
 
 export function isPrimary(id: string): id is PrimaryId {

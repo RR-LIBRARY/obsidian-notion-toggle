@@ -1,3 +1,15 @@
+## 1.8.24
+
+- Fresh empty toggles now show the Notion-style “Toggle” hint instead of Obsidian’s generated “Recall red” / callout-type title.
+- Existing installs reset the old default grading colour once, so the normal Toggle list action returns to neutral rows. Red, yellow and green remain available through the Colour command.
+- Enter still creates same-level sibling toggles; only Indent and Outdent change nesting depth.
+
+## 1.8.23
+
+- Mobile toolbar now has its own Indent and Outdent buttons, so nesting a toggle under the one above (or pulling it back out) is one tap — exactly like Notion.
+- New command "Outline selection with AI": select any text and get a row of same-level toggles back from your own outline service. Address, access key and toggles-per-run live in Settings → Outline with AI.
+- A toggle with only a title now still shows its arrow, matching Notion.
+
 ## 1.8.22
 
 - Fixed toggle depth from the user's phone videos: Enter now always creates the next toggle at the same level, whether the current toggle is open, closed, top-level or already nested.

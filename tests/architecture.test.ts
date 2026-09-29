@@ -28,7 +28,7 @@ describe("module boundaries", () => {
     // main.ts gained one import, one interface mixin and one install call.
     // v1.8.15 — Notion's Ctrl/Cmd+Alt+T wiring: the logic is planToggleAll in
     // src/clean-toggles.ts, main.ts only registers the command and applies the plan.
-    expect(lines("main.ts")).toBeLessThan(3560);
+    expect(lines("main.ts")).toBeLessThan(3570);
   });
 
   test("extracted modules exist and stay reviewable", () => {
@@ -90,6 +90,9 @@ const OBSIDIAN_SHELLS = new Set([
   "src/padding-diagnose-view.ts",
   // v1.8.0 — Notion-like writing shell (clean editing, `>`+space, <details> paste/nudge).
   "src/notion-writing.ts",
+  // v1.8.23 — command + settings shells for the AI outline service.
+  "src/outline-command.ts",
+  "src/outline-settings.ts",
 ]);
 
 describe("module size budget (v1.3.3)", () => {

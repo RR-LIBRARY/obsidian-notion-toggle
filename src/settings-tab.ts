@@ -24,6 +24,7 @@ import { clampScreenOverlap, normalizeAdvanceBy, clampScreenDwellMs, clampViewpo
 import { renderThinkSettings } from "./think-settings";
 import { renderNotionWritingSettings } from "./notion-writing";
 import { renderResearchSettings } from "./research/settings";
+import { renderOutlineSettings } from "./outline-settings";
 import { scheduleStoreSummary } from "./maintenance";
 import { hotkeyLabel } from "./guide";
 import { QUIZ_SECONDS_MAX, QUIZ_SECONDS_MIN, REVEAL_SECONDS_MAX, clampQuizSeconds, clampRevealSeconds } from "./quiz";
@@ -881,5 +882,7 @@ export class NotionToggleSettingTab extends PluginSettingTab {
     // v1.7.0 — web research (bridge URL, key, defaults). Rendered last so the
     // toggle basics stay at the top for readers who never use it.
     renderResearchSettings(containerEl, this.plugin);
+    // v1.8.23 — AI outline service (address, key, toggles per run).
+    renderOutlineSettings(containerEl, this.plugin);
   }
 }
