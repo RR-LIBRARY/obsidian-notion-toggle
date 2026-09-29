@@ -114,6 +114,10 @@ Plan persistence, plan toast aur one-tap resume (v1.4.3) → section **6.3**.
 ### Auto-continue on Enter
 - **Kya hai:** toggle ke andar Enter dabao to answer likhna continue hota hai; khali toggle
   line par Enter dabao to **agla** toggle shuru ho jata hai.
+- **1.8.13 (Notion app jaisa):** title ke end par Enter dabao to toggle khulta hai aur andar ek
+  naya toggle taiyaar milta hai (grey "Toggle" hint ke saath). Wahan phir Enter = aur andar; khali
+  title par Enter = wapas plain line; khali aakhri line par Enter = toggle se bahar. Band toggle
+  jisme answer pehle se hai → uske baad agla toggle. Setting: *Enter on a title makes a toggle inside*.
 - **Kaise use karo:** ON — tez typing ke liye sabse kaam ki setting.
 - **Default:** ON
 
@@ -958,6 +962,7 @@ Cursor toggle ke andar rakho, command **Toggle: open by default ↔ closed by de
 | "\>" + space starts a toggle | Khali line par `>` + space se naya toggle | ON |
 | Convert pasted \<details\> automatically | Paste kiya `<details>` → toggle | ON |
 | Offer to convert old notes | Note kholne par one-tap offer | ON |
+| Enter on a title makes a toggle inside | Title par Enter = toggle khule + andar naya toggle (OFF = andar plain line) | ON |
 
 Sab kuch sirf **callout format** ke liye hai; agar aapne *Toggle format* = `<details>` rakha hai to editor pehle jaisa plain rehta hai.
 

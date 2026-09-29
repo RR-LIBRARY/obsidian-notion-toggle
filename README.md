@@ -68,10 +68,11 @@ The trailing `-` starts the toggle collapsed, which is what makes active recall 
 
 | Cursor position | `Enter` |
 |---|---|
-| End of a toggle header | moves inside the toggle (`> ` answer line) |
+| End of a toggle header (no answer yet, or open) | opens the toggle with a **new toggle inside** (Notion app flow; setting *Enter on a title makes a toggle inside* — off = a plain `> ` answer line inside) |
+| End of a **closed** header that has an answer | starts the next toggle after it |
 | Answer line with text | new answer line in the same toggle |
-| Empty `> ` line | closes the toggle and starts the next one |
-| Empty toggle header | unwraps to plain text (double-Enter escape) |
+| Empty `> ` line | closes the toggle and starts the next one (inside a nested toggle: steps out one level) |
+| Empty toggle header | unwraps to plain text (double-Enter escape); an empty title shows a grey "Toggle" hint while it waits |
 | MCQ option line | next `- [ ]` option; empty option → `**Answer:** ` line |
 | Filled table row | next numbered row of the Match table |
 

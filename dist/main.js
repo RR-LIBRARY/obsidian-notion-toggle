@@ -587,6 +587,12 @@ function selectionInBody(block, ranges) {
     return false;
   return ranges.some((r) => rangeTouches(r, block.bodyFrom, block.bodyTo));
 }
+function rawTitle(doc, block) {
+  return doc.lineAt(block.headerFrom).text.slice(block.prefixEnd - block.headerFrom);
+}
+function emptyTitle(doc, block) {
+  return rawTitle(doc, block).replace(/\*/g, "").trim().length === 0;
+}
 function isOpen(block, ranges, overrides) {
   if (selectionInBody(block, ranges))
     return true;
@@ -622,6 +628,8 @@ function planClean(doc, ranges, overrides) {
       cls: `ntt-clean-header ntt-clean-t-${slug} ${open ? "ntt-clean-open" : "ntt-clean-closed"}${block.boldWrap ? " ntt-clean-bold" : ""}${depthCls}`
     });
     plans.push({ kind: "arrow", from: block.headerFrom, to: block.titleFrom, key: block.key, open, type: block.type });
+    if (rawTitle(doc, block).trim().length === 0)
+      plans.push({ kind: "placeholder", pos: block.titleFrom, key: block.key });
     if (block.boldWrap && block.titleTo < block.headerTo)
       plans.push({ kind: "hide", from: block.titleTo, to: block.headerTo });
     const hasBody = block.bodyTo > block.headerTo;
@@ -685,6 +693,39 @@ function redirectCaret(doc, move, overrides) {
     return block.bodyTo + 1;
   }
   return block.titleTo;
+}
+function cleanOwnsEnter(doc, lineNumber, head) {
+  const block = findBlockAt(doc, lineNumber);
+  if (!block)
+    return false;
+  if (block.depth >= 2)
+    return true;
+  if (block.headerLine !== lineNumber)
+    return false;
+  return head >= block.titleTo || emptyTitle(doc, block);
+}
+function planTitleEnter(doc, block, isOpenNow, opts) {
+  const bold = block.boldWrap || rawTitle(doc, block).trim() === "****" ? "**" : "";
+  if (emptyTitle(doc, block)) {
+    const insert = blankAt(block.depth - 1);
+    return { from: block.headerFrom, to: block.headerTo, insert, caret: block.headerFrom + insert.length };
+  }
+  const hasBody = block.bodyTo > block.headerTo;
+  if (hasBody && !isOpenNow) {
+    const head = `
+${blankAt(block.depth - 1)}
+${markersFor(block.depth - 1)}> [!${block.type}]${opts.fold} ${bold}`;
+    const at = block.bodyTo;
+    return { from: at, to: at, insert: head + bold, caret: at + head.length };
+  }
+  if (opts.nested) {
+    const head = `
+${markersFor(block.depth)}> [!${block.type}]${opts.fold} ${bold}`;
+    return { from: block.headerTo, to: block.headerTo, insert: head + bold, caret: block.headerTo + head.length, openKey: block.key };
+  }
+  const ins = `
+${markersFor(block.depth)}`;
+  return { from: block.headerTo, to: block.headerTo, insert: ins, caret: block.headerTo + ins.length, openKey: block.key };
 }
 function isShortcutTrigger(lineText, col) {
   return lineText === ">" && col === 1;
@@ -1017,6 +1058,25 @@ var MoreWidget = class extends import_view.WidgetType {
     return true;
   }
 };
+var PlaceholderWidget = class extends import_view.WidgetType {
+  constructor(key) {
+    super();
+    this.key = key;
+  }
+  eq(other) {
+    return other.key === this.key;
+  }
+  toDOM() {
+    const el2 = document.createElement("span");
+    el2.className = "ntt-clean-placeholder";
+    el2.textContent = "Toggle";
+    el2.setAttribute("aria-hidden", "true");
+    return el2;
+  }
+  ignoreEvent() {
+    return false;
+  }
+};
 function wireToggleClick(el2, view, key, nextOpen) {
   let tap = null;
   let flippedAt = 0;
@@ -1095,6 +1155,9 @@ function decorationsFor(plans, moreChip = true) {
         out.push(
           import_view.Decoration.replace(moreChip ? { widget: new MoreWidget(p.key), inclusive: false } : { inclusive: false }).range(p.from, p.to)
         );
+        break;
+      case "placeholder":
+        out.push(import_view.Decoration.widget({ widget: new PlaceholderWidget(p.key), side: 1 }).range(p.pos));
         break;
     }
   }
@@ -1256,25 +1319,20 @@ function cleanTogglesExtension(host) {
     if (!block)
       return false;
     if (block.headerLine === line.number) {
-      const titleText = doc.sliceString(block.titleFrom, block.titleTo).replace(/\*/g, "").trim();
-      if (!titleText) {
-        view.dispatch({ changes: { from: line.from, to: line.to, insert: "" }, selection: import_state.EditorSelection.cursor(line.from), userEvent: "input" });
-        return true;
-      }
-      if (sel.head < block.titleTo)
+      if (sel.head < block.titleTo && !emptyTitle(doc, block))
         return false;
       const overrides = (_b = (_a = view.state.field(field, false)) == null ? void 0 : _a.overrides) != null ? _b : /* @__PURE__ */ new Map();
-      if (openWithoutCaret(block, overrides)) {
-        const ins = "\n" + markersFor(block.depth);
-        view.dispatch({ changes: { from: block.headerTo, insert: ins }, selection: import_state.EditorSelection.cursor(block.headerTo + ins.length), scrollIntoView: true, userEvent: "input" });
-        return true;
-      }
-      const bold = block.boldWrap ? "**" : "";
-      const head = `
-${blankAt(block.depth - 1)}
-${markersFor(block.depth - 1)}> [!${block.type}]- ${bold}`;
-      const at = Math.max(block.bodyTo, block.headerTo);
-      view.dispatch({ changes: { from: at, insert: head + bold }, selection: import_state.EditorSelection.cursor(at + head.length), scrollIntoView: true, userEvent: "input" });
+      const plan = planTitleEnter(doc, block, openWithoutCaret(block, overrides), {
+        nested: host.nestedEnter ? host.nestedEnter() : true,
+        fold: host.newToggleFold ? host.newToggleFold() : "-"
+      });
+      view.dispatch({
+        changes: { from: plan.from, to: plan.to, insert: plan.insert },
+        selection: import_state.EditorSelection.cursor(plan.caret),
+        effects: plan.openKey === void 0 ? [] : [setToggleOpen.of({ key: plan.openKey, open: true })],
+        scrollIntoView: true,
+        userEvent: "input"
+      });
       return true;
     }
     const cut = markerEnd(line.text, block.depth);
@@ -1627,7 +1685,8 @@ var DEFAULT_NOTION_WRITING = {
   convertDetailsOnPaste: true,
   detailsNudge: true,
   cleanMoreChip: false,
-  blockMoves: true
+  blockMoves: true,
+  nestedEnter: true
 };
 var NOTION_LOOK_CLASS = "ntt-notion-look";
 function calloutMode(plugin) {
@@ -1708,6 +1767,14 @@ async function offerDetailsConversion(plugin, file) {
   });
   row.createEl("button", { text: "Not now" }).addEventListener("click", () => notice.hide());
 }
+function cleanLayerOwnsEnter(plugin, state, lineNumber, head) {
+  if (!plugin.settings.cleanEditing || !calloutMode(plugin))
+    return false;
+  const live = typeof state.field === "function" ? state.field(import_obsidian.editorLivePreviewField, false) : void 0;
+  if (live === false)
+    return false;
+  return cleanOwnsEnter(state.doc, lineNumber, head);
+}
 function uninstallNotionWriting() {
   releaseCleanToggles();
 }
@@ -1720,7 +1787,9 @@ function installNotionWriting(plugin) {
       insertToggleFromShortcut: (view) => insertToggleFromShortcut(plugin, view),
       moreChip: () => plugin.settings.cleanMoreChip,
       autoContinue: () => plugin.settings.autoContinue,
-      blockMoves: () => plugin.settings.blockMoves !== false
+      blockMoves: () => plugin.settings.blockMoves !== false,
+      nestedEnter: () => plugin.settings.nestedEnter !== false,
+      newToggleFold: () => plugin.settings.defaultCollapsed ? "-" : "+"
     })
   );
   const moves = [
@@ -1837,6 +1906,15 @@ function renderNotionWritingSettings(containerEl, plugin) {
     toggle.setValue(plugin.settings.blockMoves !== false);
     toggle.onChange(async (value) => {
       plugin.settings.blockMoves = value;
+      await save();
+    });
+  });
+  new import_obsidian.Setting(containerEl).setName("Enter on a title makes a toggle inside").setDesc(
+    "Like the Notion app: press Enter at the end of a toggle's title and it opens with a new toggle ready inside. Off = Enter opens it with a plain line inside. Enter on an empty title turns it back into a plain line."
+  ).addToggle((toggle) => {
+    toggle.setValue(plugin.settings.nestedEnter !== false);
+    toggle.onChange(async (value) => {
+      plugin.settings.nestedEnter = value;
       await save();
     });
   });
@@ -11604,6 +11682,8 @@ var NotionTogglePlugin = class extends import_obsidian16.Plugin {
     if (!sel.empty)
       return false;
     const line = state.doc.lineAt(sel.head);
+    if (cleanLayerOwnsEnter(this, state, line.number, sel.head))
+      return false;
     const text = line.text;
     const atLineEnd = sel.head === line.to;
     if (!atLineEnd) {

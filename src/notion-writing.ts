@@ -24,7 +24,7 @@ import { MarkdownView, Notice, Setting, editorLivePreviewField, type TFile } fro
 import type { EditorView } from "@codemirror/view";
 import type NotionTogglePlugin from "../main";
 import { cleanTogglesExtension, releaseCleanToggles, runBlockMove, type MoveHow } from "./clean-toggles-view";
-import { convertPastedText, detailsBlockCount, flipFoldMarker } from "./clean-toggles";
+import { cleanOwnsEnter, convertPastedText, detailsBlockCount, flipFoldMarker, type DocLike } from "./clean-toggles";
 import { convertDetailsToCallouts, newTogglePlan, nextToggleNumber } from "./editor-blocks";
 
 /* ---------- settings ---------- */
@@ -44,6 +44,8 @@ export interface NotionWritingSettings {
   cleanMoreChip: boolean;
   /** v1.8.9: Tab / Shift+Tab, Ctrl/Cmd+Shift+↑/↓ and press-and-drag rearrange blocks and shove them into toggles. */
   blockMoves: boolean;
+  /** v1.8.13: Enter at the end of a title opens the toggle with a new toggle inside (Notion phone app). Off = a plain line inside. */
+  nestedEnter: boolean;
 }
 
 export const DEFAULT_NOTION_WRITING: NotionWritingSettings = {
@@ -54,6 +56,7 @@ export const DEFAULT_NOTION_WRITING: NotionWritingSettings = {
   detailsNudge: true,
   cleanMoreChip: false,
   blockMoves: true,
+  nestedEnter: true,
 };
 
 /** Body class the stylesheet keys off; themes and CSS snippets can build on it too. */
@@ -147,6 +150,25 @@ export async function offerDetailsConversion(plugin: NotionTogglePlugin, file: T
   row.createEl("button", { text: "Not now" }).addEventListener("click", () => notice.hide());
 }
 
+/**
+ * v1.8.13 — asked by main.ts's older Enter handler (which runs first and only
+ * knows flat `> ` lines) before it acts: with clean editing on in Live Preview,
+ * the end of a toggle title and anything inside a nested toggle belong to the
+ * clean layer, so that handler steps aside and lets the clean layer's Enter
+ * (or, failing that, Obsidian's own `>` continuation) run.
+ */
+export function cleanLayerOwnsEnter(
+  plugin: NotionTogglePlugin,
+  state: { doc: DocLike; field?: (f: unknown, required?: false) => unknown },
+  lineNumber: number,
+  head: number
+): boolean {
+  if (!plugin.settings.cleanEditing || !calloutMode(plugin)) return false;
+  const live = typeof state.field === "function" ? state.field(editorLivePreviewField, false) : undefined;
+  if (live === false) return false; // Source mode: the clean layer is off there too
+  return cleanOwnsEnter(state.doc, lineNumber, head);
+}
+
 /** v1.8.11 — called from `onunload`: drop the module-level drag host so a disabled plugin keeps nothing alive. */
 export function uninstallNotionWriting(): void {
   releaseCleanToggles();
@@ -163,6 +185,8 @@ export function installNotionWriting(plugin: NotionTogglePlugin): void {
       moreChip: () => plugin.settings.cleanMoreChip,
       autoContinue: () => plugin.settings.autoContinue,
       blockMoves: () => plugin.settings.blockMoves !== false,
+      nestedEnter: () => plugin.settings.nestedEnter !== false,
+      newToggleFold: () => (plugin.settings.defaultCollapsed ? "-" : "+"),
     })
   );
 
@@ -311,6 +335,19 @@ export function renderNotionWritingSettings(containerEl: HTMLElement, plugin: No
       toggle.setValue(plugin.settings.blockMoves !== false);
       toggle.onChange(async (value) => {
         plugin.settings.blockMoves = value;
+        await save();
+      });
+    });
+
+  new Setting(containerEl)
+    .setName("Enter on a title makes a toggle inside")
+    .setDesc(
+      "Like the Notion app: press Enter at the end of a toggle's title and it opens with a new toggle ready inside. Off = Enter opens it with a plain line inside. Enter on an empty title turns it back into a plain line."
+    )
+    .addToggle((toggle) => {
+      toggle.setValue(plugin.settings.nestedEnter !== false);
+      toggle.onChange(async (value) => {
+        plugin.settings.nestedEnter = value;
         await save();
       });
     });

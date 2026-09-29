@@ -25,11 +25,13 @@ import {
 import { Decoration, EditorView, WidgetType, keymap, type DecorationSet } from "@codemirror/view";
 import {
   afterTitle,
+  emptyTitle,
   findBlockAt,
   isOpen,
   isShortcutTrigger,
   openWithoutCaret,
   planClean,
+  planTitleEnter,
   redirectCaret,
   type CleanPlan,
   type OverrideMap,
@@ -37,7 +39,6 @@ import {
   blankAt,
   markerDepth,
   markerEnd,
-  markersFor,
 } from "./clean-toggles";
 import { dropUnit, indentUnit, moveUnit, outdentUnit, unitAt, type DropMode, type MoveResult } from "./block-move";
 
@@ -56,6 +57,10 @@ export interface CleanTogglesHost {
   autoContinue?(): boolean;
   /** v1.8.9 setting: Tab / Shift+Tab / drag rearrange blocks and shove them into toggles (default on). */
   blockMoves?(): boolean;
+  /** v1.8.13 setting: Enter at the end of a title opens the toggle with a new toggle inside (default on; off = a plain line inside). */
+  nestedEnter?(): boolean;
+  /** v1.8.13: fold marker for toggles made by Enter (`-` unless the "start open" setting is on). */
+  newToggleFold?(): "+" | "-";
 }
 
 /** Click on the arrow / the "…" chip: remember the choice for this block. */
@@ -143,6 +148,29 @@ class MoreWidget extends WidgetType {
 
   override ignoreEvent(): boolean {
     return true;
+  }
+}
+
+/** v1.8.13 — grey "Toggle" hint on an empty title, like Notion's placeholder. Not a target: taps go to the editor. */
+class PlaceholderWidget extends WidgetType {
+  constructor(readonly key: number) {
+    super();
+  }
+
+  override eq(other: PlaceholderWidget): boolean {
+    return other.key === this.key;
+  }
+
+  override toDOM(): HTMLElement {
+    const el = document.createElement("span");
+    el.className = "ntt-clean-placeholder";
+    el.textContent = "Toggle";
+    el.setAttribute("aria-hidden", "true");
+    return el;
+  }
+
+  override ignoreEvent(): boolean {
+    return false;
   }
 }
 
@@ -234,6 +262,9 @@ export function decorationsFor(plans: CleanPlan[], moreChip = true): Range<Decor
         out.push(
           Decoration.replace(moreChip ? { widget: new MoreWidget(p.key), inclusive: false } : { inclusive: false }).range(p.from, p.to)
         );
+        break;
+      case "placeholder":
+        out.push(Decoration.widget({ widget: new PlaceholderWidget(p.key), side: 1 }).range(p.pos));
         break;
     }
   }
@@ -403,11 +434,14 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
   }
 
   /**
-   * v1.8.7 — Enter like Notion:
-   *  - empty title            -> the toggle becomes a plain line
-   *  - closed toggle title    -> a new closed toggle right after this one
-   *  - open toggle title      -> a new line inside the toggle
-   *  - empty last body line   -> leave the toggle (plain line)
+   * v1.8.7 / v1.8.13 — Enter like Notion (the phone app, frame by frame):
+   *  - empty title            -> the toggle becomes a plain line (inside its parent when nested)
+   *  - closed title with body -> a new closed toggle right after this one
+   *  - title of an open or still-empty toggle -> it opens, caret on a new
+   *    nested toggle inside (setting on) or a plain line inside (setting off)
+   *  - empty last body line   -> leave the toggle (plain line one level up)
+   * Body lines with text are left to the editor's own Enter (Obsidian keeps
+   * the `>` markers and list bullets going by itself).
    */
   function enterLikeNotion(view: EditorView): boolean {
     if (host.autoContinue && !host.autoContinue()) return false;
@@ -419,22 +453,19 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
     const block = findBlockAt(doc, line.number);
     if (!block) return false;
     if (block.headerLine === line.number) {
-      const titleText = doc.sliceString(block.titleFrom, block.titleTo).replace(/\*/g, "").trim();
-      if (!titleText) {
-        view.dispatch({ changes: { from: line.from, to: line.to, insert: "" }, selection: EditorSelection.cursor(line.from), userEvent: "input" });
-        return true;
-      }
-      if (sel.head < block.titleTo) return false; // mid-title: default split
+      if (sel.head < block.titleTo && !emptyTitle(doc, block)) return false; // mid-title: default split
       const overrides = view.state.field(field, false)?.overrides ?? new Map();
-      if (openWithoutCaret(block, overrides)) {
-        const ins = "\n" + markersFor(block.depth);
-        view.dispatch({ changes: { from: block.headerTo, insert: ins }, selection: EditorSelection.cursor(block.headerTo + ins.length), scrollIntoView: true, userEvent: "input" });
-        return true;
-      }
-      const bold = block.boldWrap ? "**" : "";
-      const head = `\n${blankAt(block.depth - 1)}\n${markersFor(block.depth - 1)}> [!${block.type}]- ${bold}`;
-      const at = Math.max(block.bodyTo, block.headerTo);
-      view.dispatch({ changes: { from: at, insert: head + bold }, selection: EditorSelection.cursor(at + head.length), scrollIntoView: true, userEvent: "input" });
+      const plan = planTitleEnter(doc, block, openWithoutCaret(block, overrides), {
+        nested: host.nestedEnter ? host.nestedEnter() : true,
+        fold: host.newToggleFold ? host.newToggleFold() : "-",
+      });
+      view.dispatch({
+        changes: { from: plan.from, to: plan.to, insert: plan.insert },
+        selection: EditorSelection.cursor(plan.caret),
+        effects: plan.openKey === undefined ? [] : [setToggleOpen.of({ key: plan.openKey, open: true })],
+        scrollIntoView: true,
+        userEvent: "input",
+      });
       return true;
     }
     const cut = markerEnd(line.text, block.depth);

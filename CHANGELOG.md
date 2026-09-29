@@ -2,6 +2,16 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.8.13
+
+**Enter like the Notion app** (from the reference clip, frame by frame).
+
+- Press Enter at the end of a toggle's title: the toggle opens and a new toggle waits inside it, caret on its title. Enter there again nests one level deeper; Enter on an empty title backs out to a plain line inside; Enter on that empty last line leaves the toggle. A closed toggle that already has an answer still starts the next toggle after it (the recall flow).
+- New setting *Enter on a title makes a toggle inside* (on). Off = Enter opens the toggle with a plain line inside, as in 1.8.7–1.8.12.
+- An empty title shows a grey "Toggle" hint, like Notion.
+- Fix: the plugin's older Enter handler ran before the clean-editing one and always inserted a flat `> ` line, so the Notion-style Enter added in 1.8.7 never actually ran, and Enter inside a nested toggle broke the nesting. It now steps aside on titles and inside nested toggles.
+- Tests: 24 planner + 10 editor tests for the Enter flow (including the real order of the two handlers), 4 tests for the 1.8.11 parser safety net and 3 for the drag-hook release on unload (both were shipped untested), 12 new real-browser checks.
+
 ## 1.8.12
 
 - Mobile: tapping a toggle arrow now opens/closes reliably (finger jitter up to ~12px allowed, no dependence on the delayed mobile click; never flips twice).

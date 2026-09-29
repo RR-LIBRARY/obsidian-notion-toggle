@@ -1681,6 +1681,15 @@ body.ntt-focus-run .workspace-drawer-backdrop {
 .ntt-clean-arrow:hover { background-color: var(--background-modifier-hover); }
 .is-mobile .ntt-clean-arrow { width: 1.9em; height: 1.9em; }
 
+/* v1.8.13 — grey "Toggle" hint on an empty title (Notion shows the same). Sits
+   after the caret, never catches taps, gone as soon as a letter is typed. */
+.ntt-clean-placeholder {
+  color: var(--text-faint);
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 
 /* v1.8.4 — closer to the Notion / Lovable FAQ look (measured against the
    reference video): a small solid triangle inside the same tap target,

@@ -1,7 +1,7 @@
 import { App, Editor, MarkdownView, Modal, Notice, Platform, Plugin, PluginSettingTab, Setting, type WorkspaceLeaf } from "obsidian";
 import { Prec } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
-import { DEFAULT_NOTION_WRITING, installNotionWriting, uninstallNotionWriting, type NotionWritingSettings } from "./src/notion-writing";
+import { DEFAULT_NOTION_WRITING, cleanLayerOwnsEnter, installNotionWriting, uninstallNotionWriting, type NotionWritingSettings } from "./src/notion-writing";
 import {
   DEFAULT_POMODORO,
   POMODORO_PRESETS,
@@ -1251,6 +1251,8 @@ export default class NotionTogglePlugin extends Plugin {
     const sel = state.selection.main;
     if (!sel.empty) return false;
     const line = state.doc.lineAt(sel.head);
+    // v1.8.13 — title ends and nested toggles belong to the clean layer (it knows depth + open state).
+    if (cleanLayerOwnsEnter(this, state, line.number, sel.head)) return false;
     const text: string = line.text;
     const atLineEnd = sel.head === line.to;
     // Mid-line Enter inside a callout: the rule lives in `src/editor-blocks.ts`.

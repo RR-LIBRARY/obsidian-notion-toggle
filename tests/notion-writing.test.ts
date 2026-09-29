@@ -175,6 +175,7 @@ describe("v1.8.0 notion writing — install", () => {
   test("defaults: everything on (the whole point of the release)", () => {
     expect(DEFAULT_NOTION_WRITING).toEqual({
       blockMoves: true,
+      nestedEnter: true,
       cleanEditing: true,
       notionLook: true,
       notionShortcut: true,
@@ -374,7 +375,7 @@ describe("v1.8.0 notion writing — `>` + space inserts a toggle skeleton", () =
 /* ---------- settings ---------- */
 
 describe("v1.8.0 notion writing — settings section", () => {
-  test("renders a heading and six switches with the current values", () => {
+  test("renders a heading and eight switches with the current values", () => {
     const f = fake({ notionShortcut: false });
     const root = document.createElement("div");
     renderNotionWritingSettings(root, f.plugin);
@@ -389,12 +390,14 @@ describe("v1.8.0 notion writing — settings section", () => {
         "Offer to convert old notes",
         "Show “…” after a closed title",
         "Rearrange and shove into toggles",
+        "Enter on a title makes a toggle inside",
       ])
     );
     const toggles = Array.from(root.querySelectorAll(".checkbox-container"));
-    expect(toggles.length).toBe(7);
+    expect(toggles.length).toBe(8);
     expect(toggles[5].classList.contains("is-enabled")).toBe(true);
-    expect(toggles[6].classList.contains("is-enabled")).toBe(false);
+    expect(toggles[6].classList.contains("is-enabled")).toBe(true); // v1.8.13 Enter-on-title, on by default
+    expect(toggles[7].classList.contains("is-enabled")).toBe(false);
     expect(toggles[0].classList.contains("is-enabled")).toBe(true);
     expect(toggles[2].classList.contains("is-enabled")).toBe(false);
   });

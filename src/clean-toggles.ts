@@ -321,7 +321,19 @@ export type CleanPlan =
   | { kind: "line"; pos: number; cls: string }
   | { kind: "arrow"; from: number; to: number; key: number; open: boolean; type: string }
   | { kind: "hide"; from: number; to: number }
-  | { kind: "fold"; from: number; to: number; key: number };
+  | { kind: "fold"; from: number; to: number; key: number }
+  /** v1.8.13 — grey "Toggle" hint after the arrow of a title with nothing typed yet (Notion shows the same). */
+  | { kind: "placeholder"; pos: number; key: number };
+
+/** v1.8.13 — the title text as typed, without the callout prefix (bold `**` kept). */
+export function rawTitle(doc: DocLike, block: ToggleBlock): string {
+  return doc.lineAt(block.headerFrom).text.slice(block.prefixEnd - block.headerFrom);
+}
+
+/** v1.8.13 — is the title empty (nothing but spaces, or an empty `****` bold pair)? */
+export function emptyTitle(doc: DocLike, block: ToggleBlock): boolean {
+  return rawTitle(doc, block).replace(/\*/g, "").trim().length === 0;
+}
 
 /** Sticky per-block open/closed choices the writer made with the arrow. */
 export type OverrideMap = ReadonlyMap<number, boolean>;
@@ -378,6 +390,9 @@ export function planClean(doc: DocLike, ranges: readonly SelRange[], overrides: 
       cls: `ntt-clean-header ntt-clean-t-${slug} ${open ? "ntt-clean-open" : "ntt-clean-closed"}${block.boldWrap ? " ntt-clean-bold" : ""}${depthCls}`,
     });
     plans.push({ kind: "arrow", from: block.headerFrom, to: block.titleFrom, key: block.key, open, type: block.type });
+    // v1.8.13 — nothing typed yet: show the grey "Toggle" hint (only when the title is truly blank;
+    // an empty `****` bold pair keeps showing its markers so the caret has somewhere visible to sit).
+    if (rawTitle(doc, block).trim().length === 0) plans.push({ kind: "placeholder", pos: block.titleFrom, key: block.key });
     if (block.boldWrap && block.titleTo < block.headerTo) plans.push({ kind: "hide", from: block.titleTo, to: block.headerTo });
     const hasBody = block.bodyTo > block.headerTo;
     if (!hasBody) continue;
@@ -470,6 +485,79 @@ export function redirectCaret(doc: DocLike, move: CaretMove, overrides: Override
 /** Backwards-compatible caret-only form of `redirectCaret`. */
 export function nudgeCaret(doc: DocLike, head: number, overrides: OverrideMap): number | null {
   return redirectCaret(doc, { anchor: head, head }, overrides);
+}
+
+/* ---------- v1.8.13: Enter at the end of a title (Notion parity, nesting-aware) ---------- */
+
+/**
+ * Does the clean layer own Enter at this caret? The plugin's older Enter
+ * handler (main.ts) runs first and only knows flat `> ` lines; it steps aside
+ * here so nesting and open state are respected:
+ *  - the caret sits at (or past) the end of a toggle title (or anywhere in an
+ *    empty title, e.g. between the `**|**` the shortcut leaves), or
+ *  - the caret is anywhere inside a nested toggle (depth >= 2).
+ * Pure; `lineNumber` is 1-based.
+ */
+export function cleanOwnsEnter(doc: DocLike, lineNumber: number, head: number): boolean {
+  const block = findBlockAt(doc, lineNumber);
+  if (!block) return false;
+  if (block.depth >= 2) return true;
+  if (block.headerLine !== lineNumber) return false;
+  return head >= block.titleTo || emptyTitle(doc, block);
+}
+
+export interface TitleEnterOptions {
+  /** Setting: a title's Enter starts a new toggle *inside* (Notion mobile) instead of a plain line inside. */
+  nested: boolean;
+  /** Fold marker for a freshly made toggle (`-` = starts closed, the recall default). */
+  fold: "+" | "-";
+}
+
+export interface TitleEnterPlan {
+  /** Replace doc[from, to) with `insert` … */
+  from: number;
+  to: number;
+  insert: string;
+  /** … and put the caret here (absolute, after the change). */
+  caret: number;
+  /** Header key of a toggle that must show open afterwards (the one the caret went into). */
+  openKey?: number;
+}
+
+/**
+ * What Enter does at the end of a toggle title — the flow from the Notion
+ * phone app, measured frame by frame:
+ *
+ *  - empty title                       → the toggle becomes a plain line at the
+ *                                        parent's depth (a `>` line inside the
+ *                                        parent, or an empty line at top level);
+ *  - closed toggle that has a body     → a new closed toggle right after this
+ *                                        one (a sibling), like Notion desktop;
+ *  - otherwise (no body yet, or open)  → the toggle opens and the caret lands on
+ *                                        a new first line inside it: a nested
+ *                                        toggle (`nested` on — what the video
+ *                                        shows) or a plain body line (off).
+ *
+ * Pure: the caller dispatches the change and the open effect.
+ */
+export function planTitleEnter(doc: DocLike, block: ToggleBlock, isOpenNow: boolean, opts: TitleEnterOptions): TitleEnterPlan {
+  const bold = block.boldWrap || rawTitle(doc, block).trim() === "****" ? "**" : "";
+  if (emptyTitle(doc, block)) {
+    const insert = blankAt(block.depth - 1);
+    return { from: block.headerFrom, to: block.headerTo, insert, caret: block.headerFrom + insert.length };
+  }
+  const hasBody = block.bodyTo > block.headerTo;
+  if (hasBody && !isOpenNow) {
+    const head = `\n${blankAt(block.depth - 1)}\n${markersFor(block.depth - 1)}> [!${block.type}]${opts.fold} ${bold}`;
+    const at = block.bodyTo;
+    return { from: at, to: at, insert: head + bold, caret: at + head.length };
+  }
+  if (opts.nested) {
+    const head = `\n${markersFor(block.depth)}> [!${block.type}]${opts.fold} ${bold}`;
+    return { from: block.headerTo, to: block.headerTo, insert: head + bold, caret: block.headerTo + head.length, openKey: block.key };
+  }
+  const ins = `\n${markersFor(block.depth)}`;
+  return { from: block.headerTo, to: block.headerTo, insert: ins, caret: block.headerTo + ins.length, openKey: block.key };
 }
 
 /* ---------- the `>` + space shortcut (Notion parity) ---------- */
