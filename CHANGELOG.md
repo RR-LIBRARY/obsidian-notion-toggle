@@ -1,3 +1,7 @@
+## 1.8.19
+
+- Fixed the one test that failed only in the full suite (the quiz dock test picked up a stale dock from an earlier test). Full suite now passes 1364/1364 every run.
+
 ## 1.8.18
 
 - Dedicated **Toggle list** mobile action: at a cursor it makes a new toggle; selected text becomes a toggle. The existing smart-toggle action is unchanged.

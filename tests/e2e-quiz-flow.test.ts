@@ -24,6 +24,9 @@ const NOTE: NoteQuestion[] = [
 
 let container: HTMLElement;
 beforeEach(() => {
+  // The DOM is shared across test files in one bun run: drop any dock/ring
+  // another file left behind so querySelector always finds *this* run's UI.
+  document.querySelectorAll(".ntt-quiz-dock, .ntt-quiz-ring").forEach((el) => el.remove());
   container = renderNote(NOTE);
 });
 
@@ -131,11 +134,15 @@ describe("E2E — survives Obsidian re-rendering the section (Q22 skip bug)", ()
 describe("E2E — modal-driven controls", () => {
   it("dock buttons drive pause, reveal, next and stop", () => {
     const h = new QuizHarness(container, { quizSeconds: 30, quizRevealSeconds: 5 }).withUi();
-    const dock = document.querySelector(".ntt-quiz-dock") as HTMLElement;
+    // querySelectorAll, not querySelector: the DOM library can hand back a
+    // cached, already-removed dock from an earlier test file in the same run.
+    const docks = document.querySelectorAll(".ntt-quiz-dock");
+    const dock = docks[docks.length - 1] as HTMLElement;
+    expect(dock.isConnected).toBe(true);
     const click = (cls: string) =>
-      (dock.querySelector(`.${cls}`) as HTMLButtonElement).dispatchEvent(
-        new MouseEvent("click", { bubbles: true })
-      );
+      // .click() fires through the button's own window — a global MouseEvent
+      // from another test file's DOM would never reach the listener.
+      (dock.querySelector(`.${cls}`) as HTMLButtonElement).click();
 
     click("is-run");
     expect(h.state.running).toBe(false);
