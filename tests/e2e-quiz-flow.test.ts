@@ -134,31 +134,29 @@ describe("E2E — survives Obsidian re-rendering the section (Q22 skip bug)", ()
 describe("E2E — modal-driven controls", () => {
   it("dock buttons drive pause, reveal, next and stop", () => {
     const h = new QuizHarness(container, { quizSeconds: 30, quizRevealSeconds: 5 }).withUi();
-    // querySelectorAll, not querySelector: the DOM library can hand back a
-    // cached, already-removed dock from an earlier test file in the same run.
-    const docks = document.querySelectorAll(".ntt-quiz-dock");
-    const dock = docks[docks.length - 1] as HTMLElement;
-    expect(dock.isConnected).toBe(true);
-    const click = (cls: string) =>
-      // .click() fires through the button's own window — a global MouseEvent
-      // from another test file's DOM would never reach the listener.
-      (dock.querySelector(`.${cls}`) as HTMLButtonElement).click();
+    // Drive this run's OWN dock: a stray dock left by another file (re-appended
+    // by a late timer) can sit later in the DOM, so a body-wide query can click
+    // the wrong buttons. h.bar's root carries this run's real listeners.
+    const bar = h.bar as unknown as { root: HTMLElement };
+    expect(bar.root.isConnected).toBe(true);
+    const btn = (cls: string) =>
+      (bar.root.querySelector(`.${cls}`) as HTMLButtonElement).click();
 
-    click("is-run");
+    btn("is-run");
     expect(h.state.running).toBe(false);
-    click("is-run");
+    btn("is-run");
     expect(h.state.running).toBe(true);
 
-    click("is-reveal");
+    btn("is-reveal");
     expect(h.visibleTitles()).toEqual(["Q1 what is an allele?"]);
 
-    click("is-next");
+    btn("is-next");
     expect(h.state.at).toBe(1);
     expect(h.visibleTitles()).toEqual([]);
 
-    click("is-stop");
-    expect(document.querySelector(".ntt-quiz-dock")).toBeNull();
-    expect(document.querySelector(".ntt-quiz-ring")).toBeNull();
+    btn("is-stop");
+    expect(bar.root.isConnected).toBe(false);
+    expect(h.ring).toBeNull();
   });
 
   it("the inline ring follows the active question and never duplicates", () => {
