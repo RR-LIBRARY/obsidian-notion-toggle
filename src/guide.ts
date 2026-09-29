@@ -16,90 +16,20 @@ export interface ToolbarCommand {
 
 /** The exact commands worth pinning to the Obsidian mobile toolbar. */
 export const TOOLBAR_COMMANDS: ToolbarCommand[] = [
-  {
-    id: "smart-autoscroll",
-    name: "Autoscroll (start / pause revision)",
-    why: "Ek tap se autoscroll shuru ya pause — sabse zaroori.",
-    priority: 1,
-  },
-  {
-    id: "autoscroll-sheet",
-    name: "Autoscroll: sheet (all controls)",
-    why: "Saare controls — speed, pause, filter, mode — ek sheet me.",
-    priority: 2,
-  },
-  {
-    id: "autoscroll-reverse",
-    name: "Autoscroll: reverse direction",
-    why: "Fast revision ke liye neeche → upar scroll.",
-    priority: 3,
-  },
-  {
-    id: "autoscroll-filter",
-    name: "Autoscroll: choose colour filter",
-    why: "Sirf 🔴 / 🟡 / 🟢 toggles par rukna ho to.",
-    priority: 4,
-  },
-  {
-    id: "autoscroll-mode",
-    name: "Autoscroll: pause at (odd / even / custom / route / shuffle)",
-    why: "Kaunse toggles par rukna hai — odd/even/route/shuffle.",
-    priority: 5,
-  },
-  {
-    id: "autoscroll-dwell",
-    name: "Autoscroll: pause for (hold time)",
-    why: "Har toggle par kitni der ruke (5s … 1h).",
-    priority: 6,
-  },
-  {
-    id: "autoscroll-speed-presets",
-    name: "Autoscroll: speed presets (0.02x … 20x)",
-    why: "Reader wali speed chips — 0.02x se 20x tak.",
-    priority: 7,
-  },
-  {
-    id: "autoscroll-top",
-    name: "Autoscroll: go to first toggle",
-    why: "Wapas note ke shuruaat / aakhir par jump.",
-    priority: 8,
-  },
-  {
-    id: "scroll-stats",
-    name: "Autoscroll: revision stats (weak toggles)",
-    why: "Shuffle kis ko pehle laata hai aur kyun — FSRS stats.",
-    priority: 9,
-  },
-  {
-    id: "autoscroll-stop",
-    name: "Autoscroll: stop",
-    why: "Session poori tarah band kare (floating bar ka ✕ bhi yehi karta hai).",
-    priority: 10,
-  },
-  {
-    id: "smart-quiz",
-    name: "Quiz (timed question run)",
-    why: "Toolbar se ek tap me quiz mode — timer, auto reveal, auto next.",
-    priority: 11,
-  },
-  {
-    id: "quiz-pause",
-    name: "Quiz: pause / resume",
-    why: "Quiz ke beech me rukna ho to — wahi tap se resume.",
-    priority: 12,
-  },
+  { id: "toggle-list", name: "Toggle list", why: "Cursor par toggle banao; selected text ko toggle me badlo.", priority: 1 },
+  { id: "tools-menu", name: "Tools", why: "Saare purane actions ek jagah, bina toolbar bhare.", priority: 2 },
+  { id: "smart-autoscroll", name: "Autoscroll (start / pause revision)", why: "Optional: revision ek tap se shuru ya pause.", priority: 3 },
+  { id: "smart-recall", name: "Recall (start / pause session)", why: "Optional: recall session ek tap me.", priority: 4 },
+  { id: "autoscroll-reverse", name: "Autoscroll: reverse direction", why: "Optional: reverse shortcut ke liye.", priority: 5 },
+  { id: "autoscroll-sheet", name: "Autoscroll: sheet (all controls)", why: "Optional: speed aur mode control ke liye.", priority: 6 },
 ];
 
-
-/** Toolbar steps shown at the top of the guide. */
+/** The phone toolbar itself is managed by Obsidian, not by this plugin. */
 export const TOOLBAR_STEPS: string[] = [
-  "Obsidian me Settings ⚙️ kholo.",
-  "Mobile section me jao → Manage toolbar.",
-  "Wahan + / Add command dabao aur neeche wali commands ek-ek karke add karo.",
-  "Jo add ho gayi, us row par tap karke tick ✓ kar do — list yaad rehti hai.",
-  "Ab koi note kholo aur toolbar se ▶ Autoscroll ya ❓ Quiz dabao — bas!",
+  "Obsidian Settings ⚙️ → Mobile → Manage toolbar kholo.",
+  "Toggle list aur Tools add karo; baaki purane buttons zaroorat na ho to hata do.",
+  "Recall aur Autoscroll ko sirf roz use karte ho to direct rakho.",
 ];
-
 
 /** Toggle one checklist entry; returns a new array (sorted by priority). */
 export function toggleGuideDone(done: string[], id: string): string[] {

@@ -95,6 +95,8 @@ describe("v1.0.7 — SM-2 scheduling", () => {
 
 describe("v1.0.7 — minimal command surface", () => {
   test("primary commands keep clean names", () => {
+    expect(commandName("toggle-list", "Toggle list", true)).toBe("Toggle list");
+    expect(commandName("tools-menu", "Tools", true)).toBe("Tools");
     expect(isPrimary("smart-toggle")).toBe(true);
     expect(commandName("smart-toggle", "Toggle (smart add)", true)).toBe("Toggle (smart add)");
   });

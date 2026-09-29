@@ -15,8 +15,8 @@ describe("mobile toolbar guide", () => {
     expect([...priorities].sort((a, b) => a - b)).toEqual(priorities);
   });
 
-  test("start/pause is the first recommendation", () => {
-    expect(TOOLBAR_COMMANDS[0].id).toBe("smart-autoscroll");
+  test("toggle and tools are the two required buttons", () => {
+    expect(TOOLBAR_COMMANDS.slice(0, 2).map((c) => c.id)).toEqual(["toggle-list", "tools-menu"]);
   });
 
   test("every entry has a name and a reason", () => {
@@ -32,11 +32,11 @@ describe("mobile toolbar guide", () => {
 
   test("toggleGuideDone adds and removes in priority order", () => {
     let done: string[] = [];
-    done = toggleGuideDone(done, "autoscroll-stop");
     done = toggleGuideDone(done, "smart-autoscroll");
-    expect(done).toEqual(["smart-autoscroll", "autoscroll-stop"]);
-    done = toggleGuideDone(done, "smart-autoscroll");
-    expect(done).toEqual(["autoscroll-stop"]);
+    done = toggleGuideDone(done, "toggle-list");
+    expect(done).toEqual(["toggle-list", "smart-autoscroll"]);
+    done = toggleGuideDone(done, "toggle-list");
+    expect(done).toEqual(["smart-autoscroll"]);
   });
 
   test("toggleGuideDone ignores unknown ids", () => {
@@ -93,12 +93,11 @@ describe("v1.1.6 hotkeys + messages", () => {
   });
 });
 
-test("quiz commands are part of the mobile toolbar checklist", () => {
+test("quiz commands remain available in Tools, not as required toolbar buttons", () => {
   const ids = TOOLBAR_COMMANDS.map((c) => c.id);
-  expect(ids).toContain("smart-quiz");
-  expect(ids).toContain("quiz-pause");
-  expect(guideProgress(["smart-quiz"])).toBe(`1/${TOOLBAR_COMMANDS.length}`);
-  expect(toggleGuideDone([], "smart-quiz")).toEqual(["smart-quiz"]);
+  expect(ids).not.toContain("smart-quiz");
+  expect(ids).not.toContain("quiz-pause");
+  expect(toggleGuideDone([], "smart-quiz")).toEqual([]);
 });
 
 /* ---------- v1.2.4: FAB only floats over real notes ---------- */

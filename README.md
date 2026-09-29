@@ -2,7 +2,7 @@
 
 Notion-style collapsible toggles for Obsidian, plus a recall workflow built on top of them: traffic-light grading, a floating Pomodoro timer, and SM-2 spaced repetition. You never type `<details>`, `<summary>` or `>` brackets by hand.
 
-Works on desktop and mobile. Version 1.8.0.
+Works on desktop and mobile. Version 1.8.18.
 
 Autoscroll sheet ki Hindi guide: **[AUTOSCROLL-SHEET-GUIDE.md](AUTOSCROLL-SHEET-GUIDE.md)** — sheet ke saare 35 options, number-wise, + student presets. Minimal sheet ideas: [SHEET-MINIMAL-IDEAS.md](SHEET-MINIMAL-IDEAS.md).
 
@@ -243,4 +243,4 @@ The rules were already the reader's; now the **loop mechanics** are too (ported 
 
 - **Floating ▶ button** on every open note (bottom-right, safe-area aware): tap = start / pause autoscroll, **long-press = autoscroll sheet**. It hides while the running control bar is on screen, and can be turned off in settings (*Floating autoscroll button*).
 - **Autoscroll sheet** — every control in one mobile-friendly sheet: start/pause, speed, pause-for, pause-at, colour filter, reverse, loop, auto-open/close, tall-toggle chunking, debug overlay, plus shortcuts to *go to first*, *stats* and the toolbar guide. Also available as the command `Autoscroll: sheet (all controls)`.
-- **Mobile toolbar guide** (command `Autoscroll: mobile toolbar guide`, or the button in settings) — in-app steps for Settings → Mobile → Manage toolbar with a **one-tap checklist** of the exact commands to add; the checklist persists, so you can tick commands off as you add them.
+- **Minimal mobile toolbar** — pin **Toggle list** and **Tools** in Settings → Mobile → Manage toolbar. Toggle list inserts a toggle or wraps selected text; Tools searches the existing commands by category. Recall and Autoscroll are optional direct buttons. The guide has a saved checklist; remove old toolbar buttons manually in Obsidian.

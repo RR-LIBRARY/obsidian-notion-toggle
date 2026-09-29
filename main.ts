@@ -30,6 +30,7 @@ import {
 } from "./src/timer";
 import { TimerWidget } from "./src/timer-ui";
 import { commandName } from "./src/naming";
+import { ToolsMenuModal } from "./src/tools-menu";
 import { blankTableRow, smartAction, smartActionLabel } from "./src/smart";
 import {
   GRADE_LABEL,
@@ -502,6 +503,22 @@ export default class NotionTogglePlugin extends Plugin {
       icon: "plus-circle",
       name: "Toggle (smart add)",
       editorCallback: (editor) => this.runSmartToggle(editor),
+    });
+    // The dedicated mobile button always makes a toggle; smart-toggle remains available.
+    this.addCommand({
+      id: "toggle-list",
+      icon: "list-tree",
+      name: "Toggle list",
+      editorCallback: (editor) => {
+        if (editor.getSelection().trim()) this.wrapSelectionAsToggle(editor);
+        else this.insertNewToggleBelow(editor);
+      },
+    });
+    this.addCommand({
+      id: "tools-menu",
+      icon: "layout-grid",
+      name: "Tools",
+      callback: () => new ToolsMenuModal(this.app, this.manifest.id).open(),
     });
     // Primary 2: traffic-light grading of the toggle under the cursor.
     this.addCommand({

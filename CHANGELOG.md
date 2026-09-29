@@ -1,3 +1,9 @@
+## 1.8.18
+
+- Dedicated **Toggle list** mobile action: at a cursor it makes a new toggle; selected text becomes a toggle. The existing smart-toggle action is unchanged.
+- **Tools** opens a searchable menu of the existing commands grouped by purpose. Old command IDs and shortcuts still work.
+- Mobile guide now recommends Toggle list + Tools, with Recall and Autoscroll as optional direct buttons. Remove old toolbar buttons manually in Obsidian settings.
+
 ## 1.8.17
 
 - Pasted toggle headings keep their heading level (`## Title {toggle="true"}` becomes a toggle titled `## Title`), like Notion.

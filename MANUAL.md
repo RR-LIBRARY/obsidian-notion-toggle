@@ -282,7 +282,7 @@ Command palette ya settings se **Autoscroll: mobile toolbar guide** kholo. Isme:
 3. **Open settings** button Obsidian settings kholne ki koshish karta hai (version support kare to seedha Mobile tab).
 4. **Reset checklist** se list dobara shuru.
 
-Sabse zaroori command sirf ek hai — **Autoscroll (start / pause revision)**; baaki (sheet, reverse, filter, pause at, pause for, speed presets, go to first, stats, stop) zaroorat ke hisaab se add karo. Guide me har command ke saamne uska reason bhi likha hai.
+Mobile toolbar ko minimal rakhne ke liye **Toggle list** aur **Tools** add karo. Toggle list cursor par naya toggle banata hai; selected text ko toggle mein wrap karta hai. Tools mein Toggle & layout, Writing & MCQ, Recall & quiz, Autoscroll, Research, aur Settings ke existing commands search karke chala sakte ho. Roz use karte ho to Recall aur Autoscroll direct bhi rakho. Obsidian toolbar ko khud manage karta hai: purane buttons Settings → Mobile → Manage toolbar mein manually hatao; commands aur shortcuts delete nahin hote.
 
 ### 6.1 Floating bar
 

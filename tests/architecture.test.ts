@@ -34,6 +34,8 @@ describe("module boundaries", () => {
   test("extracted modules exist and stay reviewable", () => {
     for (const f of [
       "src/modals.ts",
+  // v1.8.18 — compact command menu is an Obsidian UI shell.
+  "src/tools-menu.ts",
       "src/editor-blocks.ts",
       "src/settings-tab.ts",
       "src/toggle-colors.ts",
@@ -71,6 +73,8 @@ const srcFiles = readdirSync("src")
 /** Modules allowed to talk to Obsidian at all (UI shells and settings). */
 const OBSIDIAN_SHELLS = new Set([
   "src/modals.ts",
+  // v1.8.18 — compact command menu is an Obsidian UI shell.
+  "src/tools-menu.ts",
   "src/sheet-modal.ts",
   // v1.5.0 — command registration shell for the callout playground / breakdown.
   "src/callout-commands.ts",

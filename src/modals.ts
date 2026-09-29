@@ -545,7 +545,7 @@ export class MobileToolbarGuideModal extends Modal {
 
   onOpen() {
     this.modalEl.addClass("ntt-guide");
-    this.setTitle("Mobile toolbar — Autoscroll setup");
+    this.setTitle("Mobile toolbar — minimal setup");
 
     const progress = this.contentEl.createDiv({ cls: "ntt-guide-progress" });
     progress.setText(
@@ -603,7 +603,7 @@ export class MobileToolbarGuideModal extends Modal {
 
     this.contentEl.createDiv({
       cls: "ntt-guide-tip",
-      text: "Tip: floating ▶ button pe long-press karne se bhi Autoscroll sheet khul jaati hai — toolbar me sirf start/pause wali command kaafi hai.",
+      text: "Obsidian toolbar ko khud manage karta hai. Purane buttons aapko Mobile → Manage toolbar mein manually hatane honge; unke commands aur shortcuts ab bhi kaam karenge.",
     });
   }
 

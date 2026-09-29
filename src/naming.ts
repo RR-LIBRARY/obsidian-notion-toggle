@@ -1,11 +1,13 @@
 /**
  * Command naming — keeps the mobile toolbar list short.
- * Four primary commands stay clean; everything else moves under "Advanced:".
+ * Primary commands stay clean; everything else moves under "Advanced:".
  * Command IDs never change, so existing hotkeys and toolbar entries survive.
  */
 
 /** IDs that stay top-level and readable. */
 export const PRIMARY_IDS = [
+  "toggle-list",
+  "tools-menu",
   "smart-toggle",
   "smart-colour",
   "smart-recall",
@@ -18,6 +20,8 @@ export const PRIMARY_IDS = [
 export type PrimaryId = (typeof PRIMARY_IDS)[number];
 
 export const PRIMARY_NAMES: Record<PrimaryId, string> = {
+  "toggle-list": "Toggle list",
+  "tools-menu": "Tools",
   "smart-toggle": "Toggle (smart add)",
   "smart-colour": "Colour (red → yellow → green)",
   "smart-recall": "Recall (start / pause session)",

@@ -739,7 +739,7 @@ export class NotionToggleSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Mobile toolbar guide")
-      .setDesc("Kaunsi commands Settings → Mobile → Manage toolbar me add karni hain — one-tap checklist ke saath.")
+      .setDesc("Sirf Toggle list aur Tools rakho; optional quick actions ke liye one-tap checklist.")
       .addButton((btn) =>
         btn.setButtonText("Open guide").onClick(() => {
           new MobileToolbarGuideModal(this.app, this.plugin).open();
