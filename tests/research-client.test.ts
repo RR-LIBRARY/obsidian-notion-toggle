@@ -12,6 +12,7 @@ import {
   codeForStatus,
   describeError,
   extractUrls,
+  isPlainHttpRemote,
   normalizeBridgeUrl,
   stripFrontmatter,
 } from "../src/research/client";
@@ -24,6 +25,20 @@ describe("bridge URL + key", () => {
     expect(normalizeBridgeUrl("http://localhost:8080/")).toBe("http://localhost:8080");
     expect(normalizeBridgeUrl("")).toBe("");
   });
+
+  test("v1.8.11 warns only for plain http to a remote host (key would travel unencrypted)", () => {
+    expect(isPlainHttpRemote("https://x.lovable.app")).toBe(false);
+    expect(isPlainHttpRemote("http://localhost:8080")).toBe(false);
+    expect(isPlainHttpRemote("http://127.0.0.1:3000")).toBe(false);
+    expect(isPlainHttpRemote("http://192.168.1.20")).toBe(false);
+    expect(isPlainHttpRemote("http://10.0.0.5")).toBe(false);
+    expect(isPlainHttpRemote("http://172.20.0.1")).toBe(false);
+    expect(isPlainHttpRemote("http://nas.local")).toBe(false);
+    expect(isPlainHttpRemote("http://bridge.example.com")).toBe(true);
+    expect(isPlainHttpRemote("http://172.32.0.1")).toBe(true);
+    expect(isPlainHttpRemote("")).toBe(false);
+  });
+
 
   test("configured only when both URL and key are present", () => {
     expect(bridgeConfigured({ researchBridgeUrl: "x.example", researchPluginKey: "ntr_abc" })).toBe(true);

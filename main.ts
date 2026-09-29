@@ -1,7 +1,7 @@
 import { App, Editor, MarkdownView, Modal, Notice, Platform, Plugin, PluginSettingTab, Setting, type WorkspaceLeaf } from "obsidian";
 import { Prec } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
-import { DEFAULT_NOTION_WRITING, installNotionWriting, type NotionWritingSettings } from "./src/notion-writing";
+import { DEFAULT_NOTION_WRITING, installNotionWriting, uninstallNotionWriting, type NotionWritingSettings } from "./src/notion-writing";
 import {
   DEFAULT_POMODORO,
   POMODORO_PRESETS,
@@ -1697,6 +1697,7 @@ export default class NotionTogglePlugin extends Plugin {
   }
   onunload() {
     uninstallResearch(this);
+    uninstallNotionWriting();
     this.hideTimer();
     this.stopAutoScroll(false);
     this.stopQuiz(false);

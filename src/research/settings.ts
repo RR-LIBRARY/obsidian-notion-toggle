@@ -6,7 +6,7 @@
  * stays inside its size budget.
  */
 import { Notice, Setting } from "obsidian";
-import { PLUGIN_KEY_PATTERN, describeError, normalizeBridgeUrl } from "./client";
+import { PLUGIN_KEY_PATTERN, describeError, isPlainHttpRemote, normalizeBridgeUrl } from "./client";
 import type { ResearchService } from "./service";
 import {
   EFFORT_LABELS,
@@ -50,6 +50,8 @@ export function renderResearchSettings(containerEl: HTMLElement, host: ResearchS
         s.researchBridgeUrl = normalizeBridgeUrl(txt.getValue());
         txt.setValue(s.researchBridgeUrl);
         await host.saveSettings();
+        // v1.8.11 — the plugin key rides in every request; over plain http it is readable on the network.
+        if (isPlainHttpRemote(s.researchBridgeUrl)) new Notice("This address uses plain http, so the plugin key travels unencrypted. Use https unless this is a local test server.", 8000);
       });
     });
 

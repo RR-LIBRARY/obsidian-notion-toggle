@@ -235,6 +235,21 @@ async def main():
         check("closed callout arrow points right", rots[0][0] == "none" and rots[0][1] in ("none", "matrix(1, 0, 0, 1, 0, 0)"), str(rots))
         check("open callout arrow points down", rots[1][0] == "none" and rots[1][1].startswith("matrix(0") or "6.12" in rots[1][1], str(rots))
 
+        # 24 v1.8.11 audit: Shift+Tab / Tab on a nested list item inside a toggle is a list outdent / indent,
+        #    not a block move — the item must stay inside the toggle.
+        LIST = "> [!question]+ Q\n> - item\n>   - sub\n> last"
+        await page.goto(URL + "?doc=" + up.quote(LIST)); await page.wait_for_function("window.wb")
+        await page.evaluate("wb.set(wb.lineFrom(3) + 8)")
+        await page.keyboard.press("Shift+Tab")
+        check("Shift+Tab keeps nested list item inside toggle", (await page.evaluate("wb.text()")) == LIST, await page.evaluate("wb.text()"))
+        await page.keyboard.press("Tab")
+        check("Tab on indented text is not a block move", (await page.evaluate("wb.text()")) == LIST, await page.evaluate("wb.text()"))
+        # plain body line still moves out with Shift+Tab (Notion behaviour kept)
+        await page.evaluate("wb.set(wb.lineFrom(4) + 4)")
+        await page.keyboard.press("Shift+Tab")
+        t = await page.evaluate("wb.text()")
+        check("Shift+Tab still moves a plain body line out", t.startswith("> [!question]+ Q\n> - item\n>   - sub\n") and t.rstrip().endswith("last") and not t.rstrip().endswith("> last"), t)
+
         check("no page errors", not errors, "; ".join(errors))
         await b.close()
 

@@ -218,10 +218,35 @@ function livePreviewOn(host: CleanTogglesHost, state: EditorState): boolean {
 
 function compute(host: CleanTogglesHost, state: EditorState, overrides: OverrideMap): CleanState {
   if (!host.enabled() || !livePreviewOn(host, state)) return EMPTY;
-  const result = planClean(state.doc, selRanges(state), overrides);
-  if (result.plans.length === 0) return { decorations: Decoration.none, overrides: result.overrides };
-  const chip = host.moreChip ? host.moreChip() : false;
-  return { decorations: Decoration.set(decorationsFor(result.plans, chip), true), overrides: result.overrides };
+  // v1.8.11 — a parser slip must never break the editor: CodeMirror would
+  // reject the whole transaction (the typed key is lost, on every keystroke).
+  // Show the raw markdown for this update instead and log once.
+  try {
+    const result = planClean(state.doc, selRanges(state), overrides);
+    if (result.plans.length === 0) return { decorations: Decoration.none, overrides: result.overrides };
+    const chip = host.moreChip ? host.moreChip() : false;
+    return { decorations: Decoration.set(decorationsFor(result.plans, chip), true), overrides: result.overrides };
+  } catch (err) {
+    reportOnce("clean toggles", err);
+    return { decorations: Decoration.none, overrides: new Map(overrides) };
+  }
+}
+
+let reported = false;
+function reportOnce(where: string, err: unknown): void {
+  if (reported) return;
+  reported = true;
+  console.error(`[notion-toggle] ${where} failed — showing plain markdown for this edit`, err);
+}
+
+/** Run a key handler; on an unexpected error fall back to the editor's default key (never swallow the key). */
+function guard(run: () => boolean): boolean {
+  try {
+    return run();
+  } catch (err) {
+    reportOnce("key handler", err);
+    return false;
+  }
 }
 
 /* ---------- the extension ---------- */
@@ -229,6 +254,11 @@ function compute(host: CleanTogglesHost, state: EditorState, overrides: Override
 let dragHost: CleanTogglesHost | null = null;
 function dragAllowed(host: CleanTogglesHost, view: EditorView): boolean {
   return host.enabled() && livePreviewOn(host, view.state) && (!host.blockMoves || host.blockMoves());
+}
+
+/** Forget the plugin instance when it unloads, so a disabled plugin holds no editor state. */
+export function releaseCleanToggles(): void {
+  dragHost = null;
 }
 
 export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
@@ -274,16 +304,22 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
     const sel = tr.newSelection;
     if (sel.ranges.length !== 1) return tr;
     const overrides = tr.startState.field(field, false)?.overrides ?? new Map();
-    const target = redirectCaret(
-      tr.newDoc,
-      {
-        anchor: sel.main.anchor,
-        head: sel.main.head,
-        prevHead: tr.startState.selection.main.head,
-        pointer: tr.isUserEvent("select.pointer"),
-      },
-      overrides
-    );
+    let target: number | null;
+    try {
+      target = redirectCaret(
+        tr.newDoc,
+        {
+          anchor: sel.main.anchor,
+          head: sel.main.head,
+          prevHead: tr.startState.selection.main.head,
+          pointer: tr.isUserEvent("select.pointer"),
+        },
+        overrides
+      );
+    } catch (err) {
+      reportOnce("caret guard", err);
+      return tr; // never block a selection change
+    }
     if (target === null || target === sel.main.head) return tr;
     return [tr, { selection: EditorSelection.range(sel.main.empty ? target : sel.main.anchor, target) }];
   });
@@ -301,20 +337,20 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
   //    most phone keyboards through the input handler.
   const keys = Prec.high(
     keymap.of([
-      { key: "End", run: (view) => endOfTitle(view, false) },
-      { key: "Shift-End", run: (view) => endOfTitle(view, true) },
-      { key: "ArrowRight", run: (view) => rightFromTitleEnd(view) },
-      { key: "Backspace", run: (view) => backspaceAtTitleStart(view) },
-      { key: "Delete", run: (view) => deleteAtTitleEnd(view) },
-      { key: "Mod-Enter", run: (view) => toggleUnderCaret(view) },
-      { key: "Enter", run: (view) => enterLikeNotion(view) },
-      { key: "Space", run: (view) => tryShortcut(host, view) },
-      { key: "Tab", run: (view) => moveKey(view, "in") },
-      { key: "Shift-Tab", run: (view) => moveKey(view, "out") },
-      { key: "Mod-Shift-ArrowUp", run: (view) => moveKey(view, "up") },
-      { key: "Mod-Shift-ArrowDown", run: (view) => moveKey(view, "down") },
-      { key: "Alt-Shift-ArrowUp", run: (view) => moveKey(view, "up") },
-      { key: "Alt-Shift-ArrowDown", run: (view) => moveKey(view, "down") },
+      { key: "End", run: (view) => guard(() => endOfTitle(view, false)) },
+      { key: "Shift-End", run: (view) => guard(() => endOfTitle(view, true)) },
+      { key: "ArrowRight", run: (view) => guard(() => rightFromTitleEnd(view)) },
+      { key: "Backspace", run: (view) => guard(() => backspaceAtTitleStart(view)) },
+      { key: "Delete", run: (view) => guard(() => deleteAtTitleEnd(view)) },
+      { key: "Mod-Enter", run: (view) => guard(() => toggleUnderCaret(view)) },
+      { key: "Enter", run: (view) => guard(() => enterLikeNotion(view)) },
+      { key: "Space", run: (view) => guard(() => tryShortcut(host, view)) },
+      { key: "Tab", run: (view) => guard(() => moveKey(view, "in")) },
+      { key: "Shift-Tab", run: (view) => guard(() => moveKey(view, "out")) },
+      { key: "Mod-Shift-ArrowUp", run: (view) => guard(() => moveKey(view, "up")) },
+      { key: "Mod-Shift-ArrowDown", run: (view) => guard(() => moveKey(view, "down")) },
+      { key: "Alt-Shift-ArrowUp", run: (view) => guard(() => moveKey(view, "up")) },
+      { key: "Alt-Shift-ArrowDown", run: (view) => guard(() => moveKey(view, "down")) },
     ])
   );
   const shortcutFromInput = EditorView.inputHandler.of((view, from, to, text) => {
@@ -445,6 +481,14 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
     if (host.blockMoves && !host.blockMoves()) return false;
     const sel = view.state.selection.main;
     if (!sel.empty && view.state.doc.lineAt(sel.from).number !== view.state.doc.lineAt(sel.to).number) return false;
+    // v1.8.11 — Tab / Shift+Tab on indented text (a nested list item, a
+    // continuation line) is Obsidian's own indent / outdent, not a block move:
+    // Shift+Tab on `>   - sub` used to rip the item out of its toggle.
+    if (how === "in" || how === "out") {
+      const text = view.state.doc.lineAt(sel.head).text;
+      const cut = markerEnd(text, markerDepth(text));
+      if (/^[ \t]/.test(cut >= 0 ? text.slice(cut) : text)) return false;
+    }
     return runBlockMove(view, how);
   }
 

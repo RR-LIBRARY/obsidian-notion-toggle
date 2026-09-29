@@ -23,7 +23,7 @@
 import { MarkdownView, Notice, Setting, editorLivePreviewField, type TFile } from "obsidian";
 import type { EditorView } from "@codemirror/view";
 import type NotionTogglePlugin from "../main";
-import { cleanTogglesExtension, runBlockMove, type MoveHow } from "./clean-toggles-view";
+import { cleanTogglesExtension, releaseCleanToggles, runBlockMove, type MoveHow } from "./clean-toggles-view";
 import { convertPastedText, detailsBlockCount, flipFoldMarker } from "./clean-toggles";
 import { convertDetailsToCallouts, newTogglePlan, nextToggleNumber } from "./editor-blocks";
 
@@ -145,6 +145,11 @@ export async function offerDetailsConversion(plugin: NotionTogglePlugin, file: T
     notice.hide();
   });
   row.createEl("button", { text: "Not now" }).addEventListener("click", () => notice.hide());
+}
+
+/** v1.8.11 — called from `onunload`: drop the module-level drag host so a disabled plugin keeps nothing alive. */
+export function uninstallNotionWriting(): void {
+  releaseCleanToggles();
 }
 
 /** Register everything. Called once from `onload`; cleanup rides on the plugin lifecycle. */

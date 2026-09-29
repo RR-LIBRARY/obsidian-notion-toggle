@@ -54,6 +54,20 @@ export class ResearchError extends Error {
 
 export const PLUGIN_KEY_PATTERN = /^ntr_[A-Za-z0-9_-]{16,}$/;
 
+/** v1.8.11 — true for a plain-http bridge that is not on this machine / LAN (the key would travel unencrypted). */
+export function isPlainHttpRemote(url: string): boolean {
+  if (!/^http:\/\//i.test(url)) return false;
+  try {
+    const host = new URL(url).hostname.replace(/^\[|\]$/g, "");
+    if (host === "localhost" || host === "::1" || host.endsWith(".local") || host.endsWith(".localhost")) return false;
+    if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false;
+    return true;
+  } catch {
+    return true;
+  }
+}
+
+
 /** Normalise whatever the reader pasted into a clean origin (no trailing slash / path). */
 export function normalizeBridgeUrl(raw: string): string {
   let s = raw.trim();

@@ -2,6 +2,14 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.8.11
+
+**Audit release — no new features, three safety fixes.**
+
+- Shift+Tab on a nested list item inside a toggle (`>   - sub`) now outdents the list as Obsidian normally does; it used to pull the item out of the toggle. Tab on indented text is likewise left to Obsidian.
+- If the clean-editing parser ever hits something unexpected, the note now shows plain markdown for that edit and logs once, instead of the editor rejecting every keystroke. Key handlers (Enter, Tab, End, …) fall back to Obsidian's default the same way.
+- Disabling the plugin now drops its drag-and-drop hook; a plain-http research bridge address shows a warning that the plugin key would travel unencrypted.
+
 ## 1.8.10
 
 - Arrow direction fixed: closed toggles always show ▶, open ones ▼. On the phone some closed toggles showed ▲ because Obsidian turned the arrow a second time.
