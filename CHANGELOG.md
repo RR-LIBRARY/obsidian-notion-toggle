@@ -1,4 +1,9 @@
+## 1.8.20
+
+- Automatic releases: pushing a version tag (e.g. `1.8.20`) now creates the GitHub release and attaches `manifest.json`, `main.js` and `styles.css` for BRAT — no manual step.
+
 ## 1.8.19
+
 
 - Fixed the one test that failed only in the full suite (the quiz dock test picked up a stale dock from an earlier test). Full suite now passes 1364/1364 every run.
 

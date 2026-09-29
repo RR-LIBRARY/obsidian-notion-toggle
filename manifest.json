@@ -1,7 +1,7 @@
 {
   "id": "notion-toggle",
   "name": "Notion Toggle",
-  "version": "1.8.19",
+  "version": "1.8.20",
   "minAppVersion": "1.4.0",
   "description": "Notion-style toggles that look and feel like Notion while you type: an arrow instead of `>` / `[!type]-` code, `>`+space to start one, pasted <details> blocks converted automatically.",
   "author": "Anuj Yadav",
