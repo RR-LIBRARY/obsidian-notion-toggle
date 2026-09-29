@@ -704,28 +704,17 @@ function cleanOwnsEnter(doc, lineNumber, head) {
     return false;
   return head >= block.titleTo || emptyTitle(doc, block);
 }
-function planTitleEnter(doc, block, isOpenNow, opts) {
+function planTitleEnter(doc, block, _isOpenNow, opts) {
   const bold = block.boldWrap || rawTitle(doc, block).trim() === "****" ? "**" : "";
   if (emptyTitle(doc, block)) {
     const insert = blankAt(block.depth - 1);
     return { from: block.headerFrom, to: block.headerTo, insert, caret: block.headerFrom + insert.length };
   }
-  const hasBody = block.bodyTo > block.headerTo;
-  if (hasBody && !isOpenNow) {
-    const head = `
+  const head = `
 ${blankAt(block.depth - 1)}
 ${markersFor(block.depth - 1)}> [!${block.type}]${opts.fold} ${bold}`;
-    const at = block.bodyTo;
-    return { from: at, to: at, insert: head + bold, caret: at + head.length };
-  }
-  if (opts.nested) {
-    const head = `
-${markersFor(block.depth)}> [!${block.type}]${opts.fold} ${bold}`;
-    return { from: block.headerTo, to: block.headerTo, insert: head + bold, caret: block.headerTo + head.length, openKey: block.key };
-  }
-  const ins = `
-${markersFor(block.depth)}`;
-  return { from: block.headerTo, to: block.headerTo, insert: ins, caret: block.headerTo + ins.length, openKey: block.key };
+  const at = block.bodyTo;
+  return { from: at, to: at, insert: head + bold, caret: at + head.length };
 }
 function isShortcutTrigger(lineText, col) {
   return lineText === ">" && col === 1;
@@ -1360,13 +1349,11 @@ function cleanTogglesExtension(host) {
         return false;
       const overrides = (_b = (_a = view.state.field(field, false)) == null ? void 0 : _a.overrides) != null ? _b : /* @__PURE__ */ new Map();
       const plan = planTitleEnter(doc, block, openWithoutCaret(block, overrides), {
-        nested: host.nestedEnter ? host.nestedEnter() : true,
         fold: host.newToggleFold ? host.newToggleFold() : "-"
       });
       view.dispatch({
         changes: { from: plan.from, to: plan.to, insert: plan.insert },
         selection: import_state.EditorSelection.cursor(plan.caret),
-        effects: plan.openKey === void 0 ? [] : [setToggleOpen.of({ key: plan.openKey, open: true })],
         scrollIntoView: true,
         userEvent: "input"
       });
@@ -1960,7 +1947,6 @@ var DEFAULT_NOTION_WRITING = {
   detailsNudge: true,
   cleanMoreChip: false,
   blockMoves: true,
-  nestedEnter: true,
   convertNotionPaste: true
 };
 var NOTION_LOOK_CLASS = "ntt-notion-look";
@@ -2063,7 +2049,6 @@ function installNotionWriting(plugin) {
       moreChip: () => plugin.settings.cleanMoreChip,
       autoContinue: () => plugin.settings.autoContinue,
       blockMoves: () => plugin.settings.blockMoves !== false,
-      nestedEnter: () => plugin.settings.nestedEnter !== false,
       newToggleFold: () => plugin.settings.defaultCollapsed ? "-" : "+"
     })
   );
@@ -2191,15 +2176,6 @@ function renderNotionWritingSettings(containerEl, plugin) {
     toggle.setValue(plugin.settings.blockMoves !== false);
     toggle.onChange(async (value) => {
       plugin.settings.blockMoves = value;
-      await save();
-    });
-  });
-  new import_obsidian.Setting(containerEl).setName("Enter on a title makes a toggle inside").setDesc(
-    "Like the Notion app: press Enter at the end of a toggle's title and it opens with a new toggle ready inside. Off = Enter opens it with a plain line inside. Enter on an empty title turns it back into a plain line."
-  ).addToggle((toggle) => {
-    toggle.setValue(plugin.settings.nestedEnter !== false);
-    toggle.onChange(async (value) => {
-      plugin.settings.nestedEnter = value;
       await save();
     });
   });
@@ -6010,7 +5986,7 @@ function dwellPlan(now, holdMs, thinkMs, parked) {
 }
 
 // src/settings-migrate.ts
-var SETTINGS_VERSION = 2;
+var SETTINGS_VERSION = 3;
 var isRecord = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 function sanitizeMemory(v) {
   if (!isRecord(v))
@@ -6049,6 +6025,10 @@ function migrateSettings(raw) {
     settings.scrollPerNote = sanitizePerNote(settings.scrollPerNote);
     if (!isRecord(settings.srs))
       settings.srs = {};
+    changed = true;
+  }
+  if (from < 3 && "nestedEnter" in settings) {
+    delete settings.nestedEnter;
     changed = true;
   }
   if (settings.settingsVersion !== SETTINGS_VERSION) {

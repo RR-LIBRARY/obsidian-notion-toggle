@@ -26,18 +26,17 @@ const livePreview = StateField.define<boolean>({
 
 interface Harness {
   state: EditorState;
-  flags: { enabled: boolean; nestedEnter: boolean; fold: "+" | "-" };
+  flags: { enabled: boolean; fold: "+" | "-" };
 }
 
 function harness(doc: string, pos: number, extra: Extension[] = []): Harness {
-  const h: Harness = { state: EditorState.create({ doc }), flags: { enabled: true, nestedEnter: true, fold: "-" } };
+  const h: Harness = { state: EditorState.create({ doc }), flags: { enabled: true, fold: "-" } };
   const ext = cleanTogglesExtension({
     livePreviewField: livePreview,
     enabled: () => h.flags.enabled,
     shortcutEnabled: () => true,
     insertToggleFromShortcut: () => true,
     moreChip: () => true,
-    nestedEnter: () => h.flags.nestedEnter,
     newToggleFold: () => h.flags.fold,
   });
   h.state = EditorState.create({ doc, selection: EditorSelection.cursor(pos), extensions: [livePreview, ext, ...extra] });
@@ -119,53 +118,42 @@ function withLegacy(text: string, pos: number): Harness {
 }
 
 describe("v1.8.13 Enter like the Notion app — through the real keymap", () => {
-  test("Enter at the end of a title: the toggle opens and a new toggle waits inside, caret on its (empty) title", () => {
+  test("Enter at the end of a title: a new sibling waits at the same depth", () => {
     const h = harness("> [!question]- Plants\n\nAfter", "> [!question]- Plants".length);
     expect(press(h, "Enter")).toBe(true);
-    expect(doc(h)).toBe("> [!question]- Plants\n> > [!question]- \n\nAfter");
-    expect(caretLine(h).number).toBe(2);
+    expect(doc(h)).toBe("> [!question]- Plants\n\n> [!question]- \n\nAfter");
+    expect(caretLine(h).number).toBe(3);
     expect(h.state.selection.main.head).toBe(caretLine(h).to);
     const w = widgets(h.state);
-    expect(w.filter((x) => x.name === "ArrowWidget").map((a) => a.open)).toEqual([true, false]); // outer open, inner closed
+    expect(w.filter((x) => x.name === "ArrowWidget").map((a) => a.open)).toEqual([false]);
     expect(w.some((x) => x.name === "PlaceholderWidget")).toBe(false); // 1.8.21: hint is a line class (IME-safe), never an inline widget
     expect(w.some((x) => x.name === "MoreWidget")).toBe(false);
   });
 
-  test("typing into the inner title removes the placeholder; Enter there nests once more", () => {
+  test("typing into the new title removes the placeholder; Enter makes another sibling", () => {
     const h = harness("> [!question]- Plants", 21);
     press(h, "Enter");
     const at = h.state.selection.main.head;
     h.state = h.state.update({ changes: { from: at, insert: "Leaves" }, selection: EditorSelection.cursor(at + 6) }).state;
     expect(widgets(h.state).some((x) => x.name === "PlaceholderWidget")).toBe(false);
     expect(press(h, "Enter")).toBe(true);
-    expect(doc(h).split("\n")).toEqual(["> [!question]- Plants", "> > [!question]- Leaves", "> > > [!question]- "]);
-    expect(widgets(h.state).filter((x) => x.name === "ArrowWidget").map((a) => a.open)).toEqual([true, true, false]);
+    expect(doc(h).split("\n")).toEqual(["> [!question]- Plants", "", "> [!question]- Leaves", "", "> [!question]- "]);
+    expect(widgets(h.state).filter((x) => x.name === "ArrowWidget").map((a) => a.open)).toEqual([false]);
   });
 
-  test("Enter on the empty inner title backs out: a plain line inside the parent, then Enter again leaves the toggle", () => {
+  test("Enter on an empty new title removes that toggle and leaves a plain top-level line", () => {
     const h = harness("> [!question]- Plants", 21);
     press(h, "Enter");
     expect(press(h, "Enter")).toBe(true);
-    expect(doc(h)).toBe("> [!question]- Plants\n>");
-    expect(caretLine(h).number).toBe(2);
-    expect(press(h, "Enter")).toBe(true); // empty last body line → out of the toggle
-    expect(doc(h)).toBe("> [!question]- Plants\n");
-    expect(h.state.selection.main.head).toBe(h.state.doc.length);
-  });
-
-  test("setting off: Enter opens the toggle with a plain line inside (the 1.8.7 behaviour)", () => {
-    const h = harness("> [!question]- Plants", 21);
-    h.flags.nestedEnter = false;
-    expect(press(h, "Enter")).toBe(true);
-    expect(doc(h)).toBe("> [!question]- Plants\n> ");
-    expect(widgets(h.state).find((x) => x.name === "ArrowWidget")?.open).toBe(true);
+    expect(doc(h)).toBe("> [!question]- Plants\n\n");
+    expect(caretLine(h).number).toBe(3);
   });
 
   test("'start open' setting: the toggles Enter makes carry `+`", () => {
     const h = harness("> [!question]+ Plants", 21);
     h.flags.fold = "+";
     press(h, "Enter");
-    expect(doc(h)).toBe("> [!question]+ Plants\n> > [!question]+ ");
+    expect(doc(h)).toBe("> [!question]+ Plants\n\n> [!question]+ ");
   });
 
   test("a closed toggle that already has an answer: Enter on its title starts the next toggle after it", () => {
@@ -195,13 +183,13 @@ describe("v1.8.13 Enter like the Notion app — through the real keymap", () => 
   test("with the older main.ts Enter handler in front (production order) the video flow still wins on titles", () => {
     const h = withLegacy("> [!question]- Plants\n> answer\n", 21);
     h.state = h.state.update({ effects: setToggleOpen.of({ key: 0, open: true }) }).state;
-    // title: the older handler steps aside, the clean layer opens + nests (not a flat `> ` line)
+    // title: the older handler steps aside, the clean layer creates a sibling after the block
     expect(press(h, "Enter")).toBe(true);
-    expect(doc(h)).toBe("> [!question]- Plants\n> > [!question]- \n> answer\n");
+    expect(doc(h)).toBe("> [!question]- Plants\n> answer\n\n> [!question]- \n");
     // a top-level body line with text: still the older handler's `> ` continuation (MCQ / answer rules live there)
-    moveTo(h, h.state.doc.line(3).to);
+    moveTo(h, h.state.doc.line(2).to);
     expect(press(h, "Enter")).toBe(true);
-    expect(h.state.doc.line(4).text).toBe("> ");
+    expect(h.state.doc.line(3).text).toBe("> ");
   });
 
   test("inside a nested toggle the older handler steps aside; a body line with text is left to the editor", () => {

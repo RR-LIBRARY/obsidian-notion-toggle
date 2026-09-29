@@ -57,8 +57,6 @@ export interface CleanTogglesHost {
   autoContinue?(): boolean;
   /** v1.8.9 setting: Tab / Shift+Tab / drag rearrange blocks and shove them into toggles (default on). */
   blockMoves?(): boolean;
-  /** v1.8.13 setting: Enter at the end of a title opens the toggle with a new toggle inside (default on; off = a plain line inside). */
-  nestedEnter?(): boolean;
   /** v1.8.13: fold marker for toggles made by Enter (`-` unless the "start open" setting is on). */
   newToggleFold?(): "+" | "-";
 }
@@ -430,12 +428,11 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
   }
 
   /**
-   * v1.8.7 / v1.8.13 — Enter like Notion (the phone app, frame by frame):
+   * v1.8.22 — predictable Enter/depth flow:
    *  - empty title            -> the toggle becomes a plain line (inside its parent when nested)
-   *  - closed title with body -> a new closed toggle right after this one
-   *  - title of an open or still-empty toggle -> it opens, caret on a new
-   *    nested toggle inside (setting on) or a plain line inside (setting off)
+   *  - non-empty title        -> a new sibling toggle at the same depth
    *  - empty last body line   -> leave the toggle (plain line one level up)
+   * Only Tab / Shift+Tab changes nesting depth.
    * Body lines with text are left to the editor's own Enter (Obsidian keeps
    * the `>` markers and list bullets going by itself).
    */
@@ -453,13 +450,11 @@ export function cleanTogglesExtension(host: CleanTogglesHost): Extension {
       if (sel.head < block.titleTo && !emptyTitle(doc, block)) return false; // mid-title: default split
       const overrides = view.state.field(field, false)?.overrides ?? new Map();
       const plan = planTitleEnter(doc, block, openWithoutCaret(block, overrides), {
-        nested: host.nestedEnter ? host.nestedEnter() : true,
         fold: host.newToggleFold ? host.newToggleFold() : "-",
       });
       view.dispatch({
         changes: { from: plan.from, to: plan.to, insert: plan.insert },
         selection: EditorSelection.cursor(plan.caret),
-        effects: plan.openKey === undefined ? [] : [setToggleOpen.of({ key: plan.openKey, open: true })],
         scrollIntoView: true,
         userEvent: "input",
       });

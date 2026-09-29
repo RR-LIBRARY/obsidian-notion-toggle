@@ -1,3 +1,9 @@
+## 1.8.22
+
+- Fixed toggle depth from the user's phone videos: Enter now always creates the next toggle at the same level, whether the current toggle is open, closed, top-level or already nested.
+- Nesting is now deliberate and frictionless: Tab/Indent moves a toggle inside the one above; Shift+Tab/Outdent moves it one level out. The old nested-Enter preference is removed automatically.
+- Android keyboard composition remains protected, so the final composed word becomes real title text before Enter creates the sibling.
+
 ## 1.8.21
 
 - Fix (phone): typing a toggle title with an Android keyboard went into the grey "Toggle" hint, so the title looked grey and the plugin saw an empty title. Enter then turned the toggle into a plain line and depth jumped around. The hint is now drawn by the line itself (can't receive typing), and Enter reads any word still being composed before deciding.

@@ -487,7 +487,7 @@ export function nudgeCaret(doc: DocLike, head: number, overrides: OverrideMap): 
   return redirectCaret(doc, { anchor: head, head }, overrides);
 }
 
-/* ---------- v1.8.13: Enter at the end of a title (Notion parity, nesting-aware) ---------- */
+/* ---------- v1.8.22: Enter at the end of a title (same-depth continuation) ---------- */
 
 /**
  * Does the clean layer own Enter at this caret? The plugin's older Enter
@@ -507,8 +507,6 @@ export function cleanOwnsEnter(doc: DocLike, lineNumber: number, head: number): 
 }
 
 export interface TitleEnterOptions {
-  /** Setting: a title's Enter starts a new toggle *inside* (Notion mobile) instead of a plain line inside. */
-  nested: boolean;
   /** Fold marker for a freshly made toggle (`-` = starts closed, the recall default). */
   fold: "+" | "-";
 }
@@ -520,44 +518,31 @@ export interface TitleEnterPlan {
   insert: string;
   /** … and put the caret here (absolute, after the change). */
   caret: number;
-  /** Header key of a toggle that must show open afterwards (the one the caret went into). */
-  openKey?: number;
 }
 
 /**
- * What Enter does at the end of a toggle title — the flow from the Notion
- * phone app, measured frame by frame:
+ * What Enter does at the end of a toggle title:
  *
  *  - empty title                       → the toggle becomes a plain line at the
  *                                        parent's depth (a `>` line inside the
  *                                        parent, or an empty line at top level);
- *  - closed toggle that has a body     → a new closed toggle right after this
- *                                        one (a sibling), like Notion desktop;
- *  - otherwise (no body yet, or open)  → the toggle opens and the caret lands on
- *                                        a new first line inside it: a nested
- *                                        toggle (`nested` on — what the video
- *                                        shows) or a plain body line (off).
+ *  - non-empty title                   → a new toggle after the complete block,
+ *                                        at exactly the same depth (a sibling).
+ *
+ * Enter never changes depth. Tab/Shift+Tab (Indent/Outdent) are the only ways
+ * to move a toggle into or out of another toggle.
  *
  * Pure: the caller dispatches the change and the open effect.
  */
-export function planTitleEnter(doc: DocLike, block: ToggleBlock, isOpenNow: boolean, opts: TitleEnterOptions): TitleEnterPlan {
+export function planTitleEnter(doc: DocLike, block: ToggleBlock, _isOpenNow: boolean, opts: TitleEnterOptions): TitleEnterPlan {
   const bold = block.boldWrap || rawTitle(doc, block).trim() === "****" ? "**" : "";
   if (emptyTitle(doc, block)) {
     const insert = blankAt(block.depth - 1);
     return { from: block.headerFrom, to: block.headerTo, insert, caret: block.headerFrom + insert.length };
   }
-  const hasBody = block.bodyTo > block.headerTo;
-  if (hasBody && !isOpenNow) {
-    const head = `\n${blankAt(block.depth - 1)}\n${markersFor(block.depth - 1)}> [!${block.type}]${opts.fold} ${bold}`;
-    const at = block.bodyTo;
-    return { from: at, to: at, insert: head + bold, caret: at + head.length };
-  }
-  if (opts.nested) {
-    const head = `\n${markersFor(block.depth)}> [!${block.type}]${opts.fold} ${bold}`;
-    return { from: block.headerTo, to: block.headerTo, insert: head + bold, caret: block.headerTo + head.length, openKey: block.key };
-  }
-  const ins = `\n${markersFor(block.depth)}`;
-  return { from: block.headerTo, to: block.headerTo, insert: ins, caret: block.headerTo + ins.length, openKey: block.key };
+  const head = `\n${blankAt(block.depth - 1)}\n${markersFor(block.depth - 1)}> [!${block.type}]${opts.fold} ${bold}`;
+  const at = block.bodyTo;
+  return { from: at, to: at, insert: head + bold, caret: at + head.length };
 }
 
 /* ---------- the `>` + space shortcut (Notion parity) ---------- */

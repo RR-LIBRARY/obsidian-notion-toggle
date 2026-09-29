@@ -45,8 +45,6 @@ export interface NotionWritingSettings {
   cleanMoreChip: boolean;
   /** v1.8.9: Tab / Shift+Tab, Ctrl/Cmd+Shift+↑/↓ and press-and-drag rearrange blocks and shove them into toggles. */
   blockMoves: boolean;
-  /** v1.8.13: Enter at the end of a title opens the toggle with a new toggle inside (Notion phone app). Off = a plain line inside. */
-  nestedEnter: boolean;
   /** v1.8.14: paste copied from Notion (nested toggles, toggle headings, callouts) arrives as nested toggles. */
   convertNotionPaste: boolean;
 }
@@ -59,7 +57,6 @@ export const DEFAULT_NOTION_WRITING: NotionWritingSettings = {
   detailsNudge: true,
   cleanMoreChip: false,
   blockMoves: true,
-  nestedEnter: true,
   convertNotionPaste: true,
 };
 
@@ -189,7 +186,6 @@ export function installNotionWriting(plugin: NotionTogglePlugin): void {
       moreChip: () => plugin.settings.cleanMoreChip,
       autoContinue: () => plugin.settings.autoContinue,
       blockMoves: () => plugin.settings.blockMoves !== false,
-      nestedEnter: () => plugin.settings.nestedEnter !== false,
       newToggleFold: () => (plugin.settings.defaultCollapsed ? "-" : "+"),
     })
   );
@@ -353,19 +349,6 @@ export function renderNotionWritingSettings(containerEl: HTMLElement, plugin: No
       toggle.setValue(plugin.settings.blockMoves !== false);
       toggle.onChange(async (value) => {
         plugin.settings.blockMoves = value;
-        await save();
-      });
-    });
-
-  new Setting(containerEl)
-    .setName("Enter on a title makes a toggle inside")
-    .setDesc(
-      "Like the Notion app: press Enter at the end of a toggle's title and it opens with a new toggle ready inside. Off = Enter opens it with a plain line inside. Enter on an empty title turns it back into a plain line."
-    )
-    .addToggle((toggle) => {
-      toggle.setValue(plugin.settings.nestedEnter !== false);
-      toggle.onChange(async (value) => {
-        plugin.settings.nestedEnter = value;
         await save();
       });
     });

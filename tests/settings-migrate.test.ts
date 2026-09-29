@@ -60,6 +60,13 @@ describe("migrateSettings", () => {
     expect(twice.settings.scrollMemory).toEqual({ "a.md": [{ due: 1 }] });
   });
 
+  test("v2 removes the retired nested-Enter preference", () => {
+    const res = migrateSettings({ settingsVersion: 2, nestedEnter: true });
+    expect(res.changed).toBe(true);
+    expect(res.settings.settingsVersion).toBe(SETTINGS_VERSION);
+    expect("nestedEnter" in res.settings).toBe(false);
+  });
+
   test("a current file keeps its data untouched", () => {
     const current = {
       settingsVersion: SETTINGS_VERSION,

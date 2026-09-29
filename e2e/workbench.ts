@@ -28,7 +28,6 @@ export const SAMPLE = [
 ].join("\n");
 
 const doc = params.get("doc") ?? SAMPLE;
-const nestedEnter = params.get("nested") !== "0";
 
 /**
  * v1.8.13 — the same Enter order as the real plugin: main.ts's older handler
@@ -77,7 +76,6 @@ const view = new EditorView({
         shortcutEnabled: () => true,
         insertToggleFromShortcut,
         moreChip: () => chip,
-        nestedEnter: () => nestedEnter,
         newToggleFold: () => "-",
       }),
       keymap.of([]),

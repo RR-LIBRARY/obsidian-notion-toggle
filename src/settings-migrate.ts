@@ -8,13 +8,15 @@
  * validates the nested stores, so every future change has a place to live.
  */
 
-export const SETTINGS_VERSION = 2;
+export const SETTINGS_VERSION = 3;
 
 export interface MigratableSettings {
   settingsVersion?: number;
   scrollMemory?: unknown;
   scrollPerNote?: unknown;
   srs?: unknown;
+  /** Removed in v3: Enter never changes depth; Tab/Shift+Tab own nesting. */
+  nestedEnter?: unknown;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -74,6 +76,10 @@ export function migrateSettings<T extends MigratableSettings>(raw: T): Migration
     settings.scrollMemory = sanitizeMemory(settings.scrollMemory);
     settings.scrollPerNote = sanitizePerNote(settings.scrollPerNote);
     if (!isRecord(settings.srs)) settings.srs = {};
+    changed = true;
+  }
+  if (from < 3 && "nestedEnter" in settings) {
+    delete settings.nestedEnter;
     changed = true;
   }
   if (settings.settingsVersion !== SETTINGS_VERSION) {

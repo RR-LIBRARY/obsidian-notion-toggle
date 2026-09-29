@@ -1,4 +1,4 @@
-"""v1.8.21 — replay the user's Notion video (phone keyboard composition) in the plugin, 360px."""
+"""v1.8.22 — replay the user's corrected Enter/depth video in the plugin, 360px."""
 import asyncio, sys, urllib.parse as up
 from pathlib import Path
 from playwright.async_api import async_playwright
@@ -23,18 +23,22 @@ async def main():
         cdp = await page.context.new_cdp_session(page)
         await page.goto(URL + "?doc=" + up.quote("> [!question]- ")); await page.wait_for_function("window.wb")
         await page.evaluate("wb.set(15)")
-        steps = [("what is my Name", "> [!question]- what is my Name\n> > [!question]- ")]
         await ime(cdp, page, "what is my Name")
         grey = await page.evaluate("(() => { const l=document.querySelector('.cm-line'); return getComputedStyle(l.querySelector('.ntt-clean-placeholder')||l).color })()")
         check("typed title is real text (no grey hint span swallowing it)", await page.locator(".ntt-clean-placeholder").count() == 0, grey)
         await page.keyboard.press("Enter")
         t = await page.evaluate("wb.text()")
-        check("Enter after a composed title keeps it a toggle + nested toggle inside", t.startswith("> [!question]- what is my Name\n> > [!question]-"), t)
-        await ime(cdp, page, "Answer"); await page.keyboard.press("Enter")
-        await page.keyboard.press("Enter")  # empty nested title -> plain line inside Answer's parent
-        await ime(cdp, page, "Anuj")
+        check("Enter after a composed title makes a same-depth sibling", t.startswith("> [!question]- what is my Name\n\n> [!question]-"), t)
+        for title in ["Where I am From", "how to know you", "What Kind of people you Are"]:
+            await ime(cdp, page, title)
+            await page.keyboard.press("Enter")
         t = await page.evaluate("wb.text()")
-        check("Answer nested, Anuj stays inside (tree like the Notion frame)", "> > [!question]- Answer" in t and "Anuj" in t and "[!question]- Anuj" not in t, t)
+        lines = [line for line in t.split("\n") if "[!question]" in line]
+        check("four video titles stay as top-level siblings", len(lines) == 5 and all(line.startswith("> [!question]-") for line in lines), t)
+        await page.keyboard.type("last")
+        await page.keyboard.press("Tab")
+        t = await page.evaluate("wb.text()")
+        check("only Tab changes depth", "> > [!question]- last" in t, t)
         await page.screenshot(path=str(SHOTS / "30_replay_notion_video.png"))
         await b.close()
     print(f"{fails} failed")
