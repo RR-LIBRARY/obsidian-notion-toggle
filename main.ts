@@ -3,6 +3,7 @@ import { Prec } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
 import { DEFAULT_NOTION_WRITING, cleanLayerOwnsEnter, installNotionWriting, uninstallNotionWriting, type NotionWritingSettings } from "./src/notion-writing";
 import { planToggleAll } from "./src/clean-toggles";
+import { anchorLine, writePlannedBlock } from "./src/insert-block";
 import {
   DEFAULT_POMODORO,
   POMODORO_PRESETS,
@@ -252,6 +253,8 @@ import {
 } from "./src/modals";
 import { ScrollSheetModal } from "./src/sheet-modal";
 import { installResearch, uninstallResearch } from "./src/research/wire";
+import { DEFAULT_OUTLINE_SETTINGS, type OutlineSettings } from "./src/outline-service";
+import { registerOutlineCommand, type OutlineCommandHost } from "./src/outline-command";
 import type { ResearchService } from "./src/research/service";
 import { DEFAULT_RESEARCH_SETTINGS, type ResearchSettings } from "./src/research/types";
 import {
@@ -286,7 +289,7 @@ import {
 } from "./src/editor-blocks";
 export * from "./src/editor-blocks";
 export { CALLOUT_TYPES, TOGGLE_COLORS, calloutForColor, QUIZ_FILTER_OPTIONS };
-interface NotionToggleSettings extends PomodoroSettings, AutoScrollSettings, QuizSettings, ResearchSettings, NotionWritingSettings {
+interface NotionToggleSettings extends PomodoroSettings, AutoScrollSettings, QuizSettings, ResearchSettings, NotionWritingSettings, OutlineSettings {
   /** v1.6.2 — data.json shape stamp; see src/settings-migrate.ts. */
   settingsVersion?: number;
   calloutType: string;
@@ -331,6 +334,7 @@ const DEFAULT_SETTINGS: NotionToggleSettings = {
   ...DEFAULT_AUTOSCROLL,
   ...DEFAULT_QUIZ,
   ...DEFAULT_RESEARCH_SETTINGS,
+  ...DEFAULT_OUTLINE_SETTINGS,
   calloutType: "question",
   defaultCollapsed: true,
   boldSummary: true,
@@ -1186,6 +1190,8 @@ export default class NotionTogglePlugin extends Plugin {
     registerPaddingDiagnostic(this);
     // v1.7.0 — web research: side panel, commands, ribbon, background runs.
     installResearch(this);
+    // v1.8.23 — "Outline selection with AI": same-level toggles from the selection.
+    registerOutlineCommand(this as unknown as OutlineCommandHost);
     this.addSettingTab(new NotionToggleSettingTab(this.app, this));
   }
   /** Callout type actually used, honouring the colour setting. */
@@ -1220,22 +1226,29 @@ export default class NotionTogglePlugin extends Plugin {
     editor.setLine(found.line, updated);
     return true;
   }
-  /** Insert an empty toggle on the line below the cursor and place the caret in its summary. */
+  /** Does the caret line already hold text? (Only the `<details>` path starts a new line for it.) */
+  private caretLineHasText(editor: Editor): boolean {
+    if (this.settings.format === "callout") return false;
+    return editor.getLine(editor.getCursor().line).trim().length > 0;
+  }
+  /**
+   * Insert an empty toggle and place the caret in its summary.
+   * v1.4.10 — the block is built by a pure planner (editor-blocks); v1.8.23 — it
+   * is placed like Notion: after the whole toggle under the caret, same depth
+   * (src/insert-block.ts), never between a title and its body.
+   */
   insertNewToggleBelow(editor: Editor, forceNumbered = false) {
-    const cursor = editor.getCursor();
-    const currentLine = editor.getLine(cursor.line);
-    // v1.4.10 — the block itself is built by a pure planner in editor-blocks.
+    const format = this.settings.format;
     const plan = newTogglePlan({
       header: this.toggleHeader(""),
-      format: this.settings.format,
-      lineHasText: currentLine.trim().length > 0,
+      format,
+      lineHasText: this.caretLineHasText(editor),
       collapsed: this.settings.defaultCollapsed,
       boldSummary: this.settings.boldSummary,
       numbered: forceNumbered || this.settings.numberedByDefault,
-      nextNumber: this.nextNumberAt(editor, cursor.line),
+      nextNumber: this.nextNumberAt(editor, anchorLine(editor, format)),
     });
-    editor.replaceRange(plan.block, { line: cursor.line, ch: currentLine.length });
-    editor.setCursor({ line: cursor.line + plan.lineOffset, ch: plan.ch });
+    writePlannedBlock(editor, plan, format);
   }
   /** Next auto-number, based on the last numbered toggle above `line`. */
   nextNumberAt(editor: Editor, line: number): number {
@@ -1243,10 +1256,9 @@ export default class NotionTogglePlugin extends Plugin {
     for (let l = 0; l <= line; l++) above.push(editor.getLine(l));
     return nextToggleNumber(above);
   }
-  /** Insert an MCQ or "Match the following" skeleton below the cursor. */
+  /** Insert an MCQ or "Match the following" skeleton after the block under the cursor. */
   insertQuestionBlock(editor: Editor, kind: "mcq" | "match") {
-    const cursor = editor.getCursor();
-    const currentLine = editor.getLine(cursor.line);
+    const format = this.settings.format;
     const numbered = this.settings.numberedByDefault;
     const plan = questionBlockPlan(
       kind,
@@ -1254,16 +1266,15 @@ export default class NotionTogglePlugin extends Plugin {
         calloutType: this.activeCallout(),
         collapsed: this.settings.defaultCollapsed,
         boldSummary: this.settings.boldSummary,
-        format: this.settings.format,
+        format,
         numbered,
-        number: numbered ? this.nextNumberAt(editor, cursor.line) : undefined,
+        number: numbered ? this.nextNumberAt(editor, anchorLine(editor, format)) : undefined,
         addAnswerLine: this.settings.addAnswerLine,
         count: kind === "mcq" ? this.settings.mcqOptionCount : this.settings.matchRowCount,
       },
-      currentLine.trim().length > 0
+      this.caretLineHasText(editor)
     );
-    editor.replaceRange(plan.block, { line: cursor.line, ch: currentLine.length });
-    editor.setCursor({ line: cursor.line + plan.lineOffset, ch: plan.ch });
+    writePlannedBlock(editor, plan, format);
   }
   /**
    * Enter inside a toggle:

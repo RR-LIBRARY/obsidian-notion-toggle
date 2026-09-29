@@ -1,3 +1,9 @@
+## 1.8.23
+
+- Mobile toolbar now has its own Indent and Outdent buttons, so nesting a toggle under the one above (or pulling it back out) is one tap — exactly like Notion.
+- New command "Outline selection with AI": select any text and get a row of same-level toggles back from your own outline service. Address, access key and toggles-per-run live in Settings → Outline with AI.
+- A toggle with only a title now still shows its arrow, matching Notion.
+
 ## 1.8.22
 
 - Fixed toggle depth from the user's phone videos: Enter now always creates the next toggle at the same level, whether the current toggle is open, closed, top-level or already nested.

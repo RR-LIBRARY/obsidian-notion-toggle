@@ -1956,3 +1956,35 @@ body.ntt-no-select, body.ntt-no-select * {
    chains stay readable on a phone instead of squeezing out at depth 8–9. */
 .markdown-preview-view details details,
 .markdown-rendered details details { padding-inline: 0; margin-block: 2px; }
+
+/* v1.8.23 — title-only toggles keep their arrow. Obsidian builds the fold
+   arrow (.callout-fold) only when a callout has a body; a toggle that is just a
+   title (a fresh sibling made with Enter or the Toggle list button, before any
+   text goes inside) has no fold element, and with the Notion look — no box, no
+   icon — it rendered as plain text. Draw the same solid triangle on the title
+   row itself whenever the fold element is missing: ▶ when closed, ▼ when open. */
+body.ntt-notion-look .callout.is-collapsible > .callout-title:not(:has(> .callout-fold))::before {
+  content: "";
+  order: -1;
+  flex: 0 0 auto;
+  width: 0.46em;
+  height: 0.52em;
+  margin: calc((1.5em - 0.52em) / 2) calc((1.3em - 0.46em) / 2);
+  background-color: currentColor;
+  color: var(--text-normal);
+  clip-path: polygon(15% 5%, 95% 50%, 15% 95%);
+  transform: rotate(90deg);
+  transition: transform 120ms ease;
+}
+body.ntt-notion-look .callout.is-collapsible.is-collapsed > .callout-title:not(:has(> .callout-fold))::before {
+  transform: rotate(0deg);
+}
+body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible > .callout-title:not(:has(> .callout-fold))::before {
+  color: rgb(var(--callout-color));
+}
+body.ntt-notion-look .callout[data-callout="recall-plain"].is-collapsible > .callout-title:not(:has(> .callout-fold))::before {
+  color: var(--text-normal);
+}
+@media (prefers-reduced-motion: reduce) {
+  body.ntt-notion-look .callout.is-collapsible > .callout-title:not(:has(> .callout-fold))::before { transition: none !important; }
+}

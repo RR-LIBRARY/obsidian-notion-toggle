@@ -289,3 +289,96 @@ export function dropUnit(lines: readonly string[], src: number, target: number, 
   }
   return { lines: res, at: ins.at, cd: destCd, openHeader: mode === "into" ? t2.start : -1 };
 }
+
+/* ---------- v1.8.23: where a *new* block goes (Toggle list / MCQ / Match buttons) ---------- */
+
+export interface Placement {
+  /** 0-based line the new block goes after (`after`) or takes over (`replace` — the caret sits on a blank line). */
+  line: number;
+  mode: "after" | "replace";
+  /** Container depth the new block lives in (0 = the note, 1 = inside a top-level toggle, …). */
+  cd: number;
+  /** Blank separator line to write before the block (already at the right depth), or null. */
+  lead: string | null;
+  /** Blank separator line to write after the block, or null. */
+  trail: string | null;
+}
+
+/**
+ * Notion's block buttons act on the *block* under the caret, never on the
+ * caret line: pressing "Toggle list" while on a toggle's title puts the new
+ * toggle after that toggle's whole body (nested toggles included), at the same
+ * depth. Inside a toggle's body the new toggle becomes a child of that toggle.
+ * A blank line under the caret is taken over instead (Notion turns the empty
+ * block into the toggle).
+ *
+ * Separator lines: Obsidian merges two callouts that touch and lazily continues
+ * a callout into the plain line right after it, so a blank line at the right
+ * depth is added wherever the new toggle would otherwise run into a neighbour.
+ * A plain line may sit directly above a toggle, so no blank line is forced there.
+ */
+export function placeNewBlock(lines: readonly string[], n: number): Placement {
+  const last = Math.max(0, lines.length - 1);
+  const at = Math.min(Math.max(0, n), last);
+  const loc = lines.length ? locate(lines, at) : null;
+  const unit: Unit = loc?.unit ?? { start: at, end: at, cd: 0, toggle: false, blank: (lines[at] ?? "").trim() === "" };
+  const cd = unit.cd;
+  const replace = unit.blank && !unit.toggle;
+  const line = replace ? unit.start : unit.end;
+  const prev = replace ? lines[unit.start - 1] : lines[unit.end];
+  const next = lines[unit.end + 1];
+  const prevToggle = replace ? toggleEndingAt(lines, unit.start - 1, cd) : unit.toggle;
+  const header = markersFor(cd) + "> [!x]- t"; // stand-in header: only its depth / non-blankness matter
+  const lead = needsGap(prev, header, cd, prevToggle, false) ? blankAt(cd) : null;
+  let trail: string | null = null;
+  if (next !== undefined) {
+    const d = markerDepth(next);
+    const depth = Math.min(d, cd);
+    if (contentAfter(next, depth).trim() !== "") trail = blankAt(depth);
+  }
+  return { line, mode: replace ? "replace" : "after", cd, lead, trail };
+}
+
+/** Prefix a block written for depth 0 so it sits in a container at depth `cd`. Blank lines become `>` lines. */
+export function prefixBlock(block: readonly string[], cd: number): string[] {
+  return block.map((t) => (t.trim() === "" ? blankAt(cd) : markersFor(cd) + t));
+}
+
+export interface Insertion {
+  /** Editor range to replace (0-based line, column). */
+  from: { line: number; ch: number };
+  to: { line: number; ch: number };
+  text: string;
+  /** 0-based line the block's first line (its header) lands on. */
+  headerLine: number;
+  /** Characters added in front of the block's first line (the container markers). */
+  prefixLength: number;
+}
+
+/**
+ * Turn a placement plus a depth-0 block (its lines, no trailing newline) into
+ * one editor edit: range, text and where the header ends up.
+ */
+export function insertionText(lines: readonly string[], place: Placement, block: readonly string[]): Insertion {
+  const body = prefixBlock(block, place.cd);
+  const parts = [...(place.lead !== null ? [place.lead] : []), ...body, ...(place.trail !== null ? [place.trail] : [])];
+  const skip = place.lead !== null ? 1 : 0;
+  const prefixLength = markersFor(place.cd).length;
+  const cur = lines[place.line] ?? "";
+  if (place.mode === "replace") {
+    return {
+      from: { line: place.line, ch: 0 },
+      to: { line: place.line, ch: cur.length },
+      text: parts.join("\n"),
+      headerLine: place.line + skip,
+      prefixLength,
+    };
+  }
+  return {
+    from: { line: place.line, ch: cur.length },
+    to: { line: place.line, ch: cur.length },
+    text: "\n" + parts.join("\n"),
+    headerLine: place.line + 1 + skip,
+    prefixLength,
+  };
+}

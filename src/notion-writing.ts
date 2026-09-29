@@ -27,6 +27,8 @@ import { cleanTogglesExtension, releaseCleanToggles, runBlockMove, type MoveHow 
 import { convertNotionPaste, onOwnLine } from "./notion-paste";
 import { cleanOwnsEnter, convertPastedText, detailsBlockCount, flipFoldMarker, type DocLike } from "./clean-toggles";
 import { convertDetailsToCallouts, newTogglePlan, nextToggleNumber } from "./editor-blocks";
+import { AT_TOP_LEVEL, NO_TOGGLE_ABOVE, installIndentBridge, type BridgeEditor, type CoreCommand } from "./indent-bridge";
+import { INDENT_COMMAND_ID, OUTDENT_COMMAND_ID } from "./naming";
 
 /* ---------- settings ---------- */
 
@@ -190,11 +192,13 @@ export function installNotionWriting(plugin: NotionTogglePlugin): void {
     })
   );
 
+  // v1.8.23 — Indent / Outdent are Notion's nesting controls and get their own
+  // toolbar buttons (primary names in src/naming.ts). IDs unchanged since 1.8.9.
   const moves: [MoveHow, string, string, string][] = [
     ["up", "move-block-up", "Move block up", "arrow-up"],
     ["down", "move-block-down", "Move block down", "arrow-down"],
-    ["in", "shove-into-toggle", "Put block inside the toggle above", "indent"],
-    ["out", "move-out-of-toggle", "Move block out of its toggle", "outdent"],
+    ["in", INDENT_COMMAND_ID, "Indent (nest under the toggle above)", "indent"],
+    ["out", OUTDENT_COMMAND_ID, "Outdent (move out one level)", "outdent"],
   ];
   for (const [how, id, name, icon] of moves) {
     plugin.addCommand({
@@ -203,10 +207,22 @@ export function installNotionWriting(plugin: NotionTogglePlugin): void {
       icon,
       editorCallback: (editor) => {
         const cm = (editor as unknown as { cm?: EditorView }).cm;
-        if (!cm || !runBlockMove(cm, how)) new Notice(how === "in" ? "There is no toggle right above this line." : "Nothing to move here.");
+        if (!cm || !runBlockMove(cm, how)) {
+          new Notice(how === "in" ? NO_TOGGLE_ABOVE : how === "out" ? AT_TOP_LEVEL : "Nothing to move here.");
+        }
       },
     });
   }
+
+  // Obsidian's own Indent / Unindent toolbar buttons behave like the two
+  // commands above while the caret is on a toggle (src/indent-bridge.ts).
+  installIndentBridge({
+    registry: (plugin.app as unknown as { commands?: { commands?: Record<string, CoreCommand> } }).commands?.commands,
+    activeEditor: () => (plugin.app.workspace.getActiveViewOfType(MarkdownView)?.editor as unknown as BridgeEditor | undefined) ?? null,
+    enabled: () => plugin.settings.blockMoves !== false && calloutMode(plugin),
+    notify: (message) => void new Notice(message),
+    register: (cleanup) => plugin.register(cleanup),
+  });
 
   plugin.registerEvent(
     plugin.app.workspace.on("editor-paste", (evt, editor) => {
