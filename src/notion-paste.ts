@@ -246,7 +246,10 @@ function render(lines: string[], opts: NotionPasteOptions): string[] {
         body.push(l);
         i++;
       }
-      pushBlock(out, [`> ${header(ht[2], opts)}`, ...quote(trimBlank(render(dedent(body), opts)))]);
+      // keep the heading level inside the toggle title, like Notion does
+      let htTitle = cleanTitle(ht[2]);
+      if (htTitle && opts.boldSummary && !/^\*\*[\s\S]*\*\*$/.test(htTitle)) htTitle = `**${htTitle}**`;
+      pushBlock(out, [`> ${header(`${ht[1]} ${htTitle}`, { ...opts, boldSummary: false })}`, ...quote(trimBlank(render(dedent(body), opts)))]);
       afterBlock = true;
       continue;
     }

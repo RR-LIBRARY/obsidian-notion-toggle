@@ -54,17 +54,17 @@ describe("v1.8.14 convertNotionPaste", () => {
 
   test("toggle heading with children", () => {
     expect(conv('## Chapter {toggle="true"}\n\tfirst\n\tsecond\nafter')).toBe(
-      "> [!question]- Chapter\n> first\n> second\n\nafter"
+      "> [!question]- ## Chapter\n> first\n> second\n\nafter"
     );
   });
 
   test("toggle heading keeps a blank line only when indented content follows", () => {
-    expect(conv('# H {toggle="true"}\n\ta\n\n\tb\n\noutside')).toBe("> [!question]- H\n> a\n>\n> b\n\noutside");
+    expect(conv('# H {toggle="true"}\n\ta\n\n\tb\n\noutside')).toBe("> [!question]- # H\n> a\n>\n> b\n\noutside");
   });
 
   test("toggle heading containing a nested toggle", () => {
     const src = '### Topic {toggle="true"}\n\t<details>\n\t<summary>Q</summary>\n\t\tA\n\t</details>';
-    expect(conv(src)).toBe("> [!question]- Topic\n> > [!question]- Q\n> > A");
+    expect(conv(src)).toBe("> [!question]- ### Topic\n> > [!question]- Q\n> > A");
   });
 
   test("callout icons map to Obsidian callout types", () => {
@@ -116,7 +116,7 @@ describe("v1.8.14 convertNotionPaste", () => {
   });
 
   test("empty toggle keeps just its title", () => {
-    expect(conv('## Empty {toggle="true"}')).toBe("> [!question]- Empty");
+    expect(conv('## Empty {toggle="true"}')).toBe("> [!question]- ## Empty");
   });
 });
 
@@ -178,7 +178,7 @@ describe("Notion parity fixtures (real page, API ground truth)", () => {
     expect(out).toContain("> [!note]- 1");
     expect(out).toContain("> > [!note]- 2");
     expect(out).toContain("> > - point a");
-    expect(out).toContain("Toggle heading");
+    expect(out).toContain("> [!note]- ## Toggle heading");
     expect(out).toContain("[!tip]");
     expect(out).toContain("Remember this");
     expect(out).toContain("console.log('hi');");

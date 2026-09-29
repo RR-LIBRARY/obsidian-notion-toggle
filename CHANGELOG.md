@@ -1,3 +1,7 @@
+## 1.8.17
+
+- Pasted toggle headings keep their heading level (`## Title {toggle="true"}` becomes a toggle titled `## Title`), like Notion.
+
 # Changelog
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
