@@ -328,6 +328,19 @@ async def main():
         check("after drag: selection allowed again", not await page.evaluate("document.body.classList.contains('ntt-no-select')"))
         await page.screenshot(path=str(SHOTS / "26_touch_drag.png"))
 
+        # 27 v1.8.14 paste from Notion: nested toggles appear straight away
+        await page.goto(URL + "?doc=" + up.quote("start")); await page.wait_for_function("window.wb")
+        await page.evaluate("wb.set(wb.text().length)")
+        NOTION = "<details>\n<summary>Outer</summary>\n\t<details>\n\t<summary>Inner</summary>\n\t\tdeep\n\t</details>\n</details>"
+        await page.evaluate("""(t) => { const dt = new DataTransfer(); dt.setData('text/plain', t);
+          document.querySelector('.cm-content').dispatchEvent(new ClipboardEvent('paste', {clipboardData: dt, bubbles: true, cancelable: true})); }""", NOTION)
+        await page.wait_for_timeout(60)
+        txt = await page.evaluate("wb.text()")
+        check("notion paste: nested callouts in the note", "> > [!question]- Inner" in txt, txt)
+        check("notion paste: starts on its own line after text", txt.startswith("start\n> [!question]- Outer"), txt)
+        check("notion paste: toggles render at once", await page.locator(".ntt-clean-arrow").count() >= 1)
+        await page.screenshot(path=str(SHOTS / "27_notion_paste.png"))
+
         check("no page errors", not errors, "; ".join(errors))
         await b.close()
 

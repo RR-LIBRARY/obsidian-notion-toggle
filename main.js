@@ -63,7 +63,7 @@ var import_state = require("@codemirror/state");
 var import_view = require("@codemirror/view");
 
 // src/editor-blocks.ts
-function convertDetailsToCallouts(doc, calloutType, collapsed, boldSummary) {
+function convertDetailsToCallouts(doc, calloutType2, collapsed, boldSummary) {
   const defaultFold = collapsed ? "-" : "+";
   const detailsRegex = /<details(\s[^>]*)?>\s*<summary>((?:(?!<details[\s>])[\s\S])*?)<\/summary>((?:(?!<details[\s>])[\s\S])*?)<\/details>/g;
   const convertOne = (_match, attrs, summaryRaw, bodyRaw) => {
@@ -72,13 +72,13 @@ function convertDetailsToCallouts(doc, calloutType, collapsed, boldSummary) {
     const title = boldSummary && !summary.startsWith("**") ? `**${summary}**` : summary;
     const bodyText = bodyRaw.trim();
     if (bodyText.length === 0) {
-      return `> [!${calloutType}]${fold} ${title}`;
+      return `> [!${calloutType2}]${fold} ${title}`;
     }
     const bodyLines2 = bodyText.split("\n").map((line) => {
       const cleaned = cleanInlineHtml(line);
       return cleaned.trim().length === 0 ? ">" : `> ${cleaned}`;
     });
-    return `> [!${calloutType}]${fold} ${title}
+    return `> [!${calloutType2}]${fold} ${title}
 ${bodyLines2.join("\n")}`;
   };
   let out = doc;
@@ -513,11 +513,11 @@ function descendantsOf(doc, block) {
 }
 function blockFromHeader(doc, headerLine) {
   var _a, _b, _c;
-  const header = doc.line(headerLine);
-  const m = header.text.match(CLEAN_HEADER_RE);
+  const header2 = doc.line(headerLine);
+  const m = header2.text.match(CLEAN_HEADER_RE);
   if (!m)
     return null;
-  const depth = markerDepth(header.text);
+  const depth = markerDepth(header2.text);
   const bodyPrefixes = [];
   let lastLine = headerLine;
   for (let n = headerLine + 1; n <= doc.lines; n++) {
@@ -531,21 +531,21 @@ function blockFromHeader(doc, headerLine) {
     lastLine = n;
   }
   const hasBody = lastLine > headerLine;
-  const prefixEnd = header.from + ((_a = m[1]) != null ? _a : "").length;
-  const wrap = header.text.slice(prefixEnd - header.from).match(BOLD_WRAP_RE);
+  const prefixEnd = header2.from + ((_a = m[1]) != null ? _a : "").length;
+  const wrap = header2.text.slice(prefixEnd - header2.from).match(BOLD_WRAP_RE);
   const inner = (_b = wrap == null ? void 0 : wrap[1]) != null ? _b : "";
   return {
-    key: header.from,
+    key: header2.from,
     headerLine,
     lastLine,
-    headerFrom: header.from,
-    headerTo: header.to,
+    headerFrom: header2.from,
+    headerTo: header2.to,
     prefixEnd,
     boldWrap: !!wrap,
     titleFrom: wrap ? prefixEnd + 2 : prefixEnd,
-    titleTo: wrap ? prefixEnd + 2 + inner.length : header.to,
-    bodyFrom: hasBody ? doc.line(headerLine + 1).from : header.to,
-    bodyTo: hasBody ? doc.line(lastLine).to : header.to,
+    titleTo: wrap ? prefixEnd + 2 + inner.length : header2.to,
+    bodyFrom: hasBody ? doc.line(headerLine + 1).from : header2.to,
+    bodyTo: hasBody ? doc.line(lastLine).to : header2.to,
     type: ((_c = m[2]) != null ? _c : "").trim(),
     marker: m[3],
     depth,
@@ -1677,6 +1677,240 @@ function tryShortcut(host, view) {
   return host.insertToggleFromShortcut(view);
 }
 
+// src/notion-paste.ts
+var FENCE = /^[ \t]*(```|~~~)/;
+var HEADING_TOGGLE = /^(#{1,6})[ \t]+(.*?)[ \t]*\{toggle="?true"?\}[ \t]*$/;
+var DETAILS_OPEN = /^<details(?:\s[^>]*)?>/i;
+var DETAILS_CLOSE = /^<\/details>\s*$/i;
+var CALLOUT_OPEN = /^<(callout|aside)(\s[^>]*)?>/i;
+function isNotionShaped(text) {
+  const src = stripFences(String(text != null ? text : "").replace(/\r\n?/g, "\n"));
+  if (/^#{1,6}[ \t]+.*\{toggle="?true"?\}[ \t]*$/m.test(src))
+    return true;
+  if (/^[ \t]*<(callout|aside)[\s>]/im.test(src))
+    return true;
+  if (!/<details[\s>]/i.test(src))
+    return false;
+  if (/^[ \t]+\S/m.test(src))
+    return true;
+  let depth = 0;
+  for (const m of src.matchAll(/<(\/?)details[\s>]/gi)) {
+    depth += m[1] ? -1 : 1;
+    if (depth > 1)
+      return true;
+  }
+  return false;
+}
+function stripFences(src) {
+  return src.replace(/^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[ \t]*$/gm, "");
+}
+function convertNotionPaste(text, opts) {
+  if (!isNotionShaped(text))
+    return null;
+  const lines = String(text).replace(/\r\n?/g, "\n").split("\n");
+  const out = render(lines, opts).join("\n");
+  return out === text ? null : out;
+}
+function indentOf(line) {
+  let n = 0;
+  for (const ch of line) {
+    if (ch === "	")
+      n += 4;
+    else if (ch === " ")
+      n += 1;
+    else
+      break;
+  }
+  return n;
+}
+function dedent(lines) {
+  const widths = lines.filter((l) => l.trim()).map(indentOf);
+  const min = widths.length ? Math.min(...widths) : 0;
+  if (!min)
+    return lines;
+  return lines.map((l) => {
+    let cut = 0;
+    let i = 0;
+    while (i < l.length && cut < min && (l[i] === " " || l[i] === "	")) {
+      cut += l[i] === "	" ? 4 : 1;
+      i++;
+    }
+    return l.slice(i);
+  });
+}
+function quote(lines) {
+  return lines.map((l) => l.length ? `> ${l}` : ">");
+}
+function cleanTitle(raw) {
+  return raw.replace(/<\/?(strong|b)>/gi, "**").replace(/<\/?(em|i)>/gi, "*").replace(/<[^>]+>/g, "").trim();
+}
+function header(title, opts, type = opts.calloutType, foldable = true) {
+  let t = cleanTitle(title);
+  if (t && opts.boldSummary && !/^\*\*[\s\S]*\*\*$/.test(t))
+    t = `**${t}**`;
+  const fold = foldable ? opts.collapsed ? "-" : "+" : "";
+  return `[!${type}]${fold}${t ? " " + t : ""}`;
+}
+var ICONS = [
+  [/💡/u, "tip"],
+  [/⚠️?|🚧/u, "warning"],
+  [/❗|‼️?|🚨/u, "important"],
+  [/ℹ️?/u, "info"],
+  [/✅|✔️?/u, "success"],
+  [/❓|🤔/u, "question"],
+  [/❌|⛔/u, "danger"],
+  [/📝|✏️?/u, "note"]
+];
+function calloutType(attrs) {
+  var _a, _b;
+  const icon = (_b = (_a = /icon="([^"]*)"/.exec(attrs)) == null ? void 0 : _a[1]) != null ? _b : "";
+  for (const [re, type] of ICONS)
+    if (re.test(icon))
+      return type;
+  return "note";
+}
+function pushBlock(out, block) {
+  if (out.length && out[out.length - 1].trim() !== "")
+    out.push("");
+  out.push(...block);
+}
+function render(lines, opts) {
+  var _a, _b;
+  const out = [];
+  let afterBlock = false;
+  let i = 0;
+  const emitText = (l) => {
+    if (afterBlock && l.trim() !== "" && out.length && out[out.length - 1].trim() !== "")
+      out.push("");
+    afterBlock = false;
+    out.push(l);
+  };
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    const fence = FENCE.exec(line);
+    if (fence) {
+      const mark = fence[1];
+      emitText(line);
+      i++;
+      while (i < lines.length) {
+        out.push(lines[i]);
+        if (lines[i].trim().startsWith(mark)) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (DETAILS_OPEN.test(trimmed)) {
+      let rest = trimmed.replace(DETAILS_OPEN, "").trim();
+      i++;
+      let title = "";
+      if (!rest) {
+        while (i < lines.length && !lines[i].trim())
+          i++;
+        if (i < lines.length && /^<summary>/i.test(lines[i].trim()))
+          rest = lines[i++].trim();
+      }
+      const sum = /^<summary>([\s\S]*?)<\/summary>(.*)$/i.exec(rest);
+      const body = [];
+      if (sum) {
+        title = sum[1];
+        if (sum[2].trim())
+          body.push(sum[2].trim());
+      } else if (rest)
+        body.push(rest);
+      let depth = 1;
+      let inFence = null;
+      while (i < lines.length) {
+        const t = lines[i].trim();
+        const f = FENCE.exec(lines[i]);
+        if (inFence) {
+          if (t.startsWith(inFence))
+            inFence = null;
+        } else if (f)
+          inFence = f[1];
+        else if (DETAILS_OPEN.test(t))
+          depth++;
+        else if (DETAILS_CLOSE.test(t) && --depth === 0) {
+          i++;
+          break;
+        }
+        body.push(lines[i]);
+        i++;
+      }
+      pushBlock(out, [`> ${header(title, opts)}`, ...quote(trimBlank(render(dedent(body), opts)))]);
+      afterBlock = true;
+      continue;
+    }
+    const co = CALLOUT_OPEN.exec(trimmed);
+    if (co) {
+      const tag = co[1].toLowerCase();
+      const close = new RegExp(`</${tag}>\\s*$`, "i");
+      let rest = trimmed.slice(co[0].length);
+      i++;
+      const body = [];
+      if (close.test(rest))
+        rest = rest.replace(close, "");
+      else {
+        while (i < lines.length && !close.test(lines[i].trim()))
+          body.push(lines[i++]);
+        const last = ((_a = lines[i]) != null ? _a : "").trim().replace(close, "");
+        if (last)
+          body.push(last);
+        i++;
+      }
+      if (rest.trim())
+        body.unshift(rest.trim());
+      pushBlock(out, [`> ${header("", opts, calloutType((_b = co[2]) != null ? _b : ""), false)}`, ...quote(trimBlank(render(dedent(body), opts)))]);
+      afterBlock = true;
+      continue;
+    }
+    const ht = HEADING_TOGGLE.exec(line);
+    if (ht) {
+      i++;
+      const body = [];
+      while (i < lines.length) {
+        const l = lines[i];
+        if (l.trim() === "") {
+          let j = i;
+          while (j < lines.length && lines[j].trim() === "")
+            j++;
+          if (j < lines.length && indentOf(lines[j]) > 0) {
+            body.push(...lines.slice(i, j));
+            i = j;
+            continue;
+          }
+          break;
+        }
+        if (indentOf(l) === 0)
+          break;
+        body.push(l);
+        i++;
+      }
+      pushBlock(out, [`> ${header(ht[2], opts)}`, ...quote(trimBlank(render(dedent(body), opts)))]);
+      afterBlock = true;
+      continue;
+    }
+    emitText(line);
+    i++;
+  }
+  return out;
+}
+function trimBlank(lines) {
+  let a = 0;
+  let b = lines.length;
+  while (a < b && !lines[a].trim())
+    a++;
+  while (b > a && !lines[b - 1].trim())
+    b--;
+  return lines.slice(a, b);
+}
+function onOwnLine(converted, textBeforeCaret) {
+  return textBeforeCaret.trim() && converted.startsWith(">") ? "\n" + converted : converted;
+}
+
 // src/notion-writing.ts
 var DEFAULT_NOTION_WRITING = {
   cleanEditing: true,
@@ -1686,7 +1920,8 @@ var DEFAULT_NOTION_WRITING = {
   detailsNudge: true,
   cleanMoreChip: false,
   blockMoves: true,
-  nestedEnter: true
+  nestedEnter: true,
+  convertNotionPaste: true
 };
 var NOTION_LOOK_CLASS = "ntt-notion-look";
 function calloutMode(plugin) {
@@ -1813,19 +2048,22 @@ function installNotionWriting(plugin) {
   plugin.registerEvent(
     plugin.app.workspace.on("editor-paste", (evt, editor) => {
       var _a, _b;
-      if (evt.defaultPrevented || !plugin.settings.convertDetailsOnPaste || !calloutMode(plugin))
+      if (evt.defaultPrevented || !calloutMode(plugin))
         return;
       const text = (_b = (_a = evt.clipboardData) == null ? void 0 : _a.getData("text/plain")) != null ? _b : "";
-      const converted = convertPastedText(text, {
+      const opts = {
         calloutType: plugin.activeCallout(),
         collapsed: plugin.settings.defaultCollapsed,
         boldSummary: plugin.settings.boldSummary
-      });
+      };
+      const fromNotion = plugin.settings.convertNotionPaste !== false ? convertNotionPaste(text, opts) : null;
+      const converted = fromNotion != null ? fromNotion : plugin.settings.convertDetailsOnPaste ? convertPastedText(text, opts) : null;
       if (!converted)
         return;
       evt.preventDefault();
-      editor.replaceSelection(converted);
-      new import_obsidian.Notice("Pasted <details> blocks were turned into toggles.");
+      const cur = editor.getCursor("from");
+      editor.replaceSelection(onOwnLine(converted, editor.getLine(cur.line).slice(0, cur.ch)));
+      new import_obsidian.Notice(fromNotion ? "Pasted from Notion \u2014 toggles, headings and callouts kept." : "Pasted <details> blocks were turned into toggles.");
     })
   );
   plugin.registerEvent(plugin.app.workspace.on("file-open", (file) => void offerDetailsConversion(plugin, file)));
@@ -1890,6 +2128,13 @@ function renderNotionWritingSettings(containerEl, plugin) {
     toggle.setValue(plugin.settings.convertDetailsOnPaste);
     toggle.onChange(async (value) => {
       plugin.settings.convertDetailsOnPaste = value;
+      await save();
+    });
+  });
+  new import_obsidian.Setting(containerEl).setName("Convert Notion paste to toggles").setDesc("Text copied from Notion keeps its nested toggles, toggle headings, bullets and callouts.").addToggle((toggle) => {
+    toggle.setValue(plugin.settings.convertNotionPaste !== false);
+    toggle.onChange(async (value) => {
+      plugin.settings.convertNotionPaste = value;
       await save();
     });
   });
@@ -2984,8 +3229,8 @@ var KIND_WORD_ALIASES = {
   cite: "quote"
 };
 var GRADED_COLORS = ["red", "yellow", "green"];
-function kindOf(calloutType) {
-  const t = (calloutType != null ? calloutType : "").toLowerCase();
+function kindOf(calloutType2) {
+  const t = (calloutType2 != null ? calloutType2 : "").toLowerCase();
   if (t.includes("recall-red"))
     return "red";
   if (t.includes("recall-yellow"))
@@ -9403,11 +9648,11 @@ function runLabel(run, max = 64) {
 var import_obsidian13 = require("obsidian");
 
 // src/research/format.ts
-function toggleBlock(title, bodyLines2, style, calloutType = style.calloutType) {
-  const cleanTitle = oneLine(title) || "Untitled";
+function toggleBlock(title, bodyLines2, style, calloutType2 = style.calloutType) {
+  const cleanTitle2 = oneLine(title) || "Untitled";
   if (style.format === "details") {
     const openAttr = style.collapsed ? "" : " open";
-    const inner = style.boldSummary ? `<b>${cleanTitle}</b>` : cleanTitle;
+    const inner = style.boldSummary ? `<b>${cleanTitle2}</b>` : cleanTitle2;
     const body2 = bodyLines2.join("\n").trim();
     return `<details${openAttr}>
 <summary>${inner}</summary>
@@ -9418,9 +9663,9 @@ ${body2}
 `;
   }
   const fold = style.collapsed ? "-" : "+";
-  const t = style.boldSummary && !cleanTitle.startsWith("**") ? `**${cleanTitle}**` : cleanTitle;
+  const t = style.boldSummary && !cleanTitle2.startsWith("**") ? `**${cleanTitle2}**` : cleanTitle2;
   const body = bodyLines2.map((l) => l.trim().length ? `> ${l}` : ">").join("\n");
-  return `> [!${calloutType}]${fold} ${t}
+  return `> [!${calloutType2}]${fold} ${t}
 ${body}
 `;
 }
@@ -10193,14 +10438,14 @@ var ResearchView = class extends import_obsidian14.ItemView {
   }
   /* ---------- static chrome ---------- */
   buildHeader(root) {
-    const header = el(root, "div", { cls: "ntt-rp-header" });
-    const title = el(header, "div", { cls: "ntt-rp-title" });
+    const header2 = el(root, "div", { cls: "ntt-rp-header" });
+    const title = el(header2, "div", { cls: "ntt-rp-title" });
     const icon = el(title, "span", { cls: "ntt-rp-title-icon", attrs: { "aria-hidden": "true" } });
     this.safeIcon(icon, RESEARCH_VIEW_ICON);
     el(title, "span", { text: "Research" });
-    this.statusEl = el(header, "span", { cls: "ntt-rp-status" });
-    this.iconButton(header, "refresh-cw", "Refresh runs", () => void this.refreshRuns());
-    this.iconButton(header, "settings", "Research settings", () => this.host.openSettings());
+    this.statusEl = el(header2, "span", { cls: "ntt-rp-status" });
+    this.iconButton(header2, "refresh-cw", "Refresh runs", () => void this.refreshRuns());
+    this.iconButton(header2, "settings", "Research settings", () => this.host.openSettings());
   }
   buildComposer(root) {
     const box = el(root, "div", { cls: "ntt-rp-composer" });

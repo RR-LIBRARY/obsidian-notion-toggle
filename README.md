@@ -47,6 +47,7 @@ The toggle you store is still a plain callout, but you no longer have to look at
 - **Clean editing** — the moment the caret enters a toggle, the `> [!question]-` code and every `>` on the answer lines are hidden. A small **▸ arrow** sits where the code was; click or tap it to open or close the toggle, exactly like Notion. A bold title's `**` markers are hidden too (the title just looks bold). A closed toggle shows only the arrow and the title, like Notion — turn on *Show “…” after a closed title* in settings if you want a tappable `…` chip. The caret can never land inside the hidden code (Home, taps at the left edge and Up/Down from column 0 all stop after the arrow), so nothing breaks by accident.
 - **`>` + space starts a toggle** — on an empty line type `>` and a space; you get a fresh toggle with the caret in the title (numbered if auto-numbering is on).
 - **Paste `<details>`, get a toggle** — pasted `<details><summary>…</summary>…</details>` blocks arrive already converted; `<details open>` stays open, nested blocks become nested toggles.
+- **Paste from Notion (1.8.14)** — copy blocks in Notion and paste: nested toggles, toggle headings, nested bullets and callouts arrive as proper Obsidian toggles/callouts; code blocks are copied untouched.
 - **Old notes** — opening a note that still uses `<details>` shows a one-tap **Convert to toggles** offer (once per note per session; nothing changes until you press it).
 - **Plain Notion look** — in reading view, toggles are just an arrow and the title: no coloured box, no icon. Colour toggles keep a coloured arrow. Turn it off in settings to get the boxed callout look back.
 - **Open ↔ closed by default** — one command flips the toggle under the caret between `-` (starts closed) and `+` (starts open).
@@ -162,6 +163,7 @@ Logic lives in pure modules — `src/smart.ts`, `src/naming.ts`, `src/timer.ts`,
 
 - **1.8.2** — bold titles without visible `**`, hanging indent for wrapped titles, no header hover, `…` chip now an opt-in setting, Backspace/Delete/End fixes on bold titles. See `CHANGELOG.md`.
 - **1.8.1** — caret fixes on closed toggles (`End` / `Right`), `Ctrl/Cmd+Enter` opens/closes, `Shift+End` selects the title, arrow choices remembered per session, bigger arrow.
+- **1.8.14** — Paste from Notion: nested toggles, toggle headings, bullets and callouts keep their shape.
 - **1.8.0** — Notion-like writing: clean editing (arrow instead of `>` / `[!type]-` while typing, tap to open/close, `…` chip for a closed answer), `>` + space starts a toggle, pasted `<details>` converted automatically, one-tap offer for old `<details>` notes, plain Notion look in reading view, open/closed-by-default command. See `CHANGELOG.md`.
 - **1.7.0** — web research: side panel + 8 commands (ask the web with citations, fact-check, web search, quick search, read links, recall toggles, background deep research), a self-hosted research bridge with per-user keys, usage log and a 15-minute cache, results inserted as your usual toggles. See `CHANGELOG.md`.
 - **1.1.0** — quiz mode: per-question countdown, automatic answer reveal, auto-close, auto-next, floating quiz HUD, per-question `⏱30` override.

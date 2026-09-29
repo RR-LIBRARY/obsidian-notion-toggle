@@ -2,6 +2,16 @@
 
 All notable changes to the Notion Toggle plugin. Older highlights live in `README.md → Changelog highlights`.
 
+## 1.8.14
+
+**Paste from Notion.**
+
+- Copy blocks in Notion, paste in Obsidian: nested toggles stay nested, toggle headings (`## Title {toggle="true"}`) become toggles, bullets keep their levels inside toggles, callouts become Obsidian callouts (💡 tip, ⚠️ warning, ❗ important, ℹ️ info, ✅ success, ❓ question, ❌ danger, others note), and code blocks are copied as they are. Before, nested toggles and toggle headings came out flat.
+- A pasted toggle always starts on its own line, even if the cursor was after some text.
+- New setting *Convert Notion paste to toggles* (on). Off = the 1.8.0 flat `<details>` conversion.
+- Built from the text Notion really produces (checked on a live Notion page through the Notion API).
+- Tests: 30 converter tests + 2 paste-handler tests; 3 new real-browser checks (the browser workbench now runs the same paste code as the plugin, which is why pasted toggles did not show up there before).
+
 ## 1.8.13
 
 **Enter like the Notion app** (from the reference clip, frame by frame).

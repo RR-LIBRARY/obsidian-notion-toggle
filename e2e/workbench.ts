@@ -8,6 +8,7 @@ import { EditorView, keymap, drawSelection } from "@codemirror/view";
 import { cleanTogglesExtension } from "../src/clean-toggles-view";
 import { cleanOwnsEnter } from "../src/clean-toggles";
 import { planEnter } from "../src/editor-blocks";
+import { convertNotionPaste, onOwnLine } from "../src/notion-paste";
 
 const params = new URLSearchParams(location.search);
 const chip = params.get("chip") === "1";
@@ -80,6 +81,20 @@ const view = new EditorView({
         newToggleFold: () => "-",
       }),
       keymap.of([]),
+      // Obsidian fires "editor-paste" outside CodeMirror; mirror the plugin's handler here
+      // so the workbench converts Notion paste exactly like the plugin does.
+      EditorView.domEventHandlers({
+        paste: (evt, v) => {
+          const text = evt.clipboardData?.getData("text/plain") ?? "";
+          const out = convertNotionPaste(text, { calloutType: "question", collapsed: true, boldSummary: false });
+          if (!out) return false;
+          evt.preventDefault();
+          const from = v.state.selection.main.from;
+          const line = v.state.doc.lineAt(from);
+          v.dispatch(v.state.replaceSelection(onOwnLine(out, line.text.slice(0, from - line.from))));
+          return true;
+        },
+      }),
     ],
   }),
 });

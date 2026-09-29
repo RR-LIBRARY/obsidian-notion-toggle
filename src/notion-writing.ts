@@ -24,6 +24,7 @@ import { MarkdownView, Notice, Setting, editorLivePreviewField, type TFile } fro
 import type { EditorView } from "@codemirror/view";
 import type NotionTogglePlugin from "../main";
 import { cleanTogglesExtension, releaseCleanToggles, runBlockMove, type MoveHow } from "./clean-toggles-view";
+import { convertNotionPaste, onOwnLine } from "./notion-paste";
 import { cleanOwnsEnter, convertPastedText, detailsBlockCount, flipFoldMarker, type DocLike } from "./clean-toggles";
 import { convertDetailsToCallouts, newTogglePlan, nextToggleNumber } from "./editor-blocks";
 
@@ -46,6 +47,8 @@ export interface NotionWritingSettings {
   blockMoves: boolean;
   /** v1.8.13: Enter at the end of a title opens the toggle with a new toggle inside (Notion phone app). Off = a plain line inside. */
   nestedEnter: boolean;
+  /** v1.8.14: paste copied from Notion (nested toggles, toggle headings, callouts) arrives as nested toggles. */
+  convertNotionPaste: boolean;
 }
 
 export const DEFAULT_NOTION_WRITING: NotionWritingSettings = {
@@ -57,6 +60,7 @@ export const DEFAULT_NOTION_WRITING: NotionWritingSettings = {
   cleanMoreChip: false,
   blockMoves: true,
   nestedEnter: true,
+  convertNotionPaste: true,
 };
 
 /** Body class the stylesheet keys off; themes and CSS snippets can build on it too. */
@@ -210,17 +214,20 @@ export function installNotionWriting(plugin: NotionTogglePlugin): void {
 
   plugin.registerEvent(
     plugin.app.workspace.on("editor-paste", (evt, editor) => {
-      if (evt.defaultPrevented || !plugin.settings.convertDetailsOnPaste || !calloutMode(plugin)) return;
+      if (evt.defaultPrevented || !calloutMode(plugin)) return;
       const text = evt.clipboardData?.getData("text/plain") ?? "";
-      const converted = convertPastedText(text, {
+      const opts = {
         calloutType: plugin.activeCallout(),
         collapsed: plugin.settings.defaultCollapsed,
         boldSummary: plugin.settings.boldSummary,
-      });
+      };
+      const fromNotion = plugin.settings.convertNotionPaste !== false ? convertNotionPaste(text, opts) : null;
+      const converted = fromNotion ?? (plugin.settings.convertDetailsOnPaste ? convertPastedText(text, opts) : null);
       if (!converted) return;
       evt.preventDefault();
-      editor.replaceSelection(converted);
-      new Notice("Pasted <details> blocks were turned into toggles.");
+      const cur = editor.getCursor("from");
+      editor.replaceSelection(onOwnLine(converted, editor.getLine(cur.line).slice(0, cur.ch)));
+      new Notice(fromNotion ? "Pasted from Notion — toggles, headings and callouts kept." : "Pasted <details> blocks were turned into toggles.");
     })
   );
 
@@ -311,6 +318,17 @@ export function renderNotionWritingSettings(containerEl: HTMLElement, plugin: No
       toggle.setValue(plugin.settings.convertDetailsOnPaste);
       toggle.onChange(async (value) => {
         plugin.settings.convertDetailsOnPaste = value;
+        await save();
+      });
+    });
+
+  new Setting(containerEl)
+    .setName("Convert Notion paste to toggles")
+    .setDesc("Text copied from Notion keeps its nested toggles, toggle headings, bullets and callouts.")
+    .addToggle((toggle) => {
+      toggle.setValue(plugin.settings.convertNotionPaste !== false);
+      toggle.onChange(async (value) => {
+        plugin.settings.convertNotionPaste = value;
         await save();
       });
     });

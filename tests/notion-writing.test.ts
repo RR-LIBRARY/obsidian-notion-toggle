@@ -182,6 +182,7 @@ describe("v1.8.0 notion writing — install", () => {
       convertDetailsOnPaste: true,
       detailsNudge: true,
       cleanMoreChip: false,
+      convertNotionPaste: true,
     });
   });
 
@@ -224,6 +225,28 @@ describe("v1.8.0 notion writing — pasting <details>", () => {
       expect(evt.defaultPrevented).toBe(before);
       expect(editor.replaced).toEqual([]);
     }
+  });
+});
+
+describe("v1.8.14 notion writing — pasting from Notion", () => {
+  const NOTION = "<details>\n<summary>Outer</summary>\n\t<details>\n\t<summary>Inner</summary>\n\t\tdeep\n\t</details>\n</details>";
+  test("nested Notion toggles land nested", () => {
+    const f = fake();
+    installNotionWriting(f.plugin);
+    const editor = new FakeEditor("");
+    const evt = pasteEvent(NOTION);
+    f.handlers["editor-paste"][0](evt, editor);
+    expect(evt.defaultPrevented).toBe(true);
+    expect(editor.replaced[0]).toContain("> > [!");
+    expect(notices.some((n) => n.includes("Notion"))).toBe(true);
+  });
+  test("setting off: falls back to the flat <details> converter", () => {
+    const f = fake({ convertNotionPaste: false } as Partial<NotionTogglePlugin["settings"]>);
+    installNotionWriting(f.plugin);
+    const editor = new FakeEditor("");
+    notices.length = 0;
+    f.handlers["editor-paste"][0](pasteEvent(NOTION), editor);
+    expect(notices.some((n) => n.includes("Notion"))).toBe(false);
   });
 });
 
@@ -375,7 +398,7 @@ describe("v1.8.0 notion writing — `>` + space inserts a toggle skeleton", () =
 /* ---------- settings ---------- */
 
 describe("v1.8.0 notion writing — settings section", () => {
-  test("renders a heading and eight switches with the current values", () => {
+  test("renders a heading and nine switches with the current values", () => {
     const f = fake({ notionShortcut: false });
     const root = document.createElement("div");
     renderNotionWritingSettings(root, f.plugin);
@@ -391,13 +414,15 @@ describe("v1.8.0 notion writing — settings section", () => {
         "Show “…” after a closed title",
         "Rearrange and shove into toggles",
         "Enter on a title makes a toggle inside",
+        "Convert Notion paste to toggles",
       ])
     );
     const toggles = Array.from(root.querySelectorAll(".checkbox-container"));
-    expect(toggles.length).toBe(8);
-    expect(toggles[5].classList.contains("is-enabled")).toBe(true);
-    expect(toggles[6].classList.contains("is-enabled")).toBe(true); // v1.8.13 Enter-on-title, on by default
-    expect(toggles[7].classList.contains("is-enabled")).toBe(false);
+    expect(toggles.length).toBe(9);
+    expect(toggles[4].classList.contains("is-enabled")).toBe(true); // v1.8.14 Notion paste, on by default
+    expect(toggles[6].classList.contains("is-enabled")).toBe(true);
+    expect(toggles[7].classList.contains("is-enabled")).toBe(true); // v1.8.13 Enter-on-title, on by default
+    expect(toggles[8].classList.contains("is-enabled")).toBe(false);
     expect(toggles[0].classList.contains("is-enabled")).toBe(true);
     expect(toggles[2].classList.contains("is-enabled")).toBe(false);
   });
