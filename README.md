@@ -244,3 +244,7 @@ The rules were already the reader's; now the **loop mechanics** are too (ported 
 - **Floating ▶ button** on every open note (bottom-right, safe-area aware): tap = start / pause autoscroll, **long-press = autoscroll sheet**. It hides while the running control bar is on screen, and can be turned off in settings (*Floating autoscroll button*).
 - **Autoscroll sheet** — every control in one mobile-friendly sheet: start/pause, speed, pause-for, pause-at, colour filter, reverse, loop, auto-open/close, tall-toggle chunking, debug overlay, plus shortcuts to *go to first*, *stats* and the toolbar guide. Also available as the command `Autoscroll: sheet (all controls)`.
 - **Minimal mobile toolbar** — pin **Toggle list** and **Tools** in Settings → Mobile → Manage toolbar. Toggle list inserts a toggle or wraps selected text; Tools searches the existing commands by category. Recall and Autoscroll are optional direct buttons. The guide has a saved checklist; remove old toolbar buttons manually in Obsidian.
+
+## Voice mode
+
+Speak to write notes — setup, voice commands, settings and limitations: see [docs/VOICE_MODE.md](docs/VOICE_MODE.md).
