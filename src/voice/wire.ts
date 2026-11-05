@@ -542,6 +542,12 @@ class VoiceController {
   }
 }
 
+let refreshFab: () => void = () => {};
+/** Called by settings so the floating mic shows/hides immediately. */
+export function refreshVoiceFab(): void {
+  refreshFab();
+}
+
 export function installVoice(plugin: VoicePluginHost): void {
   withVoiceDefaults(plugin.settings);
   const ctl = new VoiceController(plugin);
@@ -568,12 +574,23 @@ export function installVoice(plugin: VoicePluginHost): void {
   plugin.app.workspace.onLayoutReady(() => setTimeout(() => void ctl.retryPending(), 4000));
   // Floating mic button on notes — one tap to start talking.
   const s = plugin.settings as VoiceSettings;
-  if (s.voiceFab) {
+  {
     const fab = document.body.createEl("button", { cls: "ntt-voice-fab", attr: { "aria-label": "Voice mode — tap to speak" } });
     setIcon(fab, "mic");
     fab.onclick = () => ctl.toggle();
     ctl.fab = fab;
-    const sync = () => fab.toggleClass("is-off", !plugin.app.workspace.getActiveViewOfType(MarkdownView));
+    // v1.9.21 — on/off from settings or command works at once, no restart.
+    const sync = () => {
+      fab.toggleClass("is-off", !plugin.app.workspace.getActiveViewOfType(MarkdownView));
+      fab.toggleClass("is-disabled", !s.voiceFab);
+    };
+    refreshFab = sync;
+    plugin.addCommand({ id: "voice-mode-fab", name: "Voice mode: show / hide floating mic button", icon: "mic", callback: async () => {
+      s.voiceFab = !s.voiceFab;
+      sync();
+      await saveOf(plugin);
+      new Notice(s.voiceFab ? "Floating mic button ON" : "Floating mic button OFF");
+    } });
     plugin.registerEvent(plugin.app.workspace.on("active-leaf-change", sync));
     plugin.app.workspace.onLayoutReady(sync);
     plugin.register(() => fab.remove());

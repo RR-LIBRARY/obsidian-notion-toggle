@@ -1,4 +1,4 @@
-# Notion Toggle — saare features ek jagah (1.9.20)
+# Notion Toggle — saare features ek jagah (1.9.21)
 
 Ye file plugin ke **har feature** ki ek list hai. Detail ke liye: [Voice mode manual](VOICE_MODE.md) · [Autoscroll features](AUTOSCROLL_FEATURES.md) · [Hindi guide](HINDI-GUIDE.md).
 
@@ -35,6 +35,7 @@ Pura list: [AUTOSCROLL_FEATURES.md](AUTOSCROLL_FEATURES.md). Short me:
 ### C1. Recording
 | Feature | Kya karta hai |
 |---|---|
+| Mic button ON/OFF (1.9.21) | Settings → Voice mode → "Floating mic button" (sabse upar) — OFF karte hi turant chhup jaata hai; command "Voice mode: show / hide floating mic button" |
 | Mic button | Lovable jaisa safed gol button, neeche-daayein (autoscroll button ke upar, overlap nahi) |
 | Left ribbon / command | "Voice mode: start / finish" |
 | Voice card | Beech se phailti wave, ✕ (cancel), ⏸ (pause/resume), ✓ (finish) |

@@ -1,5 +1,6 @@
 /** v1.9.0 — the "Voice mode" section of the settings tab. */
 import { Notice, Setting } from "obsidian";
+import { refreshVoiceFab } from "./wire";
 import { TERM_PRESETS, transcribe, type VoiceSettings } from "./client";
 import { encodeWav } from "./audio";
 import { voiceTransport, withVoiceDefaults } from "./wire";
@@ -8,6 +9,16 @@ export function renderVoiceSettings(containerEl: HTMLElement, host: { settings: 
   const s = withVoiceDefaults(host.settings);
   const save = () => host.saveSettings();
   new Setting(containerEl).setName("Voice mode (v1.9.0)").setHeading();
+  new Setting(containerEl)
+    .setName("Floating mic button")
+    .setDesc("Note par neeche-daayein gol mic button. OFF karte hi turant chhup jaata hai. Mic ribbon aur command se phir bhi chalega.")
+    .addToggle((t) =>
+      t.setValue(s.voiceFab).onChange(async (v) => {
+        s.voiceFab = v;
+        refreshVoiceFab();
+        await save();
+      })
+    );
   containerEl.createDiv({
     cls: "setting-item-description",
     text: "Tap the mic in the ribbon (or the 'Voice mode' command / mobile toolbar), speak, then tap ✓. Long talks are written piece by piece while you speak.",
@@ -40,12 +51,6 @@ export function renderVoiceSettings(containerEl: HTMLElement, host: { settings: 
     );
   text("Special words", "Names or terms you often say, comma separated.", "voiceKeywords");
   text("Rescue folder", "If writing fails, the audio is saved here so nothing is lost.", "voiceRescueFolder");
-  new Setting(containerEl).setName("Floating mic button").setDesc("A mic button on notes; restart Obsidian after changing.").addToggle((t) =>
-    t.setValue(s.voiceFab).onChange(async (v) => {
-      s.voiceFab = v;
-      await save();
-    })
-  );
   new Setting(containerEl)
     .setName("Voice card look")
     .setDesc("Tip: long-press the voice card and slide it up or down to move it.")
