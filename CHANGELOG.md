@@ -1,3 +1,7 @@
+## 1.9.2
+
+- Fixed: the floating mic button no longer overlaps the autoscroll (layers) button — it now sits just above it with a clear gap. If autoscroll's button is turned off, the mic moves down into that spot.
+
 ## 1.9.1
 
 - Voice mode got a small easy UI: a floating **mic button** on every note (one tap to talk) and a **live transcript box** in the voice bar showing your words as they are written.
