@@ -23,7 +23,7 @@ describe("voice audio", () => {
   });
   test("piece cut: at a pause after 25 s, always at 60 s, never early", () => {
     const seg = new Segmenter();
-    expect(seg.push(0, 800, 10)).toBe(false);
+    expect(seg.push(0, 800, 3)).toBe(false);
     expect(seg.push(0, 800, 26)).toBe(true);
     expect(new Segmenter().push(0.5, 90, 60)).toBe(true);
   });

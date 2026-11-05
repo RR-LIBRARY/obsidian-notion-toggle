@@ -13,6 +13,8 @@ export interface VoiceSettings {
   voiceScript: "roman" | "native";
   /** Literal words you often say (names, subjects) — improves accuracy. */
   voiceKeywords: string;
+  /** Floating mic button on notes. */
+  voiceFab: boolean;
   /** Keep the screen on while recording (mobile). */
   voiceKeepAwake: boolean;
   /** Folder for recordings that could not be transcribed (never lose audio). */
@@ -27,6 +29,7 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   voiceLanguages: "hi,en",
   voiceScript: "roman",
   voiceKeywords: "",
+  voiceFab: true,
   voiceKeepAwake: true,
   voiceRescueFolder: "Voice recordings",
 };

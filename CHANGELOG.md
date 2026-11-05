@@ -1,3 +1,9 @@
+## 1.9.1
+
+- Voice mode got a small easy UI: a floating **mic button** on every note (one tap to talk) and a **live transcript box** in the voice bar showing your words as they are written.
+- Text now appears every few seconds while you speak instead of only at the end.
+- New setting: Floating mic button (on by default).
+
 ## 1.9.0
 
 - New **Voice mode**: tap the mic (ribbon, command or mobile toolbar), speak, tap ✓ — your words are written into the note at the cursor. Works like Lovable's voice input: live waveform, ✕ to discard, ✓ to finish, plus pause.

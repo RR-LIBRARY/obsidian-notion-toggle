@@ -2,7 +2,7 @@
  * v1.9.0 — installs voice mode: ribbon mic, commands, the bar, and writing
  * into the note at the cursor. One call from onload() keeps main.ts small.
  */
-import { MarkdownView, Notice, requestUrl, type Editor, type Plugin } from "obsidian";
+import { MarkdownView, Notice, requestUrl, setIcon, type Editor, type Plugin } from "obsidian";
 import { VoiceBar } from "./bar";
 import { DEFAULT_VOICE_SETTINGS, transcribeWithRetry, type VoiceSettings, type VoiceTransport } from "./client";
 import { VoiceRecorder } from "./recorder";
@@ -29,6 +29,7 @@ class VoiceController {
   private bar: VoiceBar | null = null;
   private session: DictationSession | null = null;
   private wake: { release(): Promise<void> } | null = null;
+  fab: HTMLElement | null = null;
 
   constructor(private readonly plugin: VoicePluginHost) {}
   private get s(): VoiceSettings {
@@ -60,7 +61,14 @@ class VoiceController {
     };
     this.session = new DictationSession({
       transcribe: (wav) => transcribeWithRetry(voiceTransport, this.s, wav),
-      write: (t) => write(editor, t),
+      write: (t) => {
+        write(editor, t);
+        try {
+          this.bar?.transcript(t);
+        } catch {
+          /* the box is only a preview — never block writing */
+        }
+      },
       before: () => editor.getValue().slice(0, anchor),
       rescue: (wav) => this.rescue(wav),
       onPending: (n) => this.bar?.status(n ? `Writing ${n} piece${n > 1 ? "s" : ""}…` : this.rec?.isPaused ? "Paused" : "Listening…"),
@@ -80,6 +88,7 @@ class VoiceController {
       new Notice(`Voice: ${msg}`, 8000);
       return;
     }
+    this.fab?.addClass("is-hidden");
     this.bar = new VoiceBar(
       {
         cancel: () => void this.finish(false),
@@ -111,6 +120,7 @@ class VoiceController {
     void this.wake?.release().catch(() => undefined);
     this.wake = null;
     if (!send) {
+      this.fab?.removeClass("is-hidden");
       bar?.destroy();
       this.bar = null;
       this.session = null;
@@ -118,7 +128,9 @@ class VoiceController {
     }
     bar?.finishing();
     await session.end();
+    await new Promise((r) => setTimeout(r, 900)); // let the reader see the final text
     bar?.destroy();
+    this.fab?.removeClass("is-hidden");
     if (this.bar === bar) this.bar = null;
     if (this.session === session) this.session = null;
   }
@@ -148,5 +160,17 @@ export function installVoice(plugin: VoicePluginHost): void {
     if (!check) void ctl.finish(false);
     return true;
   } });
+  // Floating mic button on notes — one tap to start talking.
+  const s = plugin.settings as VoiceSettings;
+  if (s.voiceFab) {
+    const fab = document.body.createEl("button", { cls: "ntt-voice-fab", attr: { "aria-label": "Voice mode — tap to speak" } });
+    setIcon(fab, "mic");
+    fab.onclick = () => ctl.toggle();
+    ctl.fab = fab;
+    const sync = () => fab.toggleClass("is-off", !plugin.app.workspace.getActiveViewOfType(MarkdownView));
+    plugin.registerEvent(plugin.app.workspace.on("active-leaf-change", sync));
+    plugin.app.workspace.onLayoutReady(sync);
+    plugin.register(() => fab.remove());
+  }
   plugin.register(() => ctl.destroy());
 }

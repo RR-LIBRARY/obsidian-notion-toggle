@@ -2019,3 +2019,8 @@ body.ntt-notion-look .callout.is-collapsible:has(> .callout-content > p:only-chi
 .ntt-voice-done { background: var(--text-normal) !important; color: var(--background-primary) !important; }
 .ntt-voice-bar.is-finishing .ntt-voice-btn { pointer-events: none; opacity: 0.5; }
 @media (prefers-reduced-motion: reduce) { .ntt-voice-b { transition: none; } }
+/* v1.9.1 — live transcript box + floating mic */
+.ntt-voice-text { max-height: 96px; overflow-y: auto; font-size: var(--font-ui-small); line-height: 1.45; color: var(--text-normal); background: var(--background-secondary); border-radius: 12px; padding: 8px 10px; white-space: pre-wrap; }
+.ntt-voice-text.is-empty { color: var(--text-faint); font-style: italic; }
+.ntt-voice-fab { position: fixed; right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 140px); width: 48px; height: 48px; border-radius: 50%; padding: 0; z-index: var(--layer-status-bar, 15); background: var(--interactive-accent) !important; color: var(--text-on-accent) !important; box-shadow: var(--shadow-s); display: inline-flex; align-items: center; justify-content: center; }
+.ntt-voice-fab.is-off, .ntt-voice-fab.is-hidden { display: none; }

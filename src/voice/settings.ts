@@ -40,6 +40,12 @@ export function renderVoiceSettings(containerEl: HTMLElement, host: { settings: 
     );
   text("Special words", "Names or terms you often say, comma separated.", "voiceKeywords");
   text("Rescue folder", "If writing fails, the audio is saved here so nothing is lost.", "voiceRescueFolder");
+  new Setting(containerEl).setName("Floating mic button").setDesc("A mic button on notes; restart Obsidian after changing.").addToggle((t) =>
+    t.setValue(s.voiceFab).onChange(async (v) => {
+      s.voiceFab = v;
+      await save();
+    })
+  );
   new Setting(containerEl).setName("Keep screen on while recording").addToggle((t) =>
     t.setValue(s.voiceKeepAwake).onChange(async (v) => {
       s.voiceKeepAwake = v;

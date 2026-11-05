@@ -20,6 +20,8 @@ export class VoiceBar {
   private levels: number[] = new Array(BARS).fill(0);
   private timeEl: HTMLElement;
   private statusEl: HTMLElement;
+  private textEl: HTMLElement;
+  private shown = "";
   private pauseBtn: HTMLButtonElement;
   private timer: number;
   private pausedMs = 0;
@@ -30,6 +32,9 @@ export class VoiceBar {
     const top = this.el.createDiv({ cls: "ntt-voice-top" });
     this.timeEl = top.createSpan({ cls: "ntt-voice-time", text: "0:00" });
     this.statusEl = top.createSpan({ cls: "ntt-voice-status", text: "Listening…" });
+    this.textEl = this.el.createDiv({ cls: "ntt-voice-text", attr: { "aria-live": "polite" } });
+    this.textEl.setText("Bolna shuru kijiye… text yahan dikhega");
+    this.textEl.addClass("is-empty");
     this.wave = this.el.createDiv({ cls: "ntt-voice-wave" });
     for (let i = 0; i < BARS; i++) this.bars.push(this.wave.createDiv({ cls: "ntt-voice-b" }));
     const row = this.el.createDiv({ cls: "ntt-voice-row" });
@@ -71,6 +76,14 @@ export class VoiceBar {
 
   status(text: string): void {
     this.statusEl.setText(text);
+  }
+
+  /** Live transcript box: shows what has been written so far (last ~400 chars). */
+  transcript(piece: string): void {
+    this.shown = (this.shown + piece).slice(-400);
+    this.textEl.removeClass("is-empty");
+    this.textEl.setText(this.shown.trimStart());
+    this.textEl.scrollTop = this.textEl.scrollHeight;
   }
 
   finishing(): void {

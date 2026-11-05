@@ -101,14 +101,14 @@ export function hasSpeech(samples: Float32Array, rate = TARGET_RATE, threshold =
 
 /**
  * Decides when to cut the running recording into a piece so long dictation
- * is transcribed while you keep talking: after `softSec` cut at the next
- * pause, and never let a piece exceed `hardSec`.
+ * is transcribed while you keep talking: after `softSec` (5 s) cut at the next
+ * pause — so text shows up every few seconds, and never let a piece exceed `hardSec`.
  */
 export class Segmenter {
   private quietMs = 0;
   constructor(
-    private readonly softSec = 25,
-    private readonly hardSec = 60,
+    private readonly softSec = 5,
+    private readonly hardSec = 25,
     private readonly pauseMs = 700,
     private readonly threshold = 0.012
   ) {}

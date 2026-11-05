@@ -8762,6 +8762,7 @@ var DEFAULT_VOICE_SETTINGS = {
   voiceLanguages: "hi,en",
   voiceScript: "roman",
   voiceKeywords: "",
+  voiceFab: true,
   voiceKeepAwake: true,
   voiceRescueFolder: "Voice recordings"
 };
@@ -8943,7 +8944,7 @@ function hasSpeech(samples, rate = TARGET_RATE, threshold = 0.012) {
   return voiced * 0.05 >= 0.3;
 }
 var Segmenter = class {
-  constructor(softSec = 25, hardSec = 60, pauseMs = 700, threshold = 0.012) {
+  constructor(softSec = 5, hardSec = 25, pauseMs = 700, threshold = 0.012) {
     this.softSec = softSec;
     this.hardSec = hardSec;
     this.pauseMs = pauseMs;
@@ -8982,12 +8983,16 @@ var VoiceBar = class {
     this.startedAt = startedAt;
     this.bars = [];
     this.levels = new Array(BARS).fill(0);
+    this.shown = "";
     this.pausedMs = 0;
     this.pausedAt = 0;
     this.el = document.body.createDiv({ cls: "ntt-voice-bar", attr: { role: "region", "aria-label": "Voice mode" } });
     const top = this.el.createDiv({ cls: "ntt-voice-top" });
     this.timeEl = top.createSpan({ cls: "ntt-voice-time", text: "0:00" });
     this.statusEl = top.createSpan({ cls: "ntt-voice-status", text: "Listening\u2026" });
+    this.textEl = this.el.createDiv({ cls: "ntt-voice-text", attr: { "aria-live": "polite" } });
+    this.textEl.setText("Bolna shuru kijiye\u2026 text yahan dikhega");
+    this.textEl.addClass("is-empty");
     this.wave = this.el.createDiv({ cls: "ntt-voice-wave" });
     for (let i = 0; i < BARS; i++)
       this.bars.push(this.wave.createDiv({ cls: "ntt-voice-b" }));
@@ -9028,6 +9033,13 @@ var VoiceBar = class {
   }
   status(text) {
     this.statusEl.setText(text);
+  }
+  /** Live transcript box: shows what has been written so far (last ~400 chars). */
+  transcript(piece) {
+    this.shown = (this.shown + piece).slice(-400);
+    this.textEl.removeClass("is-empty");
+    this.textEl.setText(this.shown.trimStart());
+    this.textEl.scrollTop = this.textEl.scrollHeight;
   }
   finishing() {
     this.el.addClass("is-finishing");
@@ -9190,6 +9202,7 @@ var VoiceController = class {
     this.bar = null;
     this.session = null;
     this.wake = null;
+    this.fab = null;
   }
   get s() {
     return this.plugin.settings;
@@ -9204,7 +9217,7 @@ var VoiceController = class {
       void this.start();
   }
   async start() {
-    var _a, _b;
+    var _a, _b, _c;
     const view = this.plugin.app.workspace.getActiveViewOfType(import_obsidian11.MarkdownView);
     if (!view)
       return void new import_obsidian11.Notice("Open a note first, then start voice mode.");
@@ -9221,7 +9234,14 @@ var VoiceController = class {
     };
     this.session = new DictationSession({
       transcribe: (wav) => transcribeWithRetry(voiceTransport, this.s, wav),
-      write: (t) => write(editor, t),
+      write: (t) => {
+        var _a2;
+        write(editor, t);
+        try {
+          (_a2 = this.bar) == null ? void 0 : _a2.transcript(t);
+        } catch (e) {
+        }
+      },
       before: () => editor.getValue().slice(0, anchor),
       rescue: (wav) => this.rescue(wav),
       onPending: (n) => {
@@ -9247,6 +9267,7 @@ var VoiceController = class {
       new import_obsidian11.Notice(`Voice: ${msg}`, 8e3);
       return;
     }
+    (_a = this.fab) == null ? void 0 : _a.addClass("is-hidden");
     this.bar = new VoiceBar(
       {
         cancel: () => void this.finish(false),
@@ -9263,14 +9284,14 @@ var VoiceController = class {
     );
     if (this.s.voiceKeepAwake) {
       try {
-        this.wake = (_b = await ((_a = navigator.wakeLock) == null ? void 0 : _a.request("screen"))) != null ? _b : null;
+        this.wake = (_c = await ((_b = navigator.wakeLock) == null ? void 0 : _b.request("screen"))) != null ? _c : null;
       } catch (e) {
         this.wake = null;
       }
     }
   }
   async finish(send) {
-    var _a;
+    var _a, _b, _c;
     const rec = this.rec;
     const bar = this.bar;
     const session = this.session;
@@ -9281,6 +9302,7 @@ var VoiceController = class {
     void ((_a = this.wake) == null ? void 0 : _a.release().catch(() => void 0));
     this.wake = null;
     if (!send) {
+      (_b = this.fab) == null ? void 0 : _b.removeClass("is-hidden");
       bar == null ? void 0 : bar.destroy();
       this.bar = null;
       this.session = null;
@@ -9288,7 +9310,9 @@ var VoiceController = class {
     }
     bar == null ? void 0 : bar.finishing();
     await session.end();
+    await new Promise((r) => setTimeout(r, 900));
     bar == null ? void 0 : bar.destroy();
+    (_c = this.fab) == null ? void 0 : _c.removeClass("is-hidden");
     if (this.bar === bar)
       this.bar = null;
     if (this.session === session)
@@ -9320,6 +9344,17 @@ function installVoice(plugin) {
       void ctl.finish(false);
     return true;
   } });
+  const s = plugin.settings;
+  if (s.voiceFab) {
+    const fab = document.body.createEl("button", { cls: "ntt-voice-fab", attr: { "aria-label": "Voice mode \u2014 tap to speak" } });
+    (0, import_obsidian11.setIcon)(fab, "mic");
+    fab.onclick = () => ctl.toggle();
+    ctl.fab = fab;
+    const sync = () => fab.toggleClass("is-off", !plugin.app.workspace.getActiveViewOfType(import_obsidian11.MarkdownView));
+    plugin.registerEvent(plugin.app.workspace.on("active-leaf-change", sync));
+    plugin.app.workspace.onLayoutReady(sync);
+    plugin.register(() => fab.remove());
+  }
   plugin.register(() => ctl.destroy());
 }
 
@@ -9354,6 +9389,12 @@ function renderVoiceSettings(containerEl, host) {
   );
   text("Special words", "Names or terms you often say, comma separated.", "voiceKeywords");
   text("Rescue folder", "If writing fails, the audio is saved here so nothing is lost.", "voiceRescueFolder");
+  new import_obsidian12.Setting(containerEl).setName("Floating mic button").setDesc("A mic button on notes; restart Obsidian after changing.").addToggle(
+    (t) => t.setValue(s.voiceFab).onChange(async (v) => {
+      s.voiceFab = v;
+      await save();
+    })
+  );
   new import_obsidian12.Setting(containerEl).setName("Keep screen on while recording").addToggle(
     (t) => t.setValue(s.voiceKeepAwake).onChange(async (v) => {
       s.voiceKeepAwake = v;
