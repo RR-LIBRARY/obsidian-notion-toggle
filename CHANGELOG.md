@@ -1,3 +1,16 @@
+## 1.9.1
+
+- Voice mode got a small easy UI: a floating **mic button** on every note (one tap to talk) and a **live transcript box** in the voice bar showing your words as they are written.
+- Text now appears every few seconds while you speak instead of only at the end.
+- New setting: Floating mic button (on by default).
+
+## 1.9.0
+
+- New **Voice mode**: tap the mic (ribbon, command or mobile toolbar), speak, tap ✓ — your words are written into the note at the cursor. Works like Lovable's voice input: live waveform, ✕ to discard, ✓ to finish, plus pause.
+- Strong transcription (GPT Transcribe) with Hindi + English hints; Hindi is written as Hinglish in Roman letters by default (switchable to Devanagari).
+- Long dictation is written piece by piece while you keep talking; weak network gets automatic retries, and if a piece still fails its audio is saved to the "Voice recordings" folder so nothing is lost.
+- Noise suppression, quiet-voice boost and keep-screen-on while recording.
+
 ## 1.8.25
 
 - Fixed the legacy “Insert toggle (empty)” mobile action: it now uses the same block-aware placement as “Toggle list”, so a new toggle cannot appear as raw `[!question]-` text inside the current toggle.
