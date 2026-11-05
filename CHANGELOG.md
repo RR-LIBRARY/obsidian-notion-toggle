@@ -1,3 +1,8 @@
+## 1.9.15
+- Autoscroll sheet: removed duplicate "Reverse direction" switch; help text for loop / auto-open / auto-close.
+- Fix: a tap on quiz/autoscroll buttons right after dragging a toggle is no longer swallowed.
+- docs/AUTOSCROLL_FEATURES.md: full feature list + test report.
+
 ## 1.9.14
 - Voice: term-link presets (Balanced, Medical/technical, More links, Fewer links) and Auto max notes by vault size (<100 → 2, ≤1000 → 3, more → 5). Auto is the new default.
 

@@ -219,27 +219,21 @@ export class ScrollSheetModal extends Modal {
           .onClick(() => new ScrollFilterModal(this.app, this.plugin).open())
       );
 
-    new Setting(this.contentEl).setName("Reverse direction ↑").addToggle((tg) =>
-      tg.setValue(s.scrollReverse).onChange(async (v) => {
-        await this.plugin.setScrollReverse(v);
-      })
-    );
-
-    new Setting(this.contentEl).setName("Loop the note").addToggle((tg) =>
+    new Setting(this.contentEl).setName("Loop the note").setDesc("Note khatam hone par upar se dobara shuru.").addToggle((tg) =>
       tg.setValue(s.scrollLoop).onChange(async (v) => {
         this.plugin.settings.scrollLoop = v;
         await this.plugin.saveSettings();
       })
     );
 
-    new Setting(this.contentEl).setName("Open toggles automatically").addToggle((tg) =>
+    new Setting(this.contentEl).setName("Open toggles automatically").setDesc("Scroll pahunchte hi band toggle khud khul jaye.").addToggle((tg) =>
       tg.setValue(s.scrollAutoOpen).onChange(async (v) => {
         this.plugin.settings.scrollAutoOpen = v;
         await this.plugin.saveSettings();
       })
     );
 
-    new Setting(this.contentEl).setName("Close them when leaving").addToggle((tg) =>
+    new Setting(this.contentEl).setName("Close them when leaving").setDesc("Aage badhne par khula toggle wapas band ho jaye.").addToggle((tg) =>
       tg.setValue(s.scrollAutoClose).onChange(async (v) => {
         this.plugin.settings.scrollAutoClose = v;
         await this.plugin.saveSettings();

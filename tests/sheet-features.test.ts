@@ -30,7 +30,6 @@ export const SHEET_ROWS = [
   "Pause for",
   "Pause at",
   "Colour filter",
-  "Reverse direction ↑",
   "Loop the note",
   "Open toggles automatically",
   "Close them when leaving",

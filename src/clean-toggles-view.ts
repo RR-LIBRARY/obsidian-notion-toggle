@@ -685,8 +685,15 @@ function startDrag(view: EditorView, down: PointerEvent, srcLine: number, onArro
     if (!wasActive) return;
     lastDragEnd = Date.now();
     // the click that follows a drag must not open / close the arrow
-    const eat = (c: Event) => { c.preventDefault(); c.stopPropagation(); };
-    window.addEventListener("click", eat, { capture: true, once: true });
+    // v1.9.15 — only the click that lands back in this note is eaten; a tap on
+    // the quiz dock / autoscroll buttons right after a drag must still work.
+    const eat = (c: Event) => {
+      window.removeEventListener("click", eat, true);
+      if (!(c.target instanceof Node) || !view.dom.contains(c.target)) return;
+      c.preventDefault();
+      c.stopPropagation();
+    };
+    window.addEventListener("click", eat, { capture: true });
     window.setTimeout(() => window.removeEventListener("click", eat, true), 400);
     if (!d) return;
     e.preventDefault();

@@ -1639,10 +1639,13 @@ function startDrag(view, down, srcLine, onArrow) {
       return;
     lastDragEnd = Date.now();
     const eat = (c) => {
+      window.removeEventListener("click", eat, true);
+      if (!(c.target instanceof Node) || !view.dom.contains(c.target))
+        return;
       c.preventDefault();
       c.stopPropagation();
     };
-    window.addEventListener("click", eat, { capture: true, once: true });
+    window.addEventListener("click", eat, { capture: true });
     window.setTimeout(() => window.removeEventListener("click", eat, true), 400);
     if (!d)
       return;
@@ -11010,24 +11013,19 @@ var ScrollSheetModal = class extends import_obsidian16.Modal {
     new import_obsidian16.Setting(this.contentEl).setName("Colour filter").setDesc(`Currently ${filterLabel(s.scrollFilter)}.`).addButton(
       (btn) => btn.setButtonText("Choose").onClick(() => new ScrollFilterModal(this.app, this.plugin).open())
     );
-    new import_obsidian16.Setting(this.contentEl).setName("Reverse direction \u2191").addToggle(
-      (tg) => tg.setValue(s.scrollReverse).onChange(async (v) => {
-        await this.plugin.setScrollReverse(v);
-      })
-    );
-    new import_obsidian16.Setting(this.contentEl).setName("Loop the note").addToggle(
+    new import_obsidian16.Setting(this.contentEl).setName("Loop the note").setDesc("Note khatam hone par upar se dobara shuru.").addToggle(
       (tg) => tg.setValue(s.scrollLoop).onChange(async (v) => {
         this.plugin.settings.scrollLoop = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian16.Setting(this.contentEl).setName("Open toggles automatically").addToggle(
+    new import_obsidian16.Setting(this.contentEl).setName("Open toggles automatically").setDesc("Scroll pahunchte hi band toggle khud khul jaye.").addToggle(
       (tg) => tg.setValue(s.scrollAutoOpen).onChange(async (v) => {
         this.plugin.settings.scrollAutoOpen = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian16.Setting(this.contentEl).setName("Close them when leaving").addToggle(
+    new import_obsidian16.Setting(this.contentEl).setName("Close them when leaving").setDesc("Aage badhne par khula toggle wapas band ho jaye.").addToggle(
       (tg) => tg.setValue(s.scrollAutoClose).onChange(async (v) => {
         this.plugin.settings.scrollAutoClose = v;
         await this.plugin.saveSettings();
