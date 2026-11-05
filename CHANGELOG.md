@@ -1,3 +1,7 @@
+## 1.9.7
+- Voice: text goes wherever you put the cursor — tap a new spot while recording and the next words are written there.
+- Better numbers and symbols (7 baje, 250, 2 + 3 = 5, 75%, ₹3500, H2O); filler sounds (uh, um, aaa, hmm) removed; invented text on silence is dropped.
+
 ## 1.9.6
 - Voice: phone-friendly setup box (big key field and buttons).
 - Voice: when the screen turns off, what you said so far is sent right away; when you come back the mic and keep-awake are re-opened automatically.

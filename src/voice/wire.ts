@@ -6,6 +6,7 @@ import { MarkdownView, Modal, Notice, requestUrl, setIcon, type Editor, type Plu
 import { VoiceBar } from "./bar";
 import { DEFAULT_VOICE_SETTINGS, transcribe, transcribeWithRetry, type VoiceSettings, type VoiceTransport } from "./client";
 import { VoiceRecorder } from "./recorder";
+import { CursorAnchor } from "./cursor";
 import { encodeWav } from "./audio";
 import { DictationSession } from "./session";
 
@@ -100,11 +101,11 @@ class VoiceController {
     }
     const editor = view.editor;
     // Anchor = character offset in the note; moves forward as we write.
-    let anchor = editor.posToOffset(editor.getCursor("to"));
+    const anchor = new CursorAnchor(editor.posToOffset(editor.getCursor("to")));
+    const here = (ed: Editor) => anchor.follow(ed.posToOffset(ed.getCursor("to")));
     const write = (ed: Editor, text: string) => {
-      ed.replaceRange(text, ed.offsetToPos(anchor));
-      anchor += text.length;
-      ed.setCursor(ed.offsetToPos(anchor));
+      ed.replaceRange(text, ed.offsetToPos(here(ed)));
+      ed.setCursor(ed.offsetToPos(anchor.wrote(text.length)));
     };
     this.session = new DictationSession({
       transcribe: (wav) => transcribeWithRetry(voiceTransport, this.s, wav),
@@ -116,7 +117,7 @@ class VoiceController {
           /* the box is only a preview — never block writing */
         }
       },
-      before: () => editor.getValue().slice(0, anchor),
+      before: () => editor.getValue().slice(0, here(editor)),
       rescue: (wav) => this.rescue(wav),
       onPending: (n) => this.bar?.status(n ? `Writing ${n} piece${n > 1 ? "s" : ""}…` : this.rec?.isPaused ? "Paused" : "Listening…"),
       onError: (e) => new Notice(`Voice: ${e.message}`, 8000),

@@ -9230,6 +9230,26 @@ var VoiceRecorder = class {
   }
 };
 
+// src/voice/cursor.ts
+var CursorAnchor = class {
+  constructor(offset) {
+    this.offset = offset;
+    this.placed = offset;
+  }
+  /** Call with the editor's current cursor offset before writing. */
+  follow(cursor) {
+    if (cursor !== this.placed)
+      this.offset = cursor;
+    return this.offset;
+  }
+  /** Call after inserting `length` characters at the anchor. */
+  wrote(length) {
+    this.offset += length;
+    this.placed = this.offset;
+    return this.offset;
+  }
+};
+
 // src/voice/session.ts
 var DictationSession = class {
   constructor(d) {
@@ -9378,11 +9398,11 @@ var VoiceController = class {
       return;
     }
     const editor = view.editor;
-    let anchor = editor.posToOffset(editor.getCursor("to"));
+    const anchor = new CursorAnchor(editor.posToOffset(editor.getCursor("to")));
+    const here = (ed) => anchor.follow(ed.posToOffset(ed.getCursor("to")));
     const write = (ed, text) => {
-      ed.replaceRange(text, ed.offsetToPos(anchor));
-      anchor += text.length;
-      ed.setCursor(ed.offsetToPos(anchor));
+      ed.replaceRange(text, ed.offsetToPos(here(ed)));
+      ed.setCursor(ed.offsetToPos(anchor.wrote(text.length)));
     };
     this.session = new DictationSession({
       transcribe: (wav) => transcribeWithRetry(voiceTransport, this.s, wav),
@@ -9394,7 +9414,7 @@ var VoiceController = class {
         } catch (e) {
         }
       },
-      before: () => editor.getValue().slice(0, anchor),
+      before: () => editor.getValue().slice(0, here(editor)),
       rescue: (wav) => this.rescue(wav),
       onPending: (n) => {
         var _a2, _b2;
