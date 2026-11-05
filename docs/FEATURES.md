@@ -1,4 +1,4 @@
-# Notion Toggle — saare features ek jagah (1.9.17)
+# Notion Toggle — saare features ek jagah (1.9.18)
 
 Ye file plugin ke **har feature** ki ek list hai. Detail ke liye: [Voice mode manual](VOICE_MODE.md) · [Autoscroll features](AUTOSCROLL_FEATURES.md) · [Hindi guide](HINDI-GUIDE.md).
 
@@ -69,7 +69,7 @@ Pura list: [AUTOSCROLL_FEATURES.md](AUTOSCROLL_FEATURES.md). Short me:
 | "heading …" / "chhota heading …" | `##` / `###` |
 | "bold …" | `**…**` |
 | "nayi line" / "naya paragraph" | line break / khaali line |
-| "table banao, columns … Row …" | Markdown table |
+| "table banao, columns … Row …" | Markdown table — har row alag line par; baad me bola "row …" usi table me judta hai (1.9.18) |
 
 ### C4. Linking (thinking mode)
 | Feature | Default | Kya karta hai |

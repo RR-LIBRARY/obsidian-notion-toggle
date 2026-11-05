@@ -21,3 +21,13 @@ describe("splitLong (audio file transcription)", () => {
     expect(cut).toBeLessThanOrEqual(16000 * 14.5);
   });
 });
+
+import { joinPiece } from "../src/voice/audio";
+describe("tables across pieces", () => {
+  it("new row after a table goes on its own line", () => {
+    expect(joinPiece("| A | B |\n| --- | --- |", "| 1 | 2 |")).toBe("\n| 1 | 2 |");
+  });
+  it("normal text after a table starts a new paragraph", () => {
+    expect(joinPiece("| A | B |\n| --- | --- |\n| 1 | 2 |", "Aage padhai.")).toBe("\n\nAage padhai.");
+  });
+});

@@ -134,6 +134,9 @@ export function joinPiece(before: string, piece: string): string {
   if (!t) return "";
   // v1.9.8 — lists, headings, tables and tasks from voice commands start on their own line.
   if (/^(- |\d+\. |#{1,6} |\||> )/.test(t) && before && !/\n$/.test(before)) return "\n" + t;
+  // v1.9.17 — text after a table starts a new paragraph so it is not swallowed as a row.
+  const last = before.slice(before.lastIndexOf("\n") + 1).trim();
+  if (last.startsWith("|") && !t.startsWith("|")) return (/\n$/.test(before) ? "\n" : "\n\n") + t;
   if (!before || /[\s\n]$/.test(before)) return t;
   return " " + t;
 }
