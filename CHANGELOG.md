@@ -1,3 +1,6 @@
+## 1.9.8
+- Voice commands: say "link X" for [[X]], "bullet"/"naya point", "number list", "checkbox", "heading X", "bold X", "nayi line", "naya paragraph", or "table banao, columns … row …" — they become Obsidian Markdown.
+
 ## 1.9.7
 - Voice: text goes wherever you put the cursor — tap a new spot while recording and the next words are written there.
 - Better numbers and symbols (7 baje, 250, 2 + 3 = 5, 75%, ₹3500, H2O); filler sounds (uh, um, aaa, hmm) removed; invented text on silence is dropped.

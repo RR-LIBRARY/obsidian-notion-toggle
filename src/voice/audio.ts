@@ -132,6 +132,8 @@ export class Segmenter {
 export function joinPiece(before: string, piece: string): string {
   const t = piece.trim();
   if (!t) return "";
+  // v1.9.8 — lists, headings, tables and tasks from voice commands start on their own line.
+  if (/^(- |\d+\. |#{1,6} |\||> )/.test(t) && before && !/\n$/.test(before)) return "\n" + t;
   if (!before || /[\s\n]$/.test(before)) return t;
   return " " + t;
 }

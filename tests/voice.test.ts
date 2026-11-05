@@ -34,6 +34,11 @@ describe("voice audio", () => {
     expect(seg.push(0.05, 800, 4)).toBe(true);
     expect(new Segmenter().push(0.5, 90, 60)).toBe(true);
   });
+  test("a spoken list or table starts on a new line", () => {
+    expect(joinPiece("Aaj ke topics", "- Maths\n- Physics")).toBe("\n- Maths\n- Physics");
+    expect(joinPiece("Marks", "| Subject | Marks |")).toBe("\n| Subject | Marks |");
+    expect(joinPiece("Topics\n", "- Maths")).toBe("- Maths");
+  });
   test("pieces join with one space", () => {
     expect(joinPiece("hello", " world ")).toBe(" world");
     expect(joinPiece("hello\n", "world")).toBe("world");

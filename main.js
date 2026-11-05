@@ -8972,6 +8972,8 @@ function joinPiece(before, piece) {
   const t = piece.trim();
   if (!t)
     return "";
+  if (/^(- |\d+\. |#{1,6} |\||> )/.test(t) && before && !/\n$/.test(before))
+    return "\n" + t;
   if (!before || /[\s\n]$/.test(before))
     return t;
   return " " + t;
