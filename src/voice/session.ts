@@ -7,6 +7,7 @@
  * ever lost.
  */
 import { joinPiece } from "./audio";
+import { isUndoCommand } from "./client";
 
 export interface SessionDeps {
   transcribe(wav: ArrayBuffer): Promise<string>;
@@ -17,6 +18,8 @@ export interface SessionDeps {
   rescue(wav: ArrayBuffer, error: Error): Promise<string | null>;
   onPending(count: number): void;
   onError(error: Error): void;
+  /** v1.9.9 — remove the last written piece ("pichhla mitao"). */
+  undo?(): void;
 }
 
 export class DictationSession {
@@ -58,6 +61,10 @@ export class DictationSession {
       const t = this.results.get(this.flushed)!;
       this.results.delete(this.flushed);
       this.flushed++;
+      if (this.d.undo && isUndoCommand(t)) {
+        this.d.undo();
+        continue;
+      }
       const piece = joinPiece(this.d.before(), t);
       if (piece) this.d.write(piece);
     }

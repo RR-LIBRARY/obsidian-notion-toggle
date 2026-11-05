@@ -101,7 +101,7 @@ function convertCalloutsToDetails(doc) {
     const m = line.match(/^>\s*\[!([^\]]+)\]([+-])\s?(.*)$/);
     if (m) {
       const _type = m[1];
-      const marker = m[2];
+      const marker2 = m[2];
       const title = ((_b = m[3]) != null ? _b : "").trim();
       const body = [];
       i++;
@@ -112,7 +112,7 @@ function convertCalloutsToDetails(doc) {
         body.push(bodyLine);
         i++;
       }
-      const openAttr = marker === "+" ? " open" : "";
+      const openAttr = marker2 === "+" ? " open" : "";
       const summary = title.length > 0 ? `<summary>${title}</summary>` : "<summary></summary>";
       const bodyHtml = body.length > 0 ? "\n\n" + body.join("\n") : "";
       out.push(`<details${openAttr}>`);
@@ -731,7 +731,7 @@ function convertPastedText(text, opts) {
   return converted === text ? null : converted;
 }
 function flipFoldMarker(line) {
-  return line.replace(/^(>[ \t]*\[![^\]\n]+\])([+-])/, (_m, head, marker) => `${head}${marker === "-" ? "+" : "-"}`);
+  return line.replace(/^(>[ \t]*\[![^\]\n]+\])([+-])/, (_m, head, marker2) => `${head}${marker2 === "-" ? "+" : "-"}`);
 }
 var FOLD_HEADER = /^(\s*(?:>\s*)*>[ \t]*\[![^\]\n]+\])([+-])/;
 var DETAILS_TAG = /^(\s*)<details(\s+open)?\s*>/i;
@@ -1575,7 +1575,7 @@ function startDrag(view, down, srcLine, onArrow) {
   const y0 = down.clientY;
   let active = false;
   let ghost = null;
-  let marker = null;
+  let marker2 = null;
   let drop = null;
   const holdMs = down.pointerType === "mouse" ? 450 : 400;
   const startSel = view.state.selection;
@@ -1602,9 +1602,9 @@ function startDrag(view, down, srcLine, onArrow) {
     const first = (_b = lines[u.start]) != null ? _b : "";
     ghost.textContent = first.replace(/^(?:>[ \t]*)*(\[![^\]]+\][+-]\s*)?/, "").replace(/\*\*/g, "") || " ";
     document.body.appendChild(ghost);
-    marker = document.createElement("div");
-    marker.className = "ntt-drop-marker";
-    document.body.appendChild(marker);
+    marker2 = document.createElement("div");
+    marker2.className = "ntt-drop-marker";
+    document.body.appendChild(marker2);
     if (navigator.vibrate)
       try {
         navigator.vibrate(10);
@@ -1628,7 +1628,7 @@ function startDrag(view, down, srcLine, onArrow) {
       ghost.style.top = `${e.clientY - 12}px`;
     }
     drop = dropTarget(view, e.clientX, e.clientY);
-    paintMarker(view, marker, drop);
+    paintMarker(view, marker2, drop);
   }
   function up(e) {
     var _a, _b, _c;
@@ -1673,8 +1673,8 @@ function startDrag(view, down, srcLine, onArrow) {
     window.clearTimeout(timer);
     active = false;
     ghost == null ? void 0 : ghost.remove();
-    marker == null ? void 0 : marker.remove();
-    ghost = marker = null;
+    marker2 == null ? void 0 : marker2.remove();
+    ghost = marker2 = null;
     view.dom.classList.remove("ntt-dragging");
     document.body.classList.remove("ntt-no-select");
     document.removeEventListener("selectstart", noSelect, true);
@@ -8767,7 +8767,11 @@ var DEFAULT_VOICE_SETTINGS = {
   voiceBarStyle: "full",
   voiceBarWave: "muted",
   voiceKeepAwake: true,
-  voiceRescueFolder: "Voice recordings"
+  voiceRescueFolder: "Voice recordings",
+  voiceUsageDay: "",
+  voiceUsageSec: 0,
+  voicePending: [],
+  voiceAutoLink: true
 };
 var VoiceError = class extends Error {
   constructor(message, status = 0) {
@@ -8779,13 +8783,36 @@ var VoiceError = class extends Error {
     return this.status === 0 || this.status === 429 || this.status >= 500;
   }
 };
-function buildPrompt(s) {
+function friendlyError(status, msg) {
+  if (status === 402)
+    return "Lovable workspace ke AI credits khatam ho gaye. Credits add karein \u2014 audio save kar diya gaya hai, baad me apne aap likh diya jayega.";
+  if (status === 429)
+    return "Abhi bahut zyada requests ho gayi. Thodi der me apne aap dobara try hoga.";
+  if (status === 401)
+    return "Voice key galat hai. Settings \u2192 Voice mode me sahi key daalein.";
+  if (status === 0)
+    return "Internet nahi hai. Audio save ho gaya \u2014 net aate hi apne aap likh diya jayega.";
+  return msg;
+}
+function isUndoCommand(text) {
+  return /^(pichh?la|last|aakhri)\s+(wala\s+)?(mitao|hatao|delete\s*karo|delete|undo|remove)[.!।]?$/i.test(text.trim());
+}
+function wavSeconds(wav, rate = 16e3) {
+  return Math.max(0, (wav.byteLength - 44) / (rate * 2));
+}
+function buildContext(title, before) {
+  const tail = before.replace(/\s+/g, " ").trim().slice(-200);
+  return [title ? `Note title: ${title}.` : "", tail ? `Text just before: "${tail}"` : ""].filter(Boolean).join(" ");
+}
+function buildPrompt(s, context = "") {
   const parts = [
     "Dictated personal notes for Obsidian. Write clean, punctuated sentences.",
     s.voiceScript === "roman" ? "Write Hindi words in Roman (Latin) letters as Hinglish, e.g. 'aaj ki meeting mein humne baat ki'. Keep English words in English." : "Write each language in its own script."
   ];
   if (s.voiceKeywords.trim())
     parts.push(`Words that may appear: ${s.voiceKeywords.trim()}.`);
+  if (context)
+    parts.push(context);
   return parts.join(" ");
 }
 function buildMultipart(fields, wav) {
@@ -8819,11 +8846,11 @@ Content-Type: audio/wav\r
   }
   return { body: out.buffer, contentType: `multipart/form-data; boundary=${boundary}` };
 }
-async function transcribe(transport, s, wav) {
+async function transcribe(transport, s, wav, context = "") {
   var _a;
   if (!s.voiceEndpoint.trim() || !s.voiceKey.trim())
     throw new VoiceError("Add the voice key in Settings \u2192 Notion Toggle \u2192 Voice mode.", 401);
-  const { body, contentType } = buildMultipart({ prompt: buildPrompt(s), languages: s.voiceLanguages, script: s.voiceScript, polish: "1" }, wav);
+  const { body, contentType } = buildMultipart({ prompt: buildPrompt(s, context), languages: s.voiceLanguages, script: s.voiceScript, polish: "1" }, wav);
   let res;
   try {
     res = await transport({ url: s.voiceEndpoint.trim(), method: "POST", headers: { "x-voice-key": s.voiceKey.trim() }, body, contentType });
@@ -8839,11 +8866,11 @@ async function transcribe(transport, s, wav) {
     throw new VoiceError(data.error || `Transcription failed (${res.status})`, res.status);
   return String((_a = data.text) != null ? _a : "").trim();
 }
-async function transcribeWithRetry(transport, s, wav, sleep = (ms3) => new Promise((r) => setTimeout(r, ms3))) {
+async function transcribeWithRetry(transport, s, wav, context = "", sleep = (ms3) => new Promise((r) => setTimeout(r, ms3))) {
   let last = null;
   for (let i = 0; i < 3; i++) {
     try {
-      return await transcribe(transport, s, wav);
+      return await transcribe(transport, s, wav, context);
     } catch (e) {
       last = e instanceof VoiceError ? e : new VoiceError(String(e));
       if (!last.retryable)
@@ -8853,6 +8880,37 @@ async function transcribeWithRetry(transport, s, wav, sleep = (ms3) => new Promi
     }
   }
   throw last;
+}
+function autoLink(text, titles, skip = "") {
+  const names = [...new Set(titles.map((t) => t.trim()))].filter((t) => t.length >= 3 && t.toLowerCase() !== skip.toLowerCase()).sort((a, b) => b.length - a.length);
+  if (!names.length || !text)
+    return text;
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const protect = /\[\[[^\]]*\]\]|`[^`]*`|https?:\/\/\S+/g;
+  const parts = [];
+  let i = 0;
+  for (const m of text.matchAll(protect)) {
+    parts.push({ t: text.slice(i, m.index), lock: false }, { t: m[0], lock: true });
+    i = m.index + m[0].length;
+  }
+  parts.push({ t: text.slice(i), lock: false });
+  for (const name of names) {
+    const re = new RegExp(`(^|[^\\p{L}\\p{N}])(${esc(name)})(?=$|[^\\p{L}\\p{N}])`, "iu");
+    for (let k = 0; k < parts.length; k++) {
+      const p = parts[k];
+      if (p.lock)
+        continue;
+      const m = re.exec(p.t);
+      if (!m)
+        continue;
+      const at = m.index + m[1].length;
+      const said = m[2];
+      const link = said === name ? `[[${name}]]` : `[[${name}|${said}]]`;
+      parts.splice(k, 1, { t: p.t.slice(0, at), lock: false }, { t: link, lock: true }, { t: p.t.slice(at + said.length), lock: false });
+      break;
+    }
+  }
+  return parts.map((p) => p.t).join("");
 }
 
 // src/voice/audio.ts
@@ -9287,6 +9345,10 @@ var DictationSession = class {
       const t = this.results.get(this.flushed);
       this.results.delete(this.flushed);
       this.flushed++;
+      if (this.d.undo && isUndoCommand(t)) {
+        this.d.undo();
+        continue;
+      }
       const piece = joinPiece(this.d.before(), t);
       if (piece)
         this.d.write(piece);
@@ -9313,7 +9375,7 @@ function withVoiceDefaults(settings) {
   const s = settings;
   for (const [k, v] of Object.entries(DEFAULT_VOICE_SETTINGS))
     if (s[k] === void 0 || s[k] === null)
-      s[k] = v;
+      s[k] = Array.isArray(v) ? [...v] : v;
   return settings;
 }
 var VoiceSetupModal = class extends import_obsidian11.Modal {
@@ -9368,6 +9430,19 @@ var VoiceSetupModal = class extends import_obsidian11.Modal {
     this.contentEl.empty();
   }
 };
+var today = () => (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+function addUsage(s, sec2) {
+  if (s.voiceUsageDay !== today()) {
+    s.voiceUsageDay = today();
+    s.voiceUsageSec = 0;
+  }
+  s.voiceUsageSec += sec2;
+}
+var marker = (path) => `[voice not written \u2014 audio saved: ${path}]`;
+var saveOf = (p) => {
+  var _a, _b;
+  return (_b = (_a = p.saveSettings) == null ? void 0 : _a.call(p)) != null ? _b : Promise.resolve();
+};
 var VoiceController = class {
   constructor(plugin) {
     this.plugin = plugin;
@@ -9377,6 +9452,7 @@ var VoiceController = class {
     this.wake = null;
     this.fab = null;
     this.screenOff = null;
+    this.retrying = false;
   }
   get s() {
     return this.plugin.settings;
@@ -9391,7 +9467,7 @@ var VoiceController = class {
       void this.start();
   }
   async start() {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
     const view = this.plugin.app.workspace.getActiveViewOfType(import_obsidian11.MarkdownView);
     if (!view)
       return void new import_obsidian11.Notice("Open a note first, then start voice mode.");
@@ -9406,10 +9482,32 @@ var VoiceController = class {
       ed.replaceRange(text, ed.offsetToPos(here(ed)));
       ed.setCursor(ed.offsetToPos(anchor.wrote(text.length)));
     };
+    const notePath = (_b = (_a = view.file) == null ? void 0 : _a.path) != null ? _b : "";
+    const title = (_d = (_c = view.file) == null ? void 0 : _c.basename) != null ? _d : "";
+    let last = null;
     this.session = new DictationSession({
-      transcribe: (wav) => transcribeWithRetry(voiceTransport, this.s, wav),
+      transcribe: async (wav) => {
+        const ctx = buildContext(title, editor.getValue().slice(0, here(editor)));
+        let t = await transcribeWithRetry(voiceTransport, this.s, wav, ctx);
+        if (this.s.voiceAutoLink)
+          t = autoLink(t, this.plugin.app.vault.getMarkdownFiles().map((f) => f.basename), title);
+        addUsage(this.s, wavSeconds(wav));
+        void saveOf(this.plugin);
+        return t;
+      },
+      undo: () => {
+        if (!last)
+          return void new import_obsidian11.Notice("Voice: mitane ke liye kuch nahi hai.");
+        const { at, len } = last;
+        editor.replaceRange("", editor.offsetToPos(at), editor.offsetToPos(at + len));
+        anchor.follow(at);
+        editor.setCursor(editor.offsetToPos(at));
+        last = null;
+        new import_obsidian11.Notice("Voice: pichhla hissa hata diya \u2713");
+      },
       write: (t) => {
         var _a2;
+        last = { at: here(editor), len: t.length };
         write(editor, t);
         try {
           (_a2 = this.bar) == null ? void 0 : _a2.transcript(t);
@@ -9417,12 +9515,19 @@ var VoiceController = class {
         }
       },
       before: () => editor.getValue().slice(0, here(editor)),
-      rescue: (wav) => this.rescue(wav),
+      rescue: async (wav) => {
+        const path = await this.rescue(wav);
+        if (path && notePath) {
+          this.s.voicePending.push({ path, note: notePath });
+          await saveOf(this.plugin);
+        }
+        return path;
+      },
       onPending: (n) => {
         var _a2, _b2;
         return (_b2 = this.bar) == null ? void 0 : _b2.status(n ? `Writing ${n} piece${n > 1 ? "s" : ""}\u2026` : ((_a2 = this.rec) == null ? void 0 : _a2.isPaused) ? "Paused" : "Listening\u2026");
       },
-      onError: (e) => new import_obsidian11.Notice(`Voice: ${e.message}`, 8e3)
+      onError: (e) => new import_obsidian11.Notice(`Voice: ${friendlyError(e instanceof VoiceError ? e.status : -1, e.message)}`, 8e3)
     });
     const session = this.session;
     this.rec = new VoiceRecorder({
@@ -9441,7 +9546,7 @@ var VoiceController = class {
       new import_obsidian11.Notice(`Voice: ${msg}`, 8e3);
       return;
     }
-    (_a = this.fab) == null ? void 0 : _a.addClass("is-hidden");
+    (_e = this.fab) == null ? void 0 : _e.addClass("is-hidden");
     this.bar = new VoiceBar(
       {
         cancel: () => void this.finish(false),
@@ -9456,9 +9561,9 @@ var VoiceController = class {
       },
       this.rec.startedAt,
       {
-        lift: (_b = this.s.voiceBarLift) != null ? _b : 0,
-        style: (_c = this.s.voiceBarStyle) != null ? _c : "full",
-        wave: (_d = this.s.voiceBarWave) != null ? _d : "muted",
+        lift: (_f = this.s.voiceBarLift) != null ? _f : 0,
+        style: (_g = this.s.voiceBarStyle) != null ? _g : "full",
+        wave: (_h = this.s.voiceBarWave) != null ? _h : "muted",
         onMoved: (lift) => {
           var _a2, _b2;
           this.s.voiceBarLift = lift;
@@ -9469,7 +9574,7 @@ var VoiceController = class {
     this.watchScreen();
     if (this.s.voiceKeepAwake) {
       try {
-        this.wake = (_f = await ((_e = navigator.wakeLock) == null ? void 0 : _e.request("screen"))) != null ? _f : null;
+        this.wake = (_j = await ((_i = navigator.wakeLock) == null ? void 0 : _i.request("screen"))) != null ? _j : null;
       } catch (e) {
         this.wake = null;
       }
@@ -9478,13 +9583,22 @@ var VoiceController = class {
   /** v1.9.6 — keep going around screen-off: send the audio captured so far when
    *  the screen goes off, and on return wake the mic and the keep-awake lock. */
   watchScreen() {
+    let hiddenAt = 0;
     const h = async () => {
       var _a, _b;
       const rec = this.rec;
       if (!rec)
         return;
-      if (document.visibilityState === "hidden")
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now();
         return rec.onHidden();
+      }
+      if (hiddenAt) {
+        const sec2 = Math.round((Date.now() - hiddenAt) / 1e3);
+        hiddenAt = 0;
+        if (sec2 >= 3)
+          new import_obsidian11.Notice(`Voice: screen ${sec2} sec band rahi. Usse pehle ka sab bol bhej diya gaya; band screen ke dauran phone mic rok sakta hai.`, 7e3);
+      }
       try {
         if (await rec.revive())
           new import_obsidian11.Notice("Voice: mic re-opened after the screen was off \u2014 keep talking.", 5e3);
@@ -9542,6 +9656,95 @@ var VoiceController = class {
     await vault.createBinary(path, wav);
     return path;
   }
+  /** v1.9.9 — write saved recordings into their notes once the internet / credits are back. */
+  async retryPending(manual = false) {
+    const list = this.s.voicePending;
+    if (this.retrying || !list.length) {
+      if (manual)
+        new import_obsidian11.Notice("Voice: koi bacha hua audio nahi hai \u2713");
+      return;
+    }
+    this.retrying = true;
+    const vault = this.plugin.app.vault;
+    let done = 0;
+    try {
+      for (const item of [...list]) {
+        const wavFile = vault.getAbstractFileByPath(item.path);
+        const note = vault.getAbstractFileByPath(item.note);
+        if (!(wavFile instanceof import_obsidian11.TFile)) {
+          list.splice(list.indexOf(item), 1);
+          continue;
+        }
+        let text;
+        try {
+          text = await transcribeWithRetry(voiceTransport, this.s, await vault.readBinary(wavFile));
+        } catch (e) {
+          if (manual)
+            new import_obsidian11.Notice(`Voice: ${friendlyError(e instanceof VoiceError ? e.status : -1, e.message)}`, 8e3);
+          break;
+        }
+        addUsage(this.s, wavSeconds(await vault.readBinary(wavFile)));
+        if (note instanceof import_obsidian11.TFile)
+          await vault.process(note, (c) => c.replace(marker(item.path), text));
+        await vault.delete(wavFile).catch(() => void 0);
+        list.splice(list.indexOf(item), 1);
+        done++;
+      }
+    } finally {
+      this.retrying = false;
+      await saveOf(this.plugin);
+    }
+    if (done)
+      new import_obsidian11.Notice(`Voice: ${done} bacha hua hissa note me likh diya \u2713${list.length ? ` (${list.length} baaki)` : ""}`, 6e3);
+  }
+  /** v1.9.9 — 5-second check on the real phone; writes a report into the note. */
+  async selfTest() {
+    const view = this.plugin.app.workspace.getActiveViewOfType(import_obsidian11.MarkdownView);
+    if (!view)
+      return void new import_obsidian11.Notice("Pehle koi note kholein, phir self-test chalayein.");
+    if (this.rec)
+      return void new import_obsidian11.Notice("Pehle chal rahi recording band karein.");
+    const lines = [`> [!info]- Voice self-test ${(/* @__PURE__ */ new Date()).toLocaleString()}`];
+    const add = (ok, t) => lines.push(`> ${ok ? "\u2705" : "\u274C"} ${t}`);
+    add(!!this.s.voiceKey.trim(), "Voice key saved");
+    add(navigator.onLine !== false, "Internet");
+    const pieces = [];
+    let peak = 0;
+    const rec = new VoiceRecorder({ onLevel: (l) => peak = Math.max(peak, l), onPiece: (w) => w && pieces.push(w) });
+    const notice = new import_obsidian11.Notice("Self-test: 5 second kuch boliye\u2026 (jaise 'aaj 2 + 3 = 5')", 6e3);
+    try {
+      await rec.start();
+      add(true, "Microphone opened");
+      await new Promise((r) => setTimeout(r, 5e3));
+      await rec.stop(true);
+      add(peak > 0.02, `Voice heard (level ${peak.toFixed(2)})`);
+    } catch (e) {
+      add(false, `Microphone: ${e.message}`);
+    }
+    notice.hide();
+    const sec2 = pieces.reduce((a, w) => a + wavSeconds(w), 0);
+    add(sec2 > 0, `Speech captured: ${sec2.toFixed(1)} s`);
+    if (pieces.length && this.s.voiceKey.trim()) {
+      const t0 = Date.now();
+      try {
+        const out = [];
+        for (const w of pieces)
+          out.push(await transcribe(voiceTransport, this.s, w));
+        addUsage(this.s, sec2);
+        add(true, `Server reply in ${((Date.now() - t0) / 1e3).toFixed(1)} s`);
+        lines.push(`> Text: ${out.join(" ").trim() || "(empty)"}`);
+      } catch (e) {
+        add(false, `Server: ${friendlyError(e instanceof VoiceError ? e.status : -1, e.message)}`);
+      }
+    }
+    lines.push(`> Platform: ${navigator.userAgent.slice(0, 120)}`);
+    const ed = view.editor;
+    ed.replaceRange(`
+${lines.join("\n")}
+`, ed.getCursor("to"));
+    await saveOf(this.plugin);
+    new import_obsidian11.Notice("Self-test report note me likh di \u2014 screenshot bhejein.", 6e3);
+  }
   destroy() {
     void this.finish(false);
   }
@@ -9558,6 +9761,12 @@ function installVoice(plugin) {
       void ctl.finish(false);
     return true;
   } });
+  plugin.addCommand({ id: "voice-mode-self-test", name: "Voice mode: self-test (5 sec)", icon: "stethoscope", callback: () => void ctl.selfTest() });
+  plugin.addCommand({ id: "voice-mode-retry", name: "Voice mode: write saved recordings now", icon: "refresh-cw", callback: () => void ctl.retryPending(true) });
+  const onOnline = () => void ctl.retryPending();
+  window.addEventListener("online", onOnline);
+  plugin.register(() => window.removeEventListener("online", onOnline));
+  plugin.app.workspace.onLayoutReady(() => setTimeout(() => void ctl.retryPending(), 4e3));
   const s = plugin.settings;
   if (s.voiceFab) {
     const fab = document.body.createEl("button", { cls: "ntt-voice-fab", attr: { "aria-label": "Voice mode \u2014 tap to speak" } });
@@ -9632,12 +9841,20 @@ function renderVoiceSettings(containerEl, host) {
       new import_obsidian12.Notice("Voice card is back in its normal spot.");
     })
   );
-  new import_obsidian12.Setting(containerEl).setName("Keep screen on while recording").addToggle(
+  new import_obsidian12.Setting(containerEl).setName("Keep screen on while recording").setDesc("Zaroor ON rakhein \u2014 screen lock hone par phone mic rok sakta hai.").addToggle(
     (t) => t.setValue(s.voiceKeepAwake).onChange(async (v) => {
       s.voiceKeepAwake = v;
       await save();
     })
   );
+  new import_obsidian12.Setting(containerEl).setName("Auto-link note names").setDesc("Bolte waqt kisi bane hue note ka naam aaye to wo [[link]] ban jayega.").addToggle(
+    (t) => t.setValue(s.voiceAutoLink).onChange(async (v) => {
+      s.voiceAutoLink = v;
+      await save();
+    })
+  );
+  const mins = s.voiceUsageDay === (/* @__PURE__ */ new Date()).toISOString().slice(0, 10) ? s.voiceUsageSec / 60 : 0;
+  new import_obsidian12.Setting(containerEl).setName("Today's voice use").setDesc(`${mins.toFixed(1)} min bola aaj. Har minute Lovable workspace ke AI credits use karta hai. Bacha hua audio: ${s.voicePending.length}.`);
   new import_obsidian12.Setting(containerEl).setName("Test connection").addButton(
     (b) => b.setButtonText("Test").onClick(async () => {
       try {

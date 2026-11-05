@@ -64,3 +64,11 @@ Numbers aur symbols apne aap: "saat baje" → 7 baje, "do plus teen barabar paan
 | Text nahi aa raha | Internet check karein; Rescue folder dekhein |
 | Mic nahi dikh raha | Plugin update + restart; ya command palette me "voice" search |
 | Credits / 402 error | Lovable workspace me credits check karein |
+
+
+## New in 1.9.9
+- **Auto-link:** say a note's name (e.g. "physics") and it becomes `[[Physics|physics]]`. Names under 3 letters and the current note are skipped. Turn off in Settings → Auto-link note names.
+- **Self-test:** command palette → "Voice mode: self-test (5 sec)". Speak for 5 seconds; a report (mic, voice level, server time, text) is written into the note. Send a screenshot if something shows ❌.
+- **Offline / no credits:** audio is saved in the rescue folder and written into the same note automatically when internet returns or on "Voice mode: write saved recordings now".
+- **Undo:** say only "pichhla mitao" to remove the last written piece.
+- **Usage:** Settings shows minutes spoken today (each minute uses Lovable workspace AI credits).

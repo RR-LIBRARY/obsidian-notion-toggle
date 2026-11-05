@@ -1,3 +1,11 @@
+## 1.9.9
+- Voice: spoken words matching an existing note name become [[links]] automatically (toggle in settings).
+- Voice: "Voice mode: self-test (5 sec)" command writes a mic/server/text report into the note.
+- Voice: recordings saved offline or when credits run out are written into their note automatically when back online (or via "write saved recordings now").
+- Voice: "pichhla mitao" removes the last written piece.
+- Voice: note title and nearby text are sent as context for better word accuracy.
+- Voice: today's minutes used shown in settings; clear messages for credits, internet and key problems; screen-off notice.
+
 ## 1.9.8
 - Voice commands: say "link X" for [[X]], "bullet"/"naya point", "number list", "checkbox", "heading X", "bold X", "nayi line", "naya paragraph", or "table banao, columns … row …" — they become Obsidian Markdown.
 

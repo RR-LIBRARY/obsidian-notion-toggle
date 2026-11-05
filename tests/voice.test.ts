@@ -66,10 +66,10 @@ describe("voice client", () => {
   });
   test("retries 5xx then succeeds; 401 stops at once", async () => {
     let n = 0;
-    const ok = await transcribeWithRetry(async () => (++n < 3 ? { status: 503, text: "{}" } : { status: 200, text: '{"text":"ok"}' }), s, new ArrayBuffer(8), async () => {});
+    const ok = await transcribeWithRetry(async () => (++n < 3 ? { status: 503, text: "{}" } : { status: 200, text: '{"text":"ok"}' }), s, new ArrayBuffer(8), "", async () => {});
     expect([ok, n]).toEqual(["ok", 3]);
     let m = 0;
-    await expect(transcribeWithRetry(async () => (m++, { status: 401, text: '{"error":"Wrong voice key"}' }), s, new ArrayBuffer(8), async () => {})).rejects.toBeInstanceOf(VoiceError);
+    await expect(transcribeWithRetry(async () => (m++, { status: 401, text: '{"error":"Wrong voice key"}' }), s, new ArrayBuffer(8), "", async () => {})).rejects.toBeInstanceOf(VoiceError);
     expect(m).toBe(1);
   });
 });

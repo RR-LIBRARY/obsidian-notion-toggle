@@ -68,12 +68,25 @@ export function renderVoiceSettings(containerEl: HTMLElement, host: { settings: 
         new Notice("Voice card is back in its normal spot.");
       })
     );
-  new Setting(containerEl).setName("Keep screen on while recording").addToggle((t) =>
+  new Setting(containerEl).setName("Keep screen on while recording").setDesc("Zaroor ON rakhein — screen lock hone par phone mic rok sakta hai.").addToggle((t) =>
     t.setValue(s.voiceKeepAwake).onChange(async (v) => {
       s.voiceKeepAwake = v;
       await save();
     })
   );
+  new Setting(containerEl)
+    .setName("Auto-link note names")
+    .setDesc("Bolte waqt kisi bane hue note ka naam aaye to wo [[link]] ban jayega.")
+    .addToggle((t) =>
+      t.setValue(s.voiceAutoLink).onChange(async (v) => {
+        s.voiceAutoLink = v;
+        await save();
+      })
+    );
+  const mins = s.voiceUsageDay === new Date().toISOString().slice(0, 10) ? s.voiceUsageSec / 60 : 0;
+  new Setting(containerEl)
+    .setName("Today's voice use")
+    .setDesc(`${mins.toFixed(1)} min bola aaj. Har minute Lovable workspace ke AI credits use karta hai. Bacha hua audio: ${s.voicePending.length}.`);
   new Setting(containerEl).setName("Test connection").addButton((b) =>
     b.setButtonText("Test").onClick(async () => {
       try {
