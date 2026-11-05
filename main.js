@@ -9474,6 +9474,7 @@ var DictationSession = class {
     this.pending = 0;
     this.finals = [];
     this.ended = false;
+    this.writing = false;
   }
   add(wav) {
     const id = this.next++;
@@ -9494,21 +9495,43 @@ var DictationSession = class {
       this.drain();
     });
   }
+  /** v1.9.19 — writes one piece at a time (awaited), and an error in one piece never stops the rest. */
   drain() {
-    while (this.results.has(this.flushed)) {
-      const t = this.results.get(this.flushed);
-      this.results.delete(this.flushed);
-      this.flushed++;
-      if (this.d.undo && isUndoCommand(t)) {
-        this.d.undo();
-        continue;
+    if (this.writing)
+      return;
+    this.writing = true;
+    void (async () => {
+      var _a, _b;
+      try {
+        while (this.results.has(this.flushed)) {
+          const t = this.results.get(this.flushed);
+          this.results.delete(this.flushed);
+          this.flushed++;
+          try {
+            if (this.d.undo && isUndoCommand(t)) {
+              this.d.undo();
+              continue;
+            }
+            const piece = joinPiece(this.d.before(), t);
+            if (piece) {
+              await this.d.write(piece);
+              try {
+                (_b = (_a = this.d).afterWrite) == null ? void 0 : _b.call(_a, piece);
+              } catch (e) {
+              }
+            }
+          } catch (e) {
+            this.d.onError(e);
+          }
+        }
+      } finally {
+        this.writing = false;
       }
-      const piece = joinPiece(this.d.before(), t);
-      if (piece)
-        this.d.write(piece);
-    }
-    if (this.ended && this.flushed === this.next)
-      this.finals.splice(0).forEach((f) => f());
+      if (this.results.has(this.flushed))
+        return this.drain();
+      if (this.ended && this.flushed === this.next)
+        this.finals.splice(0).forEach((f) => f());
+    })();
   }
   /** Resolves once every piece added so far is written. */
   end() {
@@ -9791,19 +9814,70 @@ var VoiceController = class {
       new VoiceSetupModal(this.plugin, () => void this.start()).open();
       return;
     }
-    const editor = view.editor;
+    const notePath = (_b = (_a = view.file) == null ? void 0 : _a.path) != null ? _b : "";
+    const firstEditor = view.editor;
+    const liveEditor = () => {
+      let found = null;
+      try {
+        this.plugin.app.workspace.iterateAllLeaves((leaf) => {
+          var _a2, _b2;
+          const v = leaf.view;
+          if (!found && v instanceof import_obsidian11.MarkdownView && ((_a2 = v.file) == null ? void 0 : _a2.path) === notePath && ((_b2 = v.getMode) == null ? void 0 : _b2.call(v)) !== "preview")
+            found = v.editor;
+        });
+      } catch (e) {
+      }
+      return found != null ? found : notePath ? null : firstEditor;
+    };
+    const editorNow = () => {
+      var _a2;
+      return (_a2 = liveEditor()) != null ? _a2 : firstEditor;
+    };
+    const editor = firstEditor;
     const anchor = new CursorAnchor(editor.posToOffset(editor.getCursor("to")));
-    const here = (ed) => anchor.follow(ed.posToOffset(ed.getCursor("to")));
+    const here = (ed) => Math.min(anchor.follow(ed.posToOffset(ed.getCursor("to"))), ed.getValue().length);
     const write = (ed, text) => {
-      ed.replaceRange(text, ed.offsetToPos(here(ed)));
+      const at = here(ed);
+      anchor.offset = at;
+      ed.replaceRange(text, ed.offsetToPos(at));
       ed.setCursor(ed.offsetToPos(anchor.wrote(text.length)));
     };
-    const notePath = (_b = (_a = view.file) == null ? void 0 : _a.path) != null ? _b : "";
+    const safeWrite = async (text) => {
+      const ed = liveEditor();
+      if (ed) {
+        try {
+          const before = ed.getValue().length;
+          write(ed, text);
+          if (ed.getValue().length >= before + text.length)
+            return;
+        } catch (e) {
+        }
+      }
+      const file = this.plugin.app.vault.getAbstractFileByPath(notePath);
+      if (file instanceof import_obsidian11.TFile) {
+        try {
+          await this.plugin.app.vault.process(file, (c) => {
+            const at = Math.min(anchor.offset, c.length);
+            anchor.offset = at + text.length;
+            return c.slice(0, at) + text + c.slice(at);
+          });
+          return;
+        } catch (e) {
+        }
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (e) {
+      }
+      new import_obsidian11.Notice(`Voice: note me likh nahi paya \u2014 text clipboard me copy kar diya. Paste kar lijiye:
+${text.slice(0, 200)}`, 15e3);
+    };
     const title = (_d = (_c = view.file) == null ? void 0 : _c.basename) != null ? _d : "";
     let last = null;
     this.session = new DictationSession({
       transcribe: async (wav) => {
-        const ctx = buildContext(title, editor.getValue().slice(0, here(editor)));
+        const ed = editorNow();
+        const ctx = buildContext(title, ed.getValue().slice(0, here(ed)));
         let t = await transcribeWithRetry(voiceTransport, this.s, wav, ctx);
         t = await linkAll(this.plugin, this.s, t, title);
         addUsage(this.s, wavSeconds(wav));
@@ -9814,22 +9888,29 @@ var VoiceController = class {
         if (!last)
           return void new import_obsidian11.Notice("Voice: mitane ke liye kuch nahi hai.");
         const { at, len } = last;
-        editor.replaceRange("", editor.offsetToPos(at), editor.offsetToPos(at + len));
+        const editor2 = editorNow();
+        editor2.replaceRange("", editor2.offsetToPos(at), editor2.offsetToPos(at + len));
         anchor.follow(at);
-        editor.setCursor(editor.offsetToPos(at));
+        editor2.setCursor(editor2.offsetToPos(at));
         last = null;
         new import_obsidian11.Notice("Voice: pichhla hissa hata diya \u2713");
       },
       write: (t) => {
+        const ed = editorNow();
+        last = { at: here(ed), len: t.length };
+        return safeWrite(t);
+      },
+      afterWrite: (t) => {
         var _a2;
-        last = { at: here(editor), len: t.length };
-        write(editor, t);
         try {
           (_a2 = this.bar) == null ? void 0 : _a2.transcript(t);
         } catch (e) {
         }
       },
-      before: () => editor.getValue().slice(0, here(editor)),
+      before: () => {
+        const ed = editorNow();
+        return ed.getValue().slice(0, here(ed));
+      },
       rescue: async (wav) => {
         const path = await this.rescue(wav);
         if (path && notePath) {

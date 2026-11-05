@@ -12,7 +12,9 @@ import { isUndoCommand } from "./client";
 export interface SessionDeps {
   transcribe(wav: ArrayBuffer): Promise<string>;
   /** Write text at the session anchor; returns nothing. */
-  write(text: string): void;
+  write(text: string): void | Promise<void>;
+  /** Called after a piece is written (preview box). */
+  afterWrite?(text: string): void;
   /** Text already before the anchor (for spacing). */
   before(): string;
   rescue(wav: ArrayBuffer, error: Error): Promise<string | null>;
@@ -56,19 +58,37 @@ export class DictationSession {
       });
   }
 
+  private writing = false;
+  /** v1.9.19 — writes one piece at a time (awaited), and an error in one piece never stops the rest. */
   private drain(): void {
-    while (this.results.has(this.flushed)) {
-      const t = this.results.get(this.flushed)!;
-      this.results.delete(this.flushed);
-      this.flushed++;
-      if (this.d.undo && isUndoCommand(t)) {
-        this.d.undo();
-        continue;
+    if (this.writing) return;
+    this.writing = true;
+    void (async () => {
+      try {
+        while (this.results.has(this.flushed)) {
+          const t = this.results.get(this.flushed)!;
+          this.results.delete(this.flushed);
+          this.flushed++;
+          try {
+            if (this.d.undo && isUndoCommand(t)) {
+              this.d.undo();
+              continue;
+            }
+            const piece = joinPiece(this.d.before(), t);
+            if (piece) {
+              await this.d.write(piece);
+              try { this.d.afterWrite?.(piece); } catch { /* preview only */ }
+            }
+          } catch (e) {
+            this.d.onError(e as Error);
+          }
+        }
+      } finally {
+        this.writing = false;
       }
-      const piece = joinPiece(this.d.before(), t);
-      if (piece) this.d.write(piece);
-    }
-    if (this.ended && this.flushed === this.next) this.finals.splice(0).forEach((f) => f());
+      if (this.results.has(this.flushed)) return this.drain();
+      if (this.ended && this.flushed === this.next) this.finals.splice(0).forEach((f) => f());
+    })();
   }
 
   /** Resolves once every piece added so far is written. */

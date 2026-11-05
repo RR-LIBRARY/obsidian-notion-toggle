@@ -1,4 +1,4 @@
-# Notion Toggle — saare features ek jagah (1.9.18)
+# Notion Toggle — saare features ek jagah (1.9.19)
 
 Ye file plugin ke **har feature** ki ek list hai. Detail ke liye: [Voice mode manual](VOICE_MODE.md) · [Autoscroll features](AUTOSCROLL_FEATURES.md) · [Hindi guide](HINDI-GUIDE.md).
 
@@ -86,6 +86,7 @@ Rules: current note kabhi link nahi; code/URL/purane link ke andar kuch nahi bad
 ### C5. Bharosa (reliability)
 | Feature | Kya karta hai |
 |---|---|
+| Text kabhi gum nahi (1.9.19) | Note ka screen badle/band ho to bhi seedha note file me likhta hai; wo bhi na ho to clipboard me copy + message |
 | Sahi order | Tukde kitni bhi der me aayein, note me sahi order me likhe jaate hain |
 | Retry | Net gaya → 3 baar koshish |
 | Offline queue | Offline me audio save; net aate hi same note me khud likh deta hai (auto-link ke saath) |

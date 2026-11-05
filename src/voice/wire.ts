@@ -242,20 +242,61 @@ class VoiceController {
       new VoiceSetupModal(this.plugin, () => void this.start()).open();
       return;
     }
-    const editor = view.editor;
+    const notePath = view.file?.path ?? "";
+    // v1.9.19 — never write into a stale editor. Obsidian may rebuild the editor
+    // (note switched, screen off, reading mode); always find the live one for this note.
+    const firstEditor = view.editor;
+    const liveEditor = (): Editor | null => {
+      let found: Editor | null = null;
+      try {
+        this.plugin.app.workspace.iterateAllLeaves((leaf) => {
+          const v = leaf.view;
+          if (!found && v instanceof MarkdownView && v.file?.path === notePath && (v as unknown as { getMode?: () => string }).getMode?.() !== "preview") found = v.editor;
+        });
+      } catch { /* stubs */ }
+      return found ?? (notePath ? null : firstEditor);
+    };
+    const editorNow = (): Editor => liveEditor() ?? firstEditor;
+    const editor = firstEditor;
     // Anchor = character offset in the note; moves forward as we write.
     const anchor = new CursorAnchor(editor.posToOffset(editor.getCursor("to")));
-    const here = (ed: Editor) => anchor.follow(ed.posToOffset(ed.getCursor("to")));
+    const here = (ed: Editor) => Math.min(anchor.follow(ed.posToOffset(ed.getCursor("to"))), ed.getValue().length);
     const write = (ed: Editor, text: string) => {
-      ed.replaceRange(text, ed.offsetToPos(here(ed)));
+      const at = here(ed);
+      anchor.offset = at;
+      ed.replaceRange(text, ed.offsetToPos(at));
       ed.setCursor(ed.offsetToPos(anchor.wrote(text.length)));
     };
-    const notePath = view.file?.path ?? "";
+    /** Write safely: live editor → else straight into the note file → else clipboard. Never loses text. */
+    const safeWrite = async (text: string): Promise<void> => {
+      const ed = liveEditor();
+      if (ed) {
+        try {
+          const before = ed.getValue().length;
+          write(ed, text);
+          if (ed.getValue().length >= before + text.length) return;
+        } catch { /* fall through */ }
+      }
+      const file = this.plugin.app.vault.getAbstractFileByPath(notePath);
+      if (file instanceof TFile) {
+        try {
+          await this.plugin.app.vault.process(file, (c) => {
+            const at = Math.min(anchor.offset, c.length);
+            anchor.offset = at + text.length;
+            return c.slice(0, at) + text + c.slice(at);
+          });
+          return;
+        } catch { /* fall through */ }
+      }
+      try { await navigator.clipboard.writeText(text); } catch { /* none */ }
+      new Notice(`Voice: note me likh nahi paya — text clipboard me copy kar diya. Paste kar lijiye:\n${text.slice(0, 200)}`, 15000);
+    };
     const title = view.file?.basename ?? "";
     let last: { at: number; len: number } | null = null;
     this.session = new DictationSession({
       transcribe: async (wav) => {
-        const ctx = buildContext(title, editor.getValue().slice(0, here(editor)));
+        const ed = editorNow();
+        const ctx = buildContext(title, ed.getValue().slice(0, here(ed)));
         let t = await transcribeWithRetry(voiceTransport, this.s, wav, ctx);
         t = await linkAll(this.plugin, this.s, t, title);
         addUsage(this.s, wavSeconds(wav));
@@ -265,6 +306,7 @@ class VoiceController {
       undo: () => {
         if (!last) return void new Notice("Voice: mitane ke liye kuch nahi hai.");
         const { at, len } = last;
+        const editor = editorNow();
         editor.replaceRange("", editor.offsetToPos(at), editor.offsetToPos(at + len));
         anchor.follow(at);
         editor.setCursor(editor.offsetToPos(at));
@@ -272,15 +314,18 @@ class VoiceController {
         new Notice("Voice: pichhla hissa hata diya ✓");
       },
       write: (t) => {
-        last = { at: here(editor), len: t.length };
-        write(editor, t);
+        const ed = editorNow();
+        last = { at: here(ed), len: t.length };
+        return safeWrite(t);
+      },
+      afterWrite: (t) => {
         try {
           this.bar?.transcript(t);
         } catch {
           /* the box is only a preview — never block writing */
         }
       },
-      before: () => editor.getValue().slice(0, here(editor)),
+      before: () => { const ed = editorNow(); return ed.getValue().slice(0, here(ed)); },
       rescue: async (wav) => {
         const path = await this.rescue(wav);
         if (path && notePath) {
