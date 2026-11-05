@@ -2,12 +2,12 @@
  * v1.9.0 — installs voice mode: ribbon mic, commands, the bar, and writing
  * into the note at the cursor. One call from onload() keeps main.ts small.
  */
-import { MarkdownView, Modal, Notice, TFile, requestUrl, setIcon, type Editor, type Plugin } from "obsidian";
+import { FuzzySuggestModal, MarkdownView, Modal, Notice, TFile, requestUrl, setIcon, type Editor, type Plugin } from "obsidian";
 import { VoiceBar } from "./bar";
 import { DEFAULT_VOICE_SETTINGS, VoiceError, autoLink, autoMaxNotes, clampTermOpts, linkPhrases, linkTerms, shinglesOf, termsOf, type PhraseHit, buildContext, friendlyError, transcribe, transcribeWithRetry, wavSeconds, type VoiceSettings, type VoiceTransport } from "./client";
 import { VoiceRecorder } from "./recorder";
 import { CursorAnchor } from "./cursor";
-import { encodeWav } from "./audio";
+import { TARGET_RATE, downsample, encodeWav, hasSpeech, joinPiece, normalize, splitLong } from "./audio";
 import { DictationSession } from "./session";
 
 export interface VoicePluginHost extends Plugin {
@@ -136,6 +136,84 @@ async function linkAll(p: VoicePluginHost, s: VoiceSettings, text: string, curre
   return text;
 }
 const saveOf = (p: VoicePluginHost) => (p as unknown as { saveSettings?: () => Promise<void> }).saveSettings?.() ?? Promise.resolve();
+
+export const AUDIO_EXT = ["m4a", "mp3", "wav", "ogg", "opus", "webm", "aac", "flac", "3gp", "mp4"];
+const PROGRESS = /%% voice-progress: (\d+)\/(\d+) %%/;
+
+class AudioPicker extends FuzzySuggestModal<TFile> {
+  constructor(app: VoicePluginHost["app"], private readonly pick: (f: TFile) => void) {
+    super(app);
+    this.setPlaceholder("Kaunsi recording likhni hai? (m4a, mp3, wav…)");
+  }
+  getItems(): TFile[] {
+    return this.app.vault.getFiles().filter((f) => AUDIO_EXT.includes(f.extension.toLowerCase())).sort((a, b) => b.stat.mtime - a.stat.mtime);
+  }
+  getItemText(f: TFile): string { return f.path; }
+  onChooseItem(f: TFile): void { this.pick(f); }
+}
+
+/**
+ * v1.9.17 — record with the phone's own recorder (keeps going with the screen
+ * locked), drop the file in the vault, and write the whole thing into a note.
+ * Progress is stored in the note, so running it again resumes where it stopped.
+ */
+async function transcribeFile(p: VoicePluginHost, s: VoiceSettings, file: TFile): Promise<void> {
+  if (!s.voiceKey.trim()) return void new Notice("Pehle Settings → Voice mode me key daalein.");
+  const vault = p.app.vault;
+  const notice = new Notice(`Voice: "${file.name}" padh raha hoon…`, 0);
+  let samples: Float32Array;
+  try {
+    const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new AC();
+    const buf = await ctx.decodeAudioData((await vault.readBinary(file)).slice(0));
+    void ctx.close();
+    const mono = new Float32Array(buf.length);
+    for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i++) mono[i] += d[i] / buf.numberOfChannels; }
+    samples = downsample(mono, buf.sampleRate, TARGET_RATE);
+  } catch {
+    notice.hide();
+    return void new Notice("Voice: ye audio format phone nahi khol paya. Recorder me m4a/mp3/wav chuniye.", 10000);
+  }
+  const parts = splitLong(samples);
+  const dir = file.parent && file.parent.path !== "/" ? file.parent.path + "/" : "";
+  const path = `${dir}${file.basename} — transcript.md`;
+  let note = vault.getAbstractFileByPath(path);
+  if (!(note instanceof TFile)) note = await vault.create(path, `![[${file.name}]]\n\n%% voice-progress: 0/${parts.length} %%\n`);
+  const target = note as TFile;
+  const startAt = Number(PROGRESS.exec(await vault.read(target))?.[1] ?? parts.length);
+  const title = target.basename;
+  let i = startAt;
+  try {
+    for (; i < parts.length; i++) {
+      notice.setMessage(`Voice: "${file.name}" likh raha hoon… ${i + 1}/${parts.length}`);
+      const piece = normalize(samples.subarray(parts[i][0], parts[i][1]));
+      let text = "";
+      if (hasSpeech(piece)) {
+        const wav = encodeWav(piece, TARGET_RATE);
+        const body = await vault.read(target);
+        try { text = await transcribeWithRetry(voiceTransport, s, wav, buildContext(file.basename, body.replace(PROGRESS, "").slice(-200))); }
+        catch (e) { if (!(e instanceof VoiceError) || !/empty|no speech/i.test(e.message)) throw e; }
+        if (text) text = await linkAll(p, s, text, title);
+        addUsage(s, wavSeconds(wav));
+      }
+      const next = i + 1;
+      await vault.process(target, (c) => {
+        const m = PROGRESS.exec(c);
+        const before = m ? c.slice(0, m.index) : c;
+        const tag = next < parts.length ? `%% voice-progress: ${next}/${parts.length} %%\n` : "";
+        return before.replace(/\n$/, "") + (text ? joinPiece(before.replace(/\n$/, ""), text) : "") + "\n" + tag;
+      });
+    }
+    notice.hide();
+    new Notice(`Voice: poori recording likh di ✓ (${parts.length} hisse)`, 6000);
+  } catch (e) {
+    notice.hide();
+    new Notice(`Voice: ${i}/${parts.length} hisse likhe. ${friendlyError(e instanceof VoiceError ? e.status : -1, (e as Error).message)} Command dobara chalayein — wahin se aage likhega.`, 12000);
+  } finally {
+    await saveOf(p);
+  }
+  await p.app.workspace.getLeaf(false).openFile(target);
+}
 
 class VoiceController {
   private rec: VoiceRecorder | null = null;
@@ -431,6 +509,14 @@ export function installVoice(plugin: VoicePluginHost): void {
   } });
   plugin.addCommand({ id: "voice-mode-self-test", name: "Voice mode: self-test (5 sec)", icon: "stethoscope", callback: () => void ctl.selfTest() });
   plugin.addCommand({ id: "voice-mode-retry", name: "Voice mode: write saved recordings now", icon: "refresh-cw", callback: () => void ctl.retryPending(true) });
+  plugin.addCommand({ id: "voice-mode-file", name: "Voice mode: transcribe audio file", icon: "file-audio", callback: () =>
+    new AudioPicker(plugin.app, (f) => void transcribeFile(plugin, plugin.settings as VoiceSettings, f)).open() });
+  try {
+    plugin.registerEvent(plugin.app.workspace.on("file-menu", (menu, f) => {
+      if (f instanceof TFile && AUDIO_EXT.includes(f.extension.toLowerCase()))
+        menu.addItem((it) => it.setTitle("Voice: transcribe to note").setIcon("file-audio").onClick(() => void transcribeFile(plugin, plugin.settings as VoiceSettings, f)));
+    }));
+  } catch { /* stubs */ }
   const onOnline = () => void ctl.retryPending();
   window.addEventListener("online", onOnline);
   plugin.register(() => window.removeEventListener("online", onOnline));

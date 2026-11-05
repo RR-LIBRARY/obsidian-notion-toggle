@@ -137,3 +137,26 @@ export function joinPiece(before: string, piece: string): string {
   if (!before || /[\s\n]$/.test(before)) return t;
   return " " + t;
 }
+
+/**
+ * v1.9.17 — split a long recording (lecture, phone recorder file) into pieces
+ * of ~10–20 s, cutting at the quietest 50 ms window so words are not chopped.
+ * Returns [start, end) sample ranges covering the whole file.
+ */
+export function splitLong(samples: Float32Array, rate = TARGET_RATE, minSec = 10, maxSec = 20): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  const win = Math.max(1, Math.floor(rate * 0.05));
+  let start = 0;
+  while (samples.length - start > maxSec * rate) {
+    let best = start + maxSec * rate;
+    let bestLevel = Infinity;
+    for (let i = start + minSec * rate; i + win <= start + maxSec * rate; i += win) {
+      const l = rms(samples.subarray(i, i + win));
+      if (l < bestLevel) { bestLevel = l; best = i + Math.floor(win / 2); }
+    }
+    out.push([start, best]);
+    start = best;
+  }
+  if (samples.length > start) out.push([start, samples.length]);
+  return out;
+}

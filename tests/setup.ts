@@ -123,6 +123,11 @@ class MarkdownView extends Stub {
   file: TFile | null = null;
 }
 
+class FuzzySuggestModal extends Stub {
+  setPlaceholder(): void {}
+  open(): void {}
+}
+
 class Modal extends Stub {
   contentEl: HTMLElement;
   titleEl: HTMLElement;
@@ -452,6 +457,7 @@ mock.module("obsidian", () => ({
   Menu,
   MenuItem,
   Modal,
+  FuzzySuggestModal,
   Notice,
   Plugin: Stub,
   PluginSettingTab: Stub,

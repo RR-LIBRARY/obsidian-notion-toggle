@@ -9166,6 +9166,27 @@ function joinPiece(before, piece) {
     return t;
   return " " + t;
 }
+function splitLong(samples, rate = TARGET_RATE, minSec = 10, maxSec = 20) {
+  const out = [];
+  const win = Math.max(1, Math.floor(rate * 0.05));
+  let start = 0;
+  while (samples.length - start > maxSec * rate) {
+    let best = start + maxSec * rate;
+    let bestLevel = Infinity;
+    for (let i = start + minSec * rate; i + win <= start + maxSec * rate; i += win) {
+      const l = rms(samples.subarray(i, i + win));
+      if (l < bestLevel) {
+        bestLevel = l;
+        best = i + Math.floor(win / 2);
+      }
+    }
+    out.push([start, best]);
+    start = best;
+  }
+  if (samples.length > start)
+    out.push([start, samples.length]);
+  return out;
+}
 
 // src/voice/wire.ts
 var import_obsidian11 = require("obsidian");
@@ -9644,6 +9665,97 @@ var saveOf = (p) => {
   var _a, _b;
   return (_b = (_a = p.saveSettings) == null ? void 0 : _a.call(p)) != null ? _b : Promise.resolve();
 };
+var AUDIO_EXT = ["m4a", "mp3", "wav", "ogg", "opus", "webm", "aac", "flac", "3gp", "mp4"];
+var PROGRESS = /%% voice-progress: (\d+)\/(\d+) %%/;
+var AudioPicker = class extends import_obsidian11.FuzzySuggestModal {
+  constructor(app, pick) {
+    super(app);
+    this.pick = pick;
+    this.setPlaceholder("Kaunsi recording likhni hai? (m4a, mp3, wav\u2026)");
+  }
+  getItems() {
+    return this.app.vault.getFiles().filter((f) => AUDIO_EXT.includes(f.extension.toLowerCase())).sort((a, b) => b.stat.mtime - a.stat.mtime);
+  }
+  getItemText(f) {
+    return f.path;
+  }
+  onChooseItem(f) {
+    this.pick(f);
+  }
+};
+async function transcribeFile(p, s, file) {
+  var _a, _b, _c;
+  if (!s.voiceKey.trim())
+    return void new import_obsidian11.Notice("Pehle Settings \u2192 Voice mode me key daalein.");
+  const vault = p.app.vault;
+  const notice = new import_obsidian11.Notice(`Voice: "${file.name}" padh raha hoon\u2026`, 0);
+  let samples;
+  try {
+    const AC = (_a = window.AudioContext) != null ? _a : window.webkitAudioContext;
+    const ctx = new AC();
+    const buf = await ctx.decodeAudioData((await vault.readBinary(file)).slice(0));
+    void ctx.close();
+    const mono = new Float32Array(buf.length);
+    for (let c = 0; c < buf.numberOfChannels; c++) {
+      const d = buf.getChannelData(c);
+      for (let i2 = 0; i2 < d.length; i2++)
+        mono[i2] += d[i2] / buf.numberOfChannels;
+    }
+    samples = downsample(mono, buf.sampleRate, TARGET_RATE);
+  } catch (e) {
+    notice.hide();
+    return void new import_obsidian11.Notice("Voice: ye audio format phone nahi khol paya. Recorder me m4a/mp3/wav chuniye.", 1e4);
+  }
+  const parts = splitLong(samples);
+  const dir = file.parent && file.parent.path !== "/" ? file.parent.path + "/" : "";
+  const path = `${dir}${file.basename} \u2014 transcript.md`;
+  let note = vault.getAbstractFileByPath(path);
+  if (!(note instanceof import_obsidian11.TFile))
+    note = await vault.create(path, `![[${file.name}]]
+
+%% voice-progress: 0/${parts.length} %%
+`);
+  const target = note;
+  const startAt = Number((_c = (_b = PROGRESS.exec(await vault.read(target))) == null ? void 0 : _b[1]) != null ? _c : parts.length);
+  const title = target.basename;
+  let i = startAt;
+  try {
+    for (; i < parts.length; i++) {
+      notice.setMessage(`Voice: "${file.name}" likh raha hoon\u2026 ${i + 1}/${parts.length}`);
+      const piece = normalize(samples.subarray(parts[i][0], parts[i][1]));
+      let text = "";
+      if (hasSpeech(piece)) {
+        const wav = encodeWav(piece, TARGET_RATE);
+        const body = await vault.read(target);
+        try {
+          text = await transcribeWithRetry(voiceTransport, s, wav, buildContext(file.basename, body.replace(PROGRESS, "").slice(-200)));
+        } catch (e) {
+          if (!(e instanceof VoiceError) || !/empty|no speech/i.test(e.message))
+            throw e;
+        }
+        if (text)
+          text = await linkAll(p, s, text, title);
+        addUsage(s, wavSeconds(wav));
+      }
+      const next = i + 1;
+      await vault.process(target, (c) => {
+        const m = PROGRESS.exec(c);
+        const before = m ? c.slice(0, m.index) : c;
+        const tag = next < parts.length ? `%% voice-progress: ${next}/${parts.length} %%
+` : "";
+        return before.replace(/\n$/, "") + (text ? joinPiece(before.replace(/\n$/, ""), text) : "") + "\n" + tag;
+      });
+    }
+    notice.hide();
+    new import_obsidian11.Notice(`Voice: poori recording likh di \u2713 (${parts.length} hisse)`, 6e3);
+  } catch (e) {
+    notice.hide();
+    new import_obsidian11.Notice(`Voice: ${i}/${parts.length} hisse likhe. ${friendlyError(e instanceof VoiceError ? e.status : -1, e.message)} Command dobara chalayein \u2014 wahin se aage likhega.`, 12e3);
+  } finally {
+    await saveOf(p);
+  }
+  await p.app.workspace.getLeaf(false).openFile(target);
+}
 var VoiceController = class {
   constructor(plugin) {
     this.plugin = plugin;
@@ -9964,6 +10076,14 @@ function installVoice(plugin) {
   } });
   plugin.addCommand({ id: "voice-mode-self-test", name: "Voice mode: self-test (5 sec)", icon: "stethoscope", callback: () => void ctl.selfTest() });
   plugin.addCommand({ id: "voice-mode-retry", name: "Voice mode: write saved recordings now", icon: "refresh-cw", callback: () => void ctl.retryPending(true) });
+  plugin.addCommand({ id: "voice-mode-file", name: "Voice mode: transcribe audio file", icon: "file-audio", callback: () => new AudioPicker(plugin.app, (f) => void transcribeFile(plugin, plugin.settings, f)).open() });
+  try {
+    plugin.registerEvent(plugin.app.workspace.on("file-menu", (menu, f) => {
+      if (f instanceof import_obsidian11.TFile && AUDIO_EXT.includes(f.extension.toLowerCase()))
+        menu.addItem((it) => it.setTitle("Voice: transcribe to note").setIcon("file-audio").onClick(() => void transcribeFile(plugin, plugin.settings, f)));
+    }));
+  } catch (e) {
+  }
   const onOnline = () => void ctl.retryPending();
   window.addEventListener("online", onOnline);
   plugin.register(() => window.removeEventListener("online", onOnline));

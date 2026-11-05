@@ -92,3 +92,13 @@ Tips: keep the term switch and line switch both ON for best "thinking mode"; wri
 ## Presets & Auto (1.9.14)
 - **Term link: preset** — Balanced (7, auto), Medical/technical (9, auto), More links (5, 5), Fewer links (9, 2).
 - **Max notes = 0 (Auto)** — follows vault size: under 100 notes → 2, up to 1000 → 3, bigger → 5.
+
+
+## Lambi recording / screen lock / dusri app (1.9.17)
+Android screen lock hone par ya dusri app kholne par Obsidian ka mic rok deta hai — ye phone ka niyam hai. Iska pakka hal:
+1. Phone ke **Voice Recorder** app me record kariye — lock screen aur dusri apps ke beech bhi chalta rahta hai, jitni der chahein.
+2. Audio file vault me daaliye (share → Obsidian, ya vault folder me copy).
+3. File par long-press → **Voice: transcribe to note**, ya command **"Voice mode: transcribe audio file"**.
+4. Ek naya note "<file> — transcript" banta hai: upar audio, neeche poora text (punctuation, numbers, symbols, auto-links). Pause par ~10–20 s ke hisson me kaatta hai, shabd nahi kat-te.
+5. Net/credits beech me khatam? Command dobara chalaiye — jahan ruka tha wahin se aage likhta hai.
+Formats: m4a, mp3, wav, ogg/opus, webm, aac, flac. Bahut lambi file (2 ghante+) purane phone par bhaari pad sakti hai — tab 1-1 ghante ki files banaiye.

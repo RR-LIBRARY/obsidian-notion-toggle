@@ -1,4 +1,4 @@
-# Notion Toggle — saare features ek jagah (1.9.16)
+# Notion Toggle — saare features ek jagah (1.9.17)
 
 Ye file plugin ke **har feature** ki ek list hai. Detail ke liye: [Voice mode manual](VOICE_MODE.md) · [Autoscroll features](AUTOSCROLL_FEATURES.md) · [Hindi guide](HINDI-GUIDE.md).
 
@@ -43,6 +43,7 @@ Pura list: [AUTOSCROLL_FEATURES.md](AUTOSCROLL_FEATURES.md). Short me:
 | Card look | Full / compact, grey / colour wave |
 | Cursor se likhna | Jahan cursor hai wahin se text; recording ke beech cursor badlo to agla text wahan |
 | Keep screen on | Recording ke dauraan screen jalti rahe |
+| Lambi recording (lock/dusri app) | Phone recorder me record → file par "Voice: transcribe to note" → poora text naye note me; ruk jaaye to wahin se aage |
 | Screen off / app band | Ab tak ka bola turant bhejta hai; wapas aane par mic khud chalu |
 
 ### C2. Transcript quality
@@ -108,7 +109,7 @@ Rules: current note kabhi link nahi; code/URL/purane link ke andar kuch nahi bad
 | Kami | Kya kar sakte hain | Code se theek ho sakta hai? |
 |---|---|---|
 | Asli phone par mic test nahi hua (sirf browser test) | Aap self-test chalakar screenshot bhejein | Aapke test se |
-| Screen lock hone par Android mic rok deta hai | "Keep screen on" ON rakhein | Nahi — phone ka niyam |
+| Screen lock / dusri app par Android mic rok deta hai | Phone recorder + "transcribe audio file" (1.9.17) | Haan, is raaste se ✓ |
 | Offline me live text nahi | Audio save hota hai, baad me likhta hai | Nahi — awaaz Lovable par likhi jaati hai |
 | Lovable credits lagte hain | Usage settings me dekhein | Nahi — AI ka kharcha |
 | Tez shor me galti | Phone muh ke paas | Thoda |
