@@ -341,7 +341,7 @@ class VoiceController {
     this.rec = new VoiceRecorder({
       onLevel: (l) => this.bar?.level(l),
       onPiece: (wav) => session.add(wav),
-    });
+    }, this.s.voiceAccuracy === "fast" ? "fast" : "accurate");
     try {
       await this.rec.start();
     } catch (e) {

@@ -1,4 +1,4 @@
-# Notion Toggle — saare features ek jagah (1.9.19)
+# Notion Toggle — saare features ek jagah (1.9.20)
 
 Ye file plugin ke **har feature** ki ek list hai. Detail ke liye: [Voice mode manual](VOICE_MODE.md) · [Autoscroll features](AUTOSCROLL_FEATURES.md) · [Hindi guide](HINDI-GUIDE.md).
 
@@ -55,6 +55,8 @@ Pura list: [AUTOSCROLL_FEATURES.md](AUTOSCROLL_FEATURES.md). Short me:
 | Numbers | "saat baje" → 7 baje, "teen hazaar rupaye" → ₹3000 |
 | Symbols | plus → +, barabar → =, pratishat → %, "H two O" → H2O |
 | No hallucination guard | Clean-up koi number badle ya extra baat jode to original suna text hi likha jaata hai; sirf shor → kuch nahi likha |
+| Accurate listening (1.9.20) | Poora vaakya (~6 sec + pause) sun kar likhta hai — galtiyan kam. Settings → "Listening: accurate or fast" |
+| "..." nahi | Tukdon ke beech aane wale "..." hata diye jaate hain |
 | Note context | Note ka title + pichhli 200 letters bheje jaate hain taaki shabd sahi samjhe |
 | Special words | Aapke naam/technical shabd setting me — accuracy badhti hai |
 | Spoken undo | Sirf "pichhla mitao" bolo → aakhri tukda hat jaata hai |

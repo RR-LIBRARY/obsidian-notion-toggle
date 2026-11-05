@@ -31,3 +31,18 @@ describe("tables across pieces", () => {
     expect(joinPiece("| A | B |\n| --- | --- |\n| 1 | 2 |", "Aage padhai.")).toBe("\n\nAage padhai.");
   });
 });
+
+import { cleanPiece } from "../src/voice/client";
+describe("cleanPiece (1.9.20)", () => {
+  it("drops trailing and leading ellipses", () => {
+    expect(cleanPiece("Toh mar jaate, aur papa...")).toBe("Toh mar jaate, aur papa");
+    expect(cleanPiece("... 3 saal ka mehnat")).toBe("3 saal ka mehnat");
+  });
+  it("mid ellipsis becomes a space or a full stop", () => {
+    expect(cleanPiece("Aur saara... mehnat.")).toBe("Aur saara mehnat.");
+    expect(cleanPiece("Doctor… Taaki hum")).toBe("Doctor. Taaki hum");
+  });
+  it("keeps numbers and normal text", () => {
+    expect(cleanPiece("NEET 2027 clear hui hai.")).toBe("NEET 2027 clear hui hai.");
+  });
+});

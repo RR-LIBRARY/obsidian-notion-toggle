@@ -23,11 +23,14 @@ export class VoiceRecorder {
   private source: MediaStreamAudioSourceNode | null = null;
   private chunks: Float32Array[] = [];
   private pieceSamples = 0;
-  private seg = new Segmenter();
+  private seg: Segmenter;
   private paused = false;
   startedAt = 0;
 
-  constructor(private readonly ev: RecorderEvents) {}
+  /** v1.9.20 — accurate: wait ~6 s and a real pause before sending, so each piece is a full thought. */
+  constructor(private readonly ev: RecorderEvents, mode: "accurate" | "fast" = "accurate") {
+    this.seg = mode === "fast" ? new Segmenter(3, 12, 700) : new Segmenter(6, 20, 900);
+  }
 
   /** v1.9.6 — screen turning off: send what was said so far right away. */
   onHidden(): void {

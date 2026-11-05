@@ -8770,6 +8770,7 @@ var DEFAULT_VOICE_SETTINGS = {
   voiceBarStyle: "full",
   voiceBarWave: "muted",
   voiceKeepAwake: true,
+  voiceAccuracy: "accurate",
   voiceRescueFolder: "Voice recordings",
   voiceUsageDay: "",
   voiceUsageSec: 0,
@@ -8871,7 +8872,7 @@ async function transcribe(transport, s, wav, context = "") {
   }
   if (res.status < 200 || res.status >= 300)
     throw new VoiceError(data.error || `Transcription failed (${res.status})`, res.status);
-  return String((_a = data.text) != null ? _a : "").trim();
+  return cleanPiece(String((_a = data.text) != null ? _a : ""));
 }
 async function transcribeWithRetry(transport, s, wav, context = "", sleep = (ms3) => new Promise((r) => setTimeout(r, ms3))) {
   let last = null;
@@ -8887,6 +8888,9 @@ async function transcribeWithRetry(transport, s, wav, context = "", sleep = (ms3
     }
   }
   throw last;
+}
+function cleanPiece(text) {
+  return text.replace(/\s*(?:\.{2,}|…)\s*$/g, "").replace(/^\s*(?:\.{2,}|…)\s*/g, "").replace(/\s*(?:\.{2,}|…)\s+(?=\p{Ll})/gu, " ").replace(/\s*(?:\.{2,}|…)\s+(?=\p{Lu}|\d)/gu, ". ").trim();
 }
 function autoLink(text, titles, skip = "") {
   const names = [...new Set(titles.map((t) => t.trim()))].filter((t) => t.length >= 3 && t.toLowerCase() !== skip.toLowerCase()).sort((a, b) => b.length - a.length);
@@ -9337,7 +9341,8 @@ var VoiceBar = class {
 
 // src/voice/recorder.ts
 var VoiceRecorder = class {
-  constructor(ev) {
+  /** v1.9.20 — accurate: wait ~6 s and a real pause before sending, so each piece is a full thought. */
+  constructor(ev, mode = "accurate") {
     this.ev = ev;
     this.stream = null;
     this.ctx = null;
@@ -9345,9 +9350,9 @@ var VoiceRecorder = class {
     this.source = null;
     this.chunks = [];
     this.pieceSamples = 0;
-    this.seg = new Segmenter();
     this.paused = false;
     this.startedAt = 0;
+    this.seg = mode === "fast" ? new Segmenter(3, 12, 700) : new Segmenter(6, 20, 900);
   }
   /** v1.9.6 — screen turning off: send what was said so far right away. */
   onHidden() {
@@ -9932,7 +9937,7 @@ ${text.slice(0, 200)}`, 15e3);
         return (_a2 = this.bar) == null ? void 0 : _a2.level(l);
       },
       onPiece: (wav) => session.add(wav)
-    });
+    }, this.s.voiceAccuracy === "fast" ? "fast" : "accurate");
     try {
       await this.rec.start();
     } catch (e) {
@@ -10245,6 +10250,15 @@ function renderVoiceSettings(containerEl, host) {
       await save();
       new import_obsidian12.Notice("Voice card is back in its normal spot.");
     })
+  );
+  new import_obsidian12.Setting(containerEl).setName("Listening: accurate or fast").setDesc("Accurate (default): poora vaakya sun kar likhta hai \u2014 galtiyan kam, text ~6 sec baad. Fast: text jaldi, par galtiyan zyada.").addDropdown(
+    (d) => {
+      var _a;
+      return d.addOption("accurate", "Accurate").addOption("fast", "Fast").setValue((_a = s.voiceAccuracy) != null ? _a : "accurate").onChange(async (v) => {
+        s.voiceAccuracy = v === "fast" ? "fast" : "accurate";
+        await save();
+      });
+    }
   );
   new import_obsidian12.Setting(containerEl).setName("Keep screen on while recording").setDesc("Zaroor ON rakhein \u2014 screen lock hone par phone mic rok sakta hai.").addToggle(
     (t) => t.setValue(s.voiceKeepAwake).onChange(async (v) => {

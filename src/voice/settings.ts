@@ -68,6 +68,15 @@ export function renderVoiceSettings(containerEl: HTMLElement, host: { settings: 
         new Notice("Voice card is back in its normal spot.");
       })
     );
+  new Setting(containerEl)
+    .setName("Listening: accurate or fast")
+    .setDesc("Accurate (default): poora vaakya sun kar likhta hai — galtiyan kam, text ~6 sec baad. Fast: text jaldi, par galtiyan zyada.")
+    .addDropdown((d) =>
+      d.addOption("accurate", "Accurate").addOption("fast", "Fast").setValue(s.voiceAccuracy ?? "accurate").onChange(async (v) => {
+        s.voiceAccuracy = v === "fast" ? "fast" : "accurate";
+        await save();
+      })
+    );
   new Setting(containerEl).setName("Keep screen on while recording").setDesc("Zaroor ON rakhein — screen lock hone par phone mic rok sakta hai.").addToggle((t) =>
     t.setValue(s.voiceKeepAwake).onChange(async (v) => {
       s.voiceKeepAwake = v;

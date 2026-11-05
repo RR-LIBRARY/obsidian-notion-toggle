@@ -22,6 +22,8 @@ export interface VoiceSettings {
   voiceBarWave: "muted" | "accent";
   /** Keep the screen on while recording (mobile). */
   voiceKeepAwake: boolean;
+  /** v1.9.20 — "accurate" = longer pieces (better listening), "fast" = text sooner. */
+  voiceAccuracy: "accurate" | "fast";
   /** Folder for recordings that could not be transcribed (never lose audio). */
   voiceRescueFolder: string;
   /** v1.9.9 — today's spoken seconds (credit awareness). */
@@ -54,6 +56,7 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   voiceBarStyle: "full",
   voiceBarWave: "muted",
   voiceKeepAwake: true,
+  voiceAccuracy: "accurate",
   voiceRescueFolder: "Voice recordings",
   voiceUsageDay: "",
   voiceUsageSec: 0,
@@ -159,7 +162,7 @@ export async function transcribe(transport: VoiceTransport, s: VoiceSettings, wa
     /* non-JSON */
   }
   if (res.status < 200 || res.status >= 300) throw new VoiceError(data.error || `Transcription failed (${res.status})`, res.status);
-  return String(data.text ?? "").trim();
+  return cleanPiece(String(data.text ?? ""));
 }
 
 /** Up to 3 tries with backoff for network / 429 / 5xx; other errors stop at once. */
@@ -188,6 +191,16 @@ export async function transcribeWithRetry(
  * Longest names first, whole words only, case-insensitive, first match per
  * name, never inside an existing [[link]], code, or URL; names under 3 letters skipped.
  */
+/** v1.9.20 — pieces cut mid-sentence come back with "..." — remove them so the note reads cleanly. */
+export function cleanPiece(text: string): string {
+  return text
+    .replace(/\s*(?:\.{2,}|…)\s*$/g, "")
+    .replace(/^\s*(?:\.{2,}|…)\s*/g, "")
+    .replace(/\s*(?:\.{2,}|…)\s+(?=\p{Ll})/gu, " ")
+    .replace(/\s*(?:\.{2,}|…)\s+(?=\p{Lu}|\d)/gu, ". ")
+    .trim();
+}
+
 export function autoLink(text: string, titles: string[], skip = ""): string {
   const names = [...new Set(titles.map((t) => t.trim()))]
     .filter((t) => t.length >= 3 && t.toLowerCase() !== skip.toLowerCase())
