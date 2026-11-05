@@ -83,6 +83,15 @@ export function renderVoiceSettings(containerEl: HTMLElement, host: { settings: 
         await save();
       })
     );
+  new Setting(containerEl)
+    .setName("Advanced: link terms from other notes")
+    .setDesc("Thinking mode — bolte waqt koi khaas shabd (jaise 'ophthalmologist') kisi aur note me likha ho, to us note se link ho jayega. Sirf 7+ letter wale aur 1–3 notes me milne wale shabd; ek hisse me max 3 link. Note-name linking alag hai aur waise hi chalta hai.")
+    .addToggle((t) =>
+      t.setValue(s.voiceTermLink).onChange(async (v) => {
+        s.voiceTermLink = v;
+        await save();
+      })
+    );
   const mins = s.voiceUsageDay === new Date().toISOString().slice(0, 10) ? s.voiceUsageSec / 60 : 0;
   new Setting(containerEl)
     .setName("Today's voice use")

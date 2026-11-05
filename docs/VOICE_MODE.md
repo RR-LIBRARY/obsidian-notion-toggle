@@ -72,3 +72,7 @@ Numbers aur symbols apne aap: "saat baje" → 7 baje, "do plus teen barabar paan
 - **Offline / no credits:** audio is saved in the rescue folder and written into the same note automatically when internet returns or on "Voice mode: write saved recordings now".
 - **Undo:** say only "pichhla mitao" to remove the last written piece.
 - **Usage:** Settings shows minutes spoken today (each minute uses Lovable workspace AI credits).
+
+
+## Thinking mode (1.9.11, advanced)
+Settings → "Advanced: link terms from other notes". When ON, a specific word you speak (7+ letters, found in only 1–3 notes, e.g. *ophthalmologist*) becomes `[[That note|word]]`. Common words are skipped, max 3 such links per piece, current note skipped. Default OFF; normal note-name linking is unchanged.

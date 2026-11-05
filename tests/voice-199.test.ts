@@ -55,3 +55,28 @@ describe("voice auto-link", () => {
     expect(autoLink("Newton's Laws samjho", [...notes, "Newton"])).toBe("[[Newton's Laws]] samjho");
   });
 });
+
+import { linkTerms, termsOf } from "../src/voice/client";
+describe("voice term linking (thinking mode)", () => {
+  const idx = new Map<string, string[]>([
+    ["ophthalmologist", ["My work"]],
+    ["offline", ["My work"]],
+    ["revision", ["A", "B", "C", "D"]],
+  ]);
+  it("links a specific term to the note where it is written", () => {
+    expect(linkTerms("Kal ophthalmologist ke paas jaana hai.", idx)).toBe("Kal [[My work|ophthalmologist]] ke paas jaana hai.");
+  });
+  it("skips terms used in more than 3 notes, short words, and the current note", () => {
+    expect(linkTerms("revision card", idx)).toBe("revision card");
+    expect(linkTerms("Ophthalmologist", idx, "My work")).toBe("Ophthalmologist");
+  });
+  it("links each term once, max 3 per piece, never inside links", () => {
+    expect(linkTerms("ophthalmologist ophthalmologist [[ophthalmologist]]", idx)).toBe("[[My work|ophthalmologist]] ophthalmologist [[ophthalmologist]]");
+  });
+  it("indexes 7+ letter words, not common words or code", () => {
+    const t = termsOf("Ophthalmologist visit because `glaucoma`");
+    expect(t.has("ophthalmologist")).toBe(true);
+    expect(t.has("because")).toBe(false);
+    expect(t.has("glaucoma")).toBe(false);
+  });
+});

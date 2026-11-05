@@ -8771,7 +8771,8 @@ var DEFAULT_VOICE_SETTINGS = {
   voiceUsageDay: "",
   voiceUsageSec: 0,
   voicePending: [],
-  voiceAutoLink: true
+  voiceAutoLink: true,
+  voiceTermLink: false
 };
 var VoiceError = class extends Error {
   constructor(message, status = 0) {
@@ -8911,6 +8912,46 @@ function autoLink(text, titles, skip = "") {
     }
   }
   return parts.map((p) => p.t).join("");
+}
+var COMMON = new Set("because between without through another something everything anything important question answer however actually already problem example different together sometimes tomorrow yesterday morning evening probably remember understand nothing whatever whenever wherever students teacher chapter question questions lekin kyunki isliye matlab jaisa wahan yahan bahut sabse hamesha".split(" "));
+function termsOf(body) {
+  const out = /* @__PURE__ */ new Set();
+  const clean = body.replace(/```[\s\S]*?```|`[^`]*`|\[\[[^\]]*\]\]|https?:\/\/\S+/g, " ");
+  for (const m of clean.matchAll(/[\p{L}][\p{L}\p{M}'-]{6,}/gu)) {
+    const w = m[0].toLowerCase();
+    if (!COMMON.has(w))
+      out.add(w);
+  }
+  return out;
+}
+function linkTerms(text, index, skip = "", max = 3) {
+  const protect = /\[\[[^\]]*\]\]|`[^`]*`|https?:\/\/\S+/g;
+  const parts = [];
+  let i = 0;
+  for (const m of text.matchAll(protect)) {
+    parts.push({ t: text.slice(i, m.index), lock: false }, { t: m[0], lock: true });
+    i = m.index + m[0].length;
+  }
+  parts.push({ t: text.slice(i), lock: false });
+  const seen = /* @__PURE__ */ new Set();
+  let made = 0;
+  const out = parts.map((p) => {
+    if (p.lock)
+      return p.t;
+    return p.t.replace(/[\p{L}][\p{L}\p{M}'-]{6,}/gu, (w) => {
+      var _a;
+      const key = w.toLowerCase();
+      if (made >= max || seen.has(key))
+        return w;
+      const notes = ((_a = index.get(key)) != null ? _a : []).filter((n) => n.toLowerCase() !== skip.toLowerCase());
+      if (!notes.length || notes.length > 3)
+        return w;
+      seen.add(key);
+      made++;
+      return `[[${notes[0]}|${w}]]`;
+    });
+  });
+  return out.join("");
 }
 
 // src/voice/audio.ts
@@ -9439,6 +9480,53 @@ function addUsage(s, sec2) {
   s.voiceUsageSec += sec2;
 }
 var marker = (path) => `[voice not written \u2014 audio saved: ${path}]`;
+var TermIndex = class {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.byNote = /* @__PURE__ */ new Map();
+    this.ready = null;
+    const vault = plugin.app.vault;
+    const drop = (f) => this.byNote.delete(f.basename);
+    for (const ev of ["modify", "delete", "rename"]) {
+      try {
+        plugin.registerEvent(vault.on(ev, (f) => {
+          if (f instanceof import_obsidian11.TFile) {
+            drop(f);
+            if (ev === "modify")
+              void this.read(f);
+          }
+        }));
+      } catch (e) {
+      }
+    }
+  }
+  async read(f) {
+    try {
+      this.byNote.set(f.basename, termsOf(await this.plugin.app.vault.cachedRead(f)));
+    } catch (e) {
+    }
+  }
+  async get() {
+    var _a, _b;
+    (_a = this.ready) != null ? _a : this.ready = Promise.all(this.plugin.app.vault.getMarkdownFiles().map((f) => this.read(f))).then(() => void 0);
+    await this.ready;
+    const idx = /* @__PURE__ */ new Map();
+    for (const [note, terms] of this.byNote)
+      for (const t of terms)
+        ((_b = idx.get(t)) != null ? _b : idx.set(t, []).get(t)).push(note);
+    return idx;
+  }
+};
+var termIndex = null;
+async function linkAll(p, s, text, current) {
+  if (s.voiceAutoLink)
+    text = autoLink(text, p.app.vault.getMarkdownFiles().map((f) => f.basename), current);
+  if (s.voiceTermLink) {
+    termIndex != null ? termIndex : termIndex = new TermIndex(p);
+    text = linkTerms(text, await termIndex.get(), current);
+  }
+  return text;
+}
 var saveOf = (p) => {
   var _a, _b;
   return (_b = (_a = p.saveSettings) == null ? void 0 : _a.call(p)) != null ? _b : Promise.resolve();
@@ -9489,8 +9577,7 @@ var VoiceController = class {
       transcribe: async (wav) => {
         const ctx = buildContext(title, editor.getValue().slice(0, here(editor)));
         let t = await transcribeWithRetry(voiceTransport, this.s, wav, ctx);
-        if (this.s.voiceAutoLink)
-          t = autoLink(t, this.plugin.app.vault.getMarkdownFiles().map((f) => f.basename), title);
+        t = await linkAll(this.plugin, this.s, t, title);
         addUsage(this.s, wavSeconds(wav));
         void saveOf(this.plugin);
         return t;
@@ -9678,8 +9765,7 @@ var VoiceController = class {
         let text;
         try {
           text = await transcribeWithRetry(voiceTransport, this.s, await vault.readBinary(wavFile));
-          if (this.s.voiceAutoLink)
-            text = autoLink(text, vault.getMarkdownFiles().map((f) => f.basename), item.note.replace(/^.*\//, "").replace(/\.md$/, ""));
+          text = await linkAll(this.plugin, this.s, text, item.note.replace(/^.*\//, "").replace(/\.md$/, ""));
         } catch (e) {
           if (manual)
             new import_obsidian11.Notice(`Voice: ${friendlyError(e instanceof VoiceError ? e.status : -1, e.message)}`, 8e3);
@@ -9852,6 +9938,12 @@ function renderVoiceSettings(containerEl, host) {
   new import_obsidian12.Setting(containerEl).setName("Auto-link note names").setDesc("Bolte waqt kisi bane hue note ka naam aaye to wo [[link]] ban jayega.").addToggle(
     (t) => t.setValue(s.voiceAutoLink).onChange(async (v) => {
       s.voiceAutoLink = v;
+      await save();
+    })
+  );
+  new import_obsidian12.Setting(containerEl).setName("Advanced: link terms from other notes").setDesc("Thinking mode \u2014 bolte waqt koi khaas shabd (jaise 'ophthalmologist') kisi aur note me likha ho, to us note se link ho jayega. Sirf 7+ letter wale aur 1\u20133 notes me milne wale shabd; ek hisse me max 3 link. Note-name linking alag hai aur waise hi chalta hai.").addToggle(
+    (t) => t.setValue(s.voiceTermLink).onChange(async (v) => {
+      s.voiceTermLink = v;
       await save();
     })
   );

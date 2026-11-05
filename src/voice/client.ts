@@ -31,6 +31,8 @@ export interface VoiceSettings {
   voicePending: Array<{ path: string; note: string }>;
   /** v1.9.9 — link spoken words that match existing note names. */
   voiceAutoLink: boolean;
+  /** v1.9.11 — advanced: link specific terms to the other note where they are written. */
+  voiceTermLink: boolean;
 }
 
 export const DEFAULT_VOICE_ENDPOINT = "https://notion-toggle-voice.lovable.app/api/public/transcribe";
@@ -51,6 +53,7 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   voiceUsageSec: 0,
   voicePending: [],
   voiceAutoLink: true,
+  voiceTermLink: false,
 };
 
 export interface VoiceRequest {
@@ -205,4 +208,49 @@ export function autoLink(text: string, titles: string[], skip = ""): string {
     }
   }
   return parts.map((p) => p.t).join("");
+}
+
+const COMMON = new Set("because between without through another something everything anything important question answer however actually already problem example different together sometimes tomorrow yesterday morning evening probably remember understand nothing whatever whenever wherever students teacher chapter question questions lekin kyunki isliye matlab jaisa wahan yahan bahut sabse hamesha".split(" "));
+
+/** Words of a note body worth indexing (lowercased, 7+ letters, not common). */
+export function termsOf(body: string): Set<string> {
+  const out = new Set<string>();
+  const clean = body.replace(/```[\s\S]*?```|`[^`]*`|\[\[[^\]]*\]\]|https?:\/\/\S+/g, " ");
+  for (const m of clean.matchAll(/[\p{L}][\p{L}\p{M}'-]{6,}/gu)) {
+    const w = m[0].toLowerCase();
+    if (!COMMON.has(w)) out.add(w);
+  }
+  return out;
+}
+
+/**
+ * v1.9.11 — "thinking mode": a specific term spoken now that is written in
+ * another note becomes [[That note|term]]. Only terms found in 1–3 notes count
+ * as specific (words used everywhere are skipped); max 3 new links per piece;
+ * never inside existing links/code/URLs; the current note is skipped.
+ */
+export function linkTerms(text: string, index: Map<string, string[]>, skip = "", max = 3): string {
+  const protect = /\[\[[^\]]*\]\]|`[^`]*`|https?:\/\/\S+/g;
+  const parts: Array<{ t: string; lock: boolean }> = [];
+  let i = 0;
+  for (const m of text.matchAll(protect)) {
+    parts.push({ t: text.slice(i, m.index), lock: false }, { t: m[0], lock: true });
+    i = m.index! + m[0].length;
+  }
+  parts.push({ t: text.slice(i), lock: false });
+  const seen = new Set<string>();
+  let made = 0;
+  const out = parts.map((p) => {
+    if (p.lock) return p.t;
+    return p.t.replace(/[\p{L}][\p{L}\p{M}'-]{6,}/gu, (w) => {
+      const key = w.toLowerCase();
+      if (made >= max || seen.has(key)) return w;
+      const notes = (index.get(key) ?? []).filter((n) => n.toLowerCase() !== skip.toLowerCase());
+      if (!notes.length || notes.length > 3) return w;
+      seen.add(key);
+      made++;
+      return `[[${notes[0]}|${w}]]`;
+    });
+  });
+  return out.join("");
 }
