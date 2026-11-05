@@ -2022,7 +2022,39 @@ body.ntt-notion-look .callout.is-collapsible:has(> .callout-content > p:only-chi
 /* v1.9.1 — live transcript box + floating mic */
 .ntt-voice-text { max-height: 96px; overflow-y: auto; font-size: var(--font-ui-small); line-height: 1.45; color: var(--text-normal); background: var(--background-secondary); border-radius: 12px; padding: 8px 10px; white-space: pre-wrap; }
 .ntt-voice-text.is-empty { color: var(--text-faint); font-style: italic; }
-.ntt-voice-fab { position: fixed; right: 18px; bottom: calc(env(safe-area-inset-bottom, 0px) + 176px); width: 48px; height: 48px; border-radius: 50%; padding: 0; z-index: var(--layer-status-bar, 15); background: var(--interactive-accent) !important; color: var(--text-on-accent) !important; box-shadow: var(--shadow-s); display: inline-flex; align-items: center; justify-content: center; }
+.ntt-voice-fab { position: fixed; right: 18px; bottom: calc(env(safe-area-inset-bottom, 0px) + 176px); width: 52px; height: 52px; border-radius: 50%; padding: 0; z-index: var(--layer-status-bar, 15); background: linear-gradient(180deg, var(--background-primary), var(--background-secondary)) !important; color: var(--text-normal) !important; border: 1px solid var(--background-modifier-border-hover) !important; box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 6px 16px rgba(0,0,0,.12) !important; display: inline-flex; align-items: center; justify-content: center; transition: transform .12s ease, box-shadow .12s ease; }
+.ntt-voice-fab svg { width: 24px; height: 24px; stroke-width: 2.2; }
+.ntt-voice-fab:active { transform: scale(.94); box-shadow: 0 1px 2px rgba(0,0,0,.1) !important; }
 .ntt-voice-fab.is-off, .ntt-voice-fab.is-hidden { display: none; }
 /* v1.9.2 — with the autoscroll button turned off, the mic takes its place */
 body:not(:has(.ntt-fab-wrap)) .ntt-voice-fab { bottom: calc(env(safe-area-inset-bottom, 0px) + 100px); }
+
+/* v1.9.3 — Lovable look: soft symmetric wave, clear ✕ and ✓ buttons */
+.ntt-voice-bar { border-radius: 28px; padding: 12px 14px; }
+.ntt-voice-wave { gap: 3px; height: 40px; }
+.ntt-voice-b { border-radius: 99px; background: var(--text-muted); transition: transform 120ms ease-out; }
+.ntt-voice-row .ntt-voice-cancel { width: 44px; height: 44px; background: var(--background-primary) !important; border: 1px solid var(--background-modifier-border) !important; color: var(--text-normal) !important; }
+.ntt-voice-row .ntt-voice-done { width: 48px; height: 48px; box-shadow: var(--shadow-s); }
+.ntt-voice-row .ntt-voice-pause { width: 36px; height: 36px; background: transparent !important; color: var(--text-muted) !important; }
+.ntt-voice-btn svg { width: 22px; height: 22px; }
+.ntt-voice-bar.is-finishing .ntt-voice-b { animation: ntt-voice-pulse 1.2s ease-in-out infinite; }
+@keyframes ntt-voice-pulse { 50% { opacity: 0.15; } }
+.ntt-voice-setup input { width: 100%; margin: 8px 0; }
+.ntt-voice-setup .ntt-voice-setup-row { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* v1.9.4 — movable, customisable voice card */
+.ntt-voice-bar { bottom: calc(env(safe-area-inset-bottom, 0px) + 72px + var(--ntt-voice-lift, 0px)); touch-action: pan-x; user-select: none; -webkit-user-select: none; transition: box-shadow 150ms, scale 150ms; }
+.ntt-voice-bar.is-dragging { scale: 1.03; box-shadow: var(--shadow-l), 0 0 0 2px var(--interactive-accent); }
+.ntt-voice-bar.is-compact .ntt-voice-text { display: none; }
+.ntt-voice-bar.is-accent .ntt-voice-b { background: var(--interactive-accent); }
+.ntt-voice-bar.is-paused .ntt-voice-pause { color: var(--interactive-accent) !important; }
+.ntt-voice-bar, .ntt-voice-bar * { box-sizing: border-box; }
+/* v1.9.6 — mobile-friendly setup box */
+.ntt-voice-setup p { margin: 0 0 4px; font-size: var(--font-ui-small); color: var(--text-muted); line-height: 1.45; }
+.ntt-voice-setup input { box-sizing: border-box; width: 100%; height: 44px; font-size: 16px; padding: 0 12px; border-radius: 10px; margin: 10px 0 12px; }
+.ntt-voice-setup .ntt-voice-setup-row button { height: 44px; padding: 0 16px; border-radius: 10px; font-size: var(--font-ui-medium); }
+.is-mobile .modal:has(.ntt-voice-setup), .modal:has(.ntt-voice-setup) { box-sizing: border-box; max-width: min(420px, calc(100vw - 24px)); width: calc(100vw - 24px); height: auto; max-height: none; top: auto; margin: auto; border-radius: 18px; }
+@media (max-width: 600px) {
+  .ntt-voice-setup .ntt-voice-setup-row { flex-direction: column-reverse; }
+  .ntt-voice-setup .ntt-voice-setup-row button { width: 100%; }
+}

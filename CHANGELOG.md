@@ -1,3 +1,6 @@
+## 1.9.16
+- Voice: floating mic button restyled like Lovable — white round button, thin border, soft shadow, dark mic icon.
+
 ## 1.9.15
 - Autoscroll sheet: removed duplicate "Reverse direction" switch; help text for loop / auto-open / auto-close.
 - Fix: a tap on quiz/autoscroll buttons right after dragging a toggle is no longer swallowed.
