@@ -92,6 +92,15 @@ export function renderVoiceSettings(containerEl: HTMLElement, host: { settings: 
         await save();
       })
     );
+  new Setting(containerEl)
+    .setName("Advanced: link matching lines")
+    .setDesc("Bolte waqt 4 ya zyada shabdon ki line agar kisi aur note me hu-ba-hu likhi ho, to wo line us note (aur uske heading) se link ho jayegi, jaise [[My work#Voice|offline me live text nahi dikhega]]. 2 se zyada notes me mili line ko aam maan kar chhod diya jata hai; ek hisse me max 2 line-link.")
+    .addToggle((t) =>
+      t.setValue(s.voicePhraseLink).onChange(async (v) => {
+        s.voicePhraseLink = v;
+        await save();
+      })
+    );
   const mins = s.voiceUsageDay === new Date().toISOString().slice(0, 10) ? s.voiceUsageSec / 60 : 0;
   new Setting(containerEl)
     .setName("Today's voice use")

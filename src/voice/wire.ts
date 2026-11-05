@@ -4,7 +4,7 @@
  */
 import { MarkdownView, Modal, Notice, TFile, requestUrl, setIcon, type Editor, type Plugin } from "obsidian";
 import { VoiceBar } from "./bar";
-import { DEFAULT_VOICE_SETTINGS, VoiceError, autoLink, linkTerms, termsOf, buildContext, friendlyError, transcribe, transcribeWithRetry, wavSeconds, type VoiceSettings, type VoiceTransport } from "./client";
+import { DEFAULT_VOICE_SETTINGS, VoiceError, autoLink, linkPhrases, linkTerms, shinglesOf, termsOf, type PhraseHit, buildContext, friendlyError, transcribe, transcribeWithRetry, wavSeconds, type VoiceSettings, type VoiceTransport } from "./client";
 import { VoiceRecorder } from "./recorder";
 import { CursorAnchor } from "./cursor";
 import { encodeWav } from "./audio";
@@ -85,20 +85,36 @@ const marker = (path: string) => `[voice not written — audio saved: ${path}]`;
 /** v1.9.11 — term → note names, built from note bodies on demand and kept fresh on edits. */
 class TermIndex {
   private byNote = new Map<string, Set<string>>();
+  private shingles = new Map<string, Map<string, string>>();
   private ready: Promise<void> | null = null;
   constructor(private readonly plugin: VoicePluginHost) {
     const vault = plugin.app.vault as unknown as { on(n: string, f: (f: TFile) => void): unknown };
-    const drop = (f: TFile) => this.byNote.delete(f.basename);
+    const drop = (f: TFile) => {
+      this.byNote.delete(f.basename);
+      this.shingles.delete(f.basename);
+    };
     for (const ev of ["modify", "delete", "rename"]) {
       try { plugin.registerEvent(vault.on(ev, (f) => { if (f instanceof TFile) { drop(f); if (ev === "modify") void this.read(f); } }) as never); } catch { /* stubs */ }
     }
   }
   private async read(f: TFile): Promise<void> {
-    try { this.byNote.set(f.basename, termsOf(await this.plugin.app.vault.cachedRead(f))); } catch { /* unreadable */ }
+    try {
+      const body = await this.plugin.app.vault.cachedRead(f);
+      this.byNote.set(f.basename, termsOf(body));
+      this.shingles.set(f.basename, shinglesOf(body));
+    } catch { /* unreadable */ }
+  }
+  private load(): Promise<void> {
+    return (this.ready ??= Promise.all(this.plugin.app.vault.getMarkdownFiles().map((f) => this.read(f))).then(() => undefined));
+  }
+  async phrases(): Promise<Map<string, PhraseHit[]>> {
+    await this.load();
+    const idx = new Map<string, PhraseHit[]>();
+    for (const [note, map] of this.shingles) for (const [k, heading] of map) (idx.get(k) ?? idx.set(k, []).get(k)!).push({ note, heading });
+    return idx;
   }
   async get(): Promise<Map<string, string[]>> {
-    this.ready ??= Promise.all(this.plugin.app.vault.getMarkdownFiles().map((f) => this.read(f))).then(() => undefined);
-    await this.ready;
+    await this.load();
     const idx = new Map<string, string[]>();
     for (const [note, terms] of this.byNote) for (const t of terms) (idx.get(t) ?? idx.set(t, []).get(t)!).push(note);
     return idx;
@@ -106,6 +122,10 @@ class TermIndex {
 }
 let termIndex: TermIndex | null = null;
 async function linkAll(p: VoicePluginHost, s: VoiceSettings, text: string, current: string): Promise<string> {
+  if (s.voicePhraseLink) {
+    termIndex ??= new TermIndex(p);
+    text = linkPhrases(text, await termIndex.phrases(), current);
+  }
   if (s.voiceAutoLink) text = autoLink(text, p.app.vault.getMarkdownFiles().map((f) => f.basename), current);
   if (s.voiceTermLink) {
     termIndex ??= new TermIndex(p);

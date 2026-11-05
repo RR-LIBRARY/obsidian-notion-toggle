@@ -1,3 +1,6 @@
+## 1.9.12
+- Voice: advanced switch "link matching lines" (off by default) — a spoken line of 4+ words written in another note links to that note and heading. Hinglish spellings (me/mein, nahi/nahin, hai/he) match.
+
 ## 1.9.11
 - Voice: advanced switch "link terms from other notes" (thinking mode, off by default) — specific terms you speak link to the note where they are written. Note-name linking unchanged.
 

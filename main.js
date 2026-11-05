@@ -3648,10 +3648,10 @@ var COLOR_ICON = {
 function filterLabel(filter) {
   if (!filter || filter.length === 0)
     return "all toggles";
-  const norm = normalizeFilter(filter);
-  if (norm.length === 1 && norm[0] === "other")
+  const norm2 = normalizeFilter(filter);
+  if (norm2.length === 1 && norm2[0] === "other")
     return "\u26AA notes (!note / !tip)";
-  return norm.map((c) => COLOR_ICON[c]).join(" ");
+  return norm2.map((c) => COLOR_ICON[c]).join(" ");
 }
 function sessionLabel(s, stops) {
   const dir = s.scrollReverse ? "reverse \u2191" : "forward \u2193";
@@ -5673,7 +5673,7 @@ function needsHeal(els) {
 }
 function healQuizEls(current, titles, fresh, titleOf) {
   const used = /* @__PURE__ */ new Set();
-  const norm = (s) => s.replace(/\s+/g, " ").trim();
+  const norm2 = (s) => s.replace(/\s+/g, " ").trim();
   for (const el2 of current)
     if (el2 && el2.isConnected)
       used.add(el2);
@@ -5682,8 +5682,8 @@ function healQuizEls(current, titles, fresh, titleOf) {
     var _a;
     if (el2 && el2.isConnected)
       return el2;
-    const want = norm((_a = titles[i]) != null ? _a : "");
-    const hit = want ? fresh.find((f) => !used.has(f) && norm(titleOf(f)) === want) : void 0;
+    const want = norm2((_a = titles[i]) != null ? _a : "");
+    const hit = want ? fresh.find((f) => !used.has(f) && norm2(titleOf(f)) === want) : void 0;
     const chosen = hit != null ? hit : sameCount && fresh[i] && !used.has(fresh[i]) ? fresh[i] : void 0;
     if (chosen)
       used.add(chosen);
@@ -8772,7 +8772,8 @@ var DEFAULT_VOICE_SETTINGS = {
   voiceUsageSec: 0,
   voicePending: [],
   voiceAutoLink: true,
-  voiceTermLink: false
+  voiceTermLink: false,
+  voicePhraseLink: false
 };
 var VoiceError = class extends Error {
   constructor(message, status = 0) {
@@ -8952,6 +8953,71 @@ function linkTerms(text, index, skip = "", max = 3) {
     });
   });
   return out.join("");
+}
+var WORD = /[\p{L}\p{N}]+(?:['’][\p{L}]+)?/gu;
+var PHRASE_N = 4;
+var SAME = { mein: "me", mai: "me", main: "me", mei: "me", nahin: "nahi", nhi: "nahi", hain: "hai", he: "hai", hy: "hai", ko: "ko", kr: "kar", karo: "kar", ki: "ki", kee: "ki", ke: "ke", ka: "ka", aur: "aur", or: "aur", bhi: "bhi", hum: "hum", ham: "hum", wo: "vo", woh: "vo", vah: "vo", ye: "ye", yeh: "ye", yah: "ye" };
+var norm = (w) => {
+  var _a;
+  const l = w.toLowerCase().replace(/’/g, "'");
+  return (_a = SAME[l]) != null ? _a : l;
+};
+function shinglesOf(body) {
+  const out = /* @__PURE__ */ new Map();
+  let heading = "";
+  const clean = body.replace(/^---[\s\S]*?\n---\n/, "").replace(/```[\s\S]*?```/g, "");
+  for (const line of clean.split("\n")) {
+    const h = /^#{1,6}\s+(.+)$/.exec(line);
+    if (h) {
+      heading = h[1].replace(/[#|\[\]^]/g, "").trim();
+      continue;
+    }
+    const words = [...line.replace(/\[\[[^\]]*\]\]|`[^`]*`|https?:\/\/\S+/g, " ").matchAll(WORD)].map((m) => norm(m[0]));
+    for (let i = 0; i + PHRASE_N <= words.length; i++) {
+      const k = words.slice(i, i + PHRASE_N).join(" ");
+      if (!out.has(k))
+        out.set(k, heading);
+    }
+  }
+  return out;
+}
+function linkPhrases(text, index, skip = "", max = 2) {
+  const locked = [];
+  for (const m of text.matchAll(/\[\[[^\]]*\]\]|`[^`]*`|https?:\/\/\S+/g))
+    locked.push([m.index, m.index + m[0].length]);
+  const words = [...text.matchAll(WORD)].filter((m) => !locked.some(([a, b]) => m.index >= a && m.index < b));
+  const low = words.map((m) => norm(m[0]));
+  const hits = (i) => {
+    var _a;
+    return ((_a = index.get(low.slice(i, i + PHRASE_N).join(" "))) != null ? _a : []).filter((h) => h.note.toLowerCase() !== skip.toLowerCase());
+  };
+  const edits = [];
+  for (let i = 0; i + PHRASE_N <= words.length && edits.length < max; ) {
+    const first = hits(i);
+    const notes = [...new Set(first.map((h) => h.note))];
+    if (!notes.length || notes.length > 2) {
+      i++;
+      continue;
+    }
+    const target = first[0];
+    let j = i;
+    while (j + 1 + PHRASE_N <= words.length && hits(j + 1).some((h) => h.note === target.note))
+      j++;
+    const lastWord = words[j + PHRASE_N - 1];
+    const from = words[i].index;
+    const to = lastWord.index + lastWord[0].length;
+    const said = text.slice(from, to);
+    if (/[\n\[\]]/.test(said)) {
+      i++;
+      continue;
+    }
+    edits.push({ from, to, link: `[[${target.note}${target.heading ? "#" + target.heading : ""}|${said}]]` });
+    i = j + PHRASE_N;
+  }
+  let out = text;
+  for (const e of edits.reverse())
+    out = out.slice(0, e.from) + e.link + out.slice(e.to);
+  return out;
 }
 
 // src/voice/audio.ts
@@ -9484,9 +9550,13 @@ var TermIndex = class {
   constructor(plugin) {
     this.plugin = plugin;
     this.byNote = /* @__PURE__ */ new Map();
+    this.shingles = /* @__PURE__ */ new Map();
     this.ready = null;
     const vault = plugin.app.vault;
-    const drop = (f) => this.byNote.delete(f.basename);
+    const drop = (f) => {
+      this.byNote.delete(f.basename);
+      this.shingles.delete(f.basename);
+    };
     for (const ev of ["modify", "delete", "rename"]) {
       try {
         plugin.registerEvent(vault.on(ev, (f) => {
@@ -9502,23 +9572,41 @@ var TermIndex = class {
   }
   async read(f) {
     try {
-      this.byNote.set(f.basename, termsOf(await this.plugin.app.vault.cachedRead(f)));
+      const body = await this.plugin.app.vault.cachedRead(f);
+      this.byNote.set(f.basename, termsOf(body));
+      this.shingles.set(f.basename, shinglesOf(body));
     } catch (e) {
     }
   }
+  load() {
+    var _a;
+    return (_a = this.ready) != null ? _a : this.ready = Promise.all(this.plugin.app.vault.getMarkdownFiles().map((f) => this.read(f))).then(() => void 0);
+  }
+  async phrases() {
+    var _a;
+    await this.load();
+    const idx = /* @__PURE__ */ new Map();
+    for (const [note, map] of this.shingles)
+      for (const [k, heading] of map)
+        ((_a = idx.get(k)) != null ? _a : idx.set(k, []).get(k)).push({ note, heading });
+    return idx;
+  }
   async get() {
-    var _a, _b;
-    (_a = this.ready) != null ? _a : this.ready = Promise.all(this.plugin.app.vault.getMarkdownFiles().map((f) => this.read(f))).then(() => void 0);
-    await this.ready;
+    var _a;
+    await this.load();
     const idx = /* @__PURE__ */ new Map();
     for (const [note, terms] of this.byNote)
       for (const t of terms)
-        ((_b = idx.get(t)) != null ? _b : idx.set(t, []).get(t)).push(note);
+        ((_a = idx.get(t)) != null ? _a : idx.set(t, []).get(t)).push(note);
     return idx;
   }
 };
 var termIndex = null;
 async function linkAll(p, s, text, current) {
+  if (s.voicePhraseLink) {
+    termIndex != null ? termIndex : termIndex = new TermIndex(p);
+    text = linkPhrases(text, await termIndex.phrases(), current);
+  }
   if (s.voiceAutoLink)
     text = autoLink(text, p.app.vault.getMarkdownFiles().map((f) => f.basename), current);
   if (s.voiceTermLink) {
@@ -9944,6 +10032,12 @@ function renderVoiceSettings(containerEl, host) {
   new import_obsidian12.Setting(containerEl).setName("Advanced: link terms from other notes").setDesc("Thinking mode \u2014 bolte waqt koi khaas shabd (jaise 'ophthalmologist') kisi aur note me likha ho, to us note se link ho jayega. Sirf 7+ letter wale aur 1\u20133 notes me milne wale shabd; ek hisse me max 3 link. Note-name linking alag hai aur waise hi chalta hai.").addToggle(
     (t) => t.setValue(s.voiceTermLink).onChange(async (v) => {
       s.voiceTermLink = v;
+      await save();
+    })
+  );
+  new import_obsidian12.Setting(containerEl).setName("Advanced: link matching lines").setDesc("Bolte waqt 4 ya zyada shabdon ki line agar kisi aur note me hu-ba-hu likhi ho, to wo line us note (aur uske heading) se link ho jayegi, jaise [[My work#Voice|offline me live text nahi dikhega]]. 2 se zyada notes me mili line ko aam maan kar chhod diya jata hai; ek hisse me max 2 line-link.").addToggle(
+    (t) => t.setValue(s.voicePhraseLink).onChange(async (v) => {
+      s.voicePhraseLink = v;
       await save();
     })
   );

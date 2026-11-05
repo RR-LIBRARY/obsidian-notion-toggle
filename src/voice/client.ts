@@ -33,6 +33,8 @@ export interface VoiceSettings {
   voiceAutoLink: boolean;
   /** v1.9.11 — advanced: link specific terms to the other note where they are written. */
   voiceTermLink: boolean;
+  /** v1.9.12 — advanced: link a spoken line (4+ words) to the note & heading where it is written. */
+  voicePhraseLink: boolean;
 }
 
 export const DEFAULT_VOICE_ENDPOINT = "https://notion-toggle-voice.lovable.app/api/public/transcribe";
@@ -54,6 +56,7 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   voicePending: [],
   voiceAutoLink: true,
   voiceTermLink: false,
+  voicePhraseLink: false,
 };
 
 export interface VoiceRequest {
@@ -253,4 +256,67 @@ export function linkTerms(text: string, index: Map<string, string[]>, skip = "",
     });
   });
   return out.join("");
+}
+
+export interface PhraseHit { note: string; heading: string }
+const WORD = /[\p{L}\p{N}]+(?:['’][\p{L}]+)?/gu;
+const PHRASE_N = 4;
+/** Hinglish spellings that mean the same word are matched as one (me/mein, nahi/nahin, hai/he…). */
+const SAME: Record<string, string> = { mein: "me", mai: "me", main: "me", mei: "me", nahin: "nahi", nhi: "nahi", hain: "hai", he: "hai", hy: "hai", ko: "ko", kr: "kar", karo: "kar", ki: "ki", kee: "ki", ke: "ke", ka: "ka", aur: "aur", or: "aur", bhi: "bhi", hum: "hum", ham: "hum", wo: "vo", woh: "vo", vah: "vo", ye: "ye", yeh: "ye", yah: "ye" };
+const norm = (w: string) => {
+  const l = w.toLowerCase().replace(/’/g, "'");
+  return SAME[l] ?? l;
+};
+
+/** 4-word shingles of a note body → heading they sit under (code, links, front matter skipped). */
+export function shinglesOf(body: string): Map<string, string> {
+  const out = new Map<string, string>();
+  let heading = "";
+  const clean = body.replace(/^---[\s\S]*?\n---\n/, "").replace(/```[\s\S]*?```/g, "");
+  for (const line of clean.split("\n")) {
+    const h = /^#{1,6}\s+(.+)$/.exec(line);
+    if (h) {
+      heading = h[1].replace(/[#|\[\]^]/g, "").trim();
+      continue;
+    }
+    const words = [...line.replace(/\[\[[^\]]*\]\]|`[^`]*`|https?:\/\/\S+/g, " ").matchAll(WORD)].map((m) => norm(m[0]));
+    for (let i = 0; i + PHRASE_N <= words.length; i++) {
+      const k = words.slice(i, i + PHRASE_N).join(" ");
+      if (!out.has(k)) out.set(k, heading);
+    }
+  }
+  return out;
+}
+
+/**
+ * v1.9.12 — a spoken run of 4+ words that is written word-for-word in another
+ * note becomes [[Note#Heading|spoken words]]. The run is extended as long as it
+ * keeps matching the same note; lines found in more than 2 notes are treated as
+ * too common; max 2 line links per piece; the current note is skipped.
+ */
+export function linkPhrases(text: string, index: Map<string, PhraseHit[]>, skip = "", max = 2): string {
+  const locked: Array<[number, number]> = [];
+  for (const m of text.matchAll(/\[\[[^\]]*\]\]|`[^`]*`|https?:\/\/\S+/g)) locked.push([m.index!, m.index! + m[0].length]);
+  const words = [...text.matchAll(WORD)].filter((m) => !locked.some(([a, b]) => m.index! >= a && m.index! < b));
+  const low = words.map((m) => norm(m[0]));
+  const hits = (i: number) => (index.get(low.slice(i, i + PHRASE_N).join(" ")) ?? []).filter((h) => h.note.toLowerCase() !== skip.toLowerCase());
+  const edits: Array<{ from: number; to: number; link: string }> = [];
+  for (let i = 0; i + PHRASE_N <= words.length && edits.length < max; ) {
+    const first = hits(i);
+    const notes = [...new Set(first.map((h) => h.note))];
+    if (!notes.length || notes.length > 2) { i++; continue; }
+    const target = first[0];
+    let j = i;
+    while (j + 1 + PHRASE_N <= words.length && hits(j + 1).some((h) => h.note === target.note)) j++;
+    const lastWord = words[j + PHRASE_N - 1];
+    const from = words[i].index!;
+    const to = lastWord.index! + lastWord[0].length;
+    const said = text.slice(from, to);
+    if (/[\n\[\]]/.test(said)) { i++; continue; }
+    edits.push({ from, to, link: `[[${target.note}${target.heading ? "#" + target.heading : ""}|${said}]]` });
+    i = j + PHRASE_N;
+  }
+  let out = text;
+  for (const e of edits.reverse()) out = out.slice(0, e.from) + e.link + out.slice(e.to);
+  return out;
 }

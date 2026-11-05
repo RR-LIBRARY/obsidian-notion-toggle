@@ -80,3 +80,37 @@ describe("voice term linking (thinking mode)", () => {
     expect(t.has("glaucoma")).toBe(false);
   });
 });
+
+import { linkPhrases, shinglesOf, type PhraseHit } from "../src/voice/client";
+describe("voice line linking", () => {
+  const build = (notes: Record<string, string>) => {
+    const idx = new Map<string, PhraseHit[]>();
+    for (const [note, body] of Object.entries(notes)) for (const [k, heading] of shinglesOf(body)) (idx.get(k) ?? idx.set(k, []).get(k)!).push({ note, heading });
+    return idx;
+  };
+  const idx = build({ "My work": "# Voice\nOffline me card bolte waqt live text nahi dikhega.\n" });
+  it("links a spoken line written in another note, with its heading", () => {
+    expect(linkPhrases("Yaad rakho, offline me live text nahi dikhega theek hai.", build({ "My work": "## Voice\noffline me live text nahi dikhega" })))
+      .toBe("Yaad rakho, [[My work#Voice|offline me live text nahi dikhega]] theek hai.");
+  });
+  it("extends across the longest matching run", () => {
+    expect(linkPhrases("Card bolte waqt live text nahi dikhega.", idx)).toBe("[[My work#Voice|Card bolte waqt live text nahi dikhega]].");
+  });
+  it("needs 4+ matching words, skips current note and lines in 3+ notes", () => {
+    expect(linkPhrases("live text nahi", idx)).toBe("live text nahi");
+    expect(linkPhrases("live text nahi dikhega", idx, "My work")).toBe("live text nahi dikhega");
+    const common = build({ A: "aaj ka din accha hai", B: "aaj ka din accha hai", C: "aaj ka din accha hai" });
+    expect(linkPhrases("aaj ka din accha hai", common)).toBe("aaj ka din accha hai");
+  });
+  it("leaves existing links alone", () => {
+    expect(linkPhrases("[[X]] live text nahi dikhega", idx)).toBe("[[X]] [[My work#Voice|live text nahi dikhega]]");
+  });
+});
+
+describe("voice line linking — Hinglish spellings", () => {
+  it("matches mein/me and nahin/nahi as the same word", () => {
+    const idx = new Map<string, PhraseHit[]>();
+    for (const [k, heading] of shinglesOf("## Voice\nOffline me live text nahi dikhega.")) idx.set(k, [{ note: "My work", heading }]);
+    expect(linkPhrases("offline mein live text nahin dikhega", idx)).toBe("[[My work#Voice|offline mein live text nahin dikhega]]");
+  });
+});

@@ -76,3 +76,9 @@ Numbers aur symbols apne aap: "saat baje" → 7 baje, "do plus teen barabar paan
 
 ## Thinking mode (1.9.11, advanced)
 Settings → "Advanced: link terms from other notes". When ON, a specific word you speak (7+ letters, found in only 1–3 notes, e.g. *ophthalmologist*) becomes `[[That note|word]]`. Common words are skipped, max 3 such links per piece, current note skipped. Default OFF; normal note-name linking is unchanged.
+
+
+## Line linking (1.9.12, advanced)
+Settings → "Advanced: link matching lines". A spoken run of 4+ words that is written in another note becomes `[[Note#Heading|spoken words]]` and opens at that heading. Lines found in 3+ notes are skipped as common; max 2 per piece; current note skipped; me/mein, nahi/nahin, hai/he count as the same word. Default OFF.
+
+Tips: keep the term switch and line switch both ON for best "thinking mode"; write key ideas under clear headings so links land at the right place; if links feel too many, turn off the term switch and keep only lines.
