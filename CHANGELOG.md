@@ -1,3 +1,6 @@
+## 1.9.14
+- Voice: term-link presets (Balanced, Medical/technical, More links, Fewer links) and Auto max notes by vault size (<100 → 2, ≤1000 → 3, more → 5). Auto is the new default.
+
 ## 1.9.13
 - Voice: sliders for term linking — shortest word (4–15, default 7) and max notes (1–10, default 3).
 

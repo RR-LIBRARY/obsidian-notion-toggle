@@ -1,6 +1,6 @@
 /** v1.9.0 — the "Voice mode" section of the settings tab. */
 import { Notice, Setting } from "obsidian";
-import { transcribe, type VoiceSettings } from "./client";
+import { TERM_PRESETS, transcribe, type VoiceSettings } from "./client";
 import { encodeWav } from "./audio";
 import { voiceTransport, withVoiceDefaults } from "./wire";
 
@@ -92,15 +92,46 @@ export function renderVoiceSettings(containerEl: HTMLElement, host: { settings: 
         await save();
       })
     );
-  const num = (name: string, desc: string, key: "voiceTermMinLen" | "voiceTermMaxNotes", lo: number, hi: number) =>
-    new Setting(containerEl).setName(name).setDesc(desc).addSlider((sl) =>
-      sl.setLimits(lo, hi, 1).setValue(Number(s[key]) || (key === "voiceTermMinLen" ? 7 : 3)).setDynamicTooltip().onChange(async (v) => {
-        s[key] = v;
+  let minS: { setValue(v: number): unknown } | null = null;
+  let maxS: { setValue(v: number): unknown } | null = null;
+  new Setting(containerEl)
+    .setName("Term link: preset")
+    .setDesc("Ek tap me sahi setting. Shuru me 'Balanced' rakhein; doctor/science notes ke liye 'Medical / technical'.")
+    .addDropdown((d) => {
+      d.addOption("", "Custom");
+      for (const [k, v] of Object.entries(TERM_PRESETS)) d.addOption(k, v.label);
+      const cur = Object.entries(TERM_PRESETS).find(([, v]) => v.minLen === s.voiceTermMinLen && v.maxNotes === s.voiceTermMaxNotes);
+      d.setValue(cur?.[0] ?? "").onChange(async (k) => {
+        const p = TERM_PRESETS[k];
+        if (!p) return;
+        s.voiceTermMinLen = p.minLen;
+        s.voiceTermMaxNotes = p.maxNotes;
         await save();
-      })
-    );
-  num("Term link: shortest word", "Itne ya zyada letter wala shabd hi link banega. Sujhav: 7 (kam karne par 'paani', 'kitab' jaise aam shabd bhi link hone lagenge).", "voiceTermMinLen", 4, 15);
-  num("Term link: max notes", "Shabd itne ya kam notes me likha ho tabhi link banega; zyada notes me ho to aam shabd maana jayega. Sujhav: 3 (chhota vault 2, bada vault 5).", "voiceTermMaxNotes", 1, 10);
+        minS?.setValue(p.minLen);
+        maxS?.setValue(p.maxNotes);
+        new Notice(`Term link: ${p.label}`);
+      });
+    });
+  new Setting(containerEl)
+    .setName("Term link: shortest word")
+    .setDesc("Itne ya zyada letter wala shabd hi link banega. Sujhav: 7; medical/technical ke liye 8–9. 5 se kam par aam shabd bhi link hone lagenge.")
+    .addSlider((sl) => {
+      minS = sl;
+      sl.setLimits(4, 15, 1).setValue(s.voiceTermMinLen || 7).setDynamicTooltip().onChange(async (v) => {
+        s.voiceTermMinLen = v;
+        await save();
+      });
+    });
+  new Setting(containerEl)
+    .setName("Term link: max notes")
+    .setDesc("0 = Auto (vault ke size se: 100 se kam notes → 2, 1000 tak → 3, zyada → 5). Bahut link aayein to pehle ise ghatayein.")
+    .addSlider((sl) => {
+      maxS = sl;
+      sl.setLimits(0, 10, 1).setValue(s.voiceTermMaxNotes ?? 0).setDynamicTooltip().onChange(async (v) => {
+        s.voiceTermMaxNotes = v;
+        await save();
+      });
+    });
   new Setting(containerEl)
     .setName("Advanced: link matching lines")
     .setDesc("Bolte waqt 4 ya zyada shabdon ki line agar kisi aur note me hu-ba-hu likhi ho, to wo line us note (aur uske heading) se link ho jayegi, jaise [[My work#Voice|offline me live text nahi dikhega]]. 2 se zyada notes me mili line ko aam maan kar chhod diya jata hai; ek hisse me max 2 line-link.")

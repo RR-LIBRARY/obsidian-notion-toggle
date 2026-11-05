@@ -62,7 +62,7 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   voiceTermLink: false,
   voicePhraseLink: false,
   voiceTermMinLen: 7,
-  voiceTermMaxNotes: 3,
+  voiceTermMaxNotes: 0,
 };
 
 export interface VoiceRequest {
@@ -243,8 +243,21 @@ export function clampTermOpts(minLen: unknown, maxNotes: unknown): { minLen: num
     const x = Math.round(Number(v));
     return Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d;
   };
-  return { minLen: n(minLen, 7, 4, 15), maxNotes: n(maxNotes, 3, 1, 10) };
+  return { minLen: n(minLen, 7, 4, 15), maxNotes: Number(maxNotes) === 0 ? 0 : n(maxNotes, 3, 1, 10) };
 }
+
+/** v1.9.14 — "Auto" max notes follows vault size: <100 notes → 2, up to 1000 → 3, bigger → 5. */
+export function autoMaxNotes(noteCount: number): number {
+  return noteCount < 100 ? 2 : noteCount <= 1000 ? 3 : 5;
+}
+
+/** v1.9.14 — ready-made term-link presets (senior advice built in). */
+export const TERM_PRESETS: Record<string, { label: string; minLen: number; maxNotes: number }> = {
+  balanced: { label: "Balanced (7 letters, auto)", minLen: 7, maxNotes: 0 },
+  technical: { label: "Medical / technical (9 letters, auto)", minLen: 9, maxNotes: 0 },
+  more: { label: "More links (5 letters, 5 notes)", minLen: 5, maxNotes: 5 },
+  fewer: { label: "Fewer links (9 letters, 2 notes)", minLen: 9, maxNotes: 2 },
+};
 
 export function linkTerms(text: string, index: Map<string, string[]>, skip = "", max = 3, minLen = 7, maxNotes = 3): string {
   const protect = /\[\[[^\]]*\]\]|`[^`]*`|https?:\/\/\S+/g;

@@ -87,3 +87,8 @@ Tips: keep the term switch and line switch both ON for best "thinking mode"; wri
 ## Term link sliders (1.9.13)
 - **Shortest word** (default 7): words shorter than this never link. Lower = more links, more noise.
 - **Max notes** (default 3): a word written in more notes than this is treated as common. Small vault: 2, big vault: 5.
+
+
+## Presets & Auto (1.9.14)
+- **Term link: preset** — Balanced (7, auto), Medical/technical (9, auto), More links (5, 5), Fewer links (9, 2).
+- **Max notes = 0 (Auto)** — follows vault size: under 100 notes → 2, up to 1000 → 3, bigger → 5.

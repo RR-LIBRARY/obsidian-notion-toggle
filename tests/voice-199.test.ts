@@ -131,5 +131,19 @@ describe("term link settings", () => {
   it("settings are clamped to safe ranges", () => {
     expect(clampTermOpts(2, 50)).toEqual({ minLen: 4, maxNotes: 10 });
     expect(clampTermOpts("x", undefined)).toEqual({ minLen: 7, maxNotes: 3 });
+    expect(clampTermOpts(7, 0)).toEqual({ minLen: 7, maxNotes: 0 });
+  });
+});
+
+import { autoMaxNotes, TERM_PRESETS } from "../src/voice/client";
+describe("term link auto + presets", () => {
+  it("auto max notes follows vault size", () => {
+    expect(autoMaxNotes(50)).toBe(2);
+    expect(autoMaxNotes(500)).toBe(3);
+    expect(autoMaxNotes(1000)).toBe(3);
+    expect(autoMaxNotes(5000)).toBe(5);
+  });
+  it("medical preset uses 9 letters and auto", () => {
+    expect(TERM_PRESETS.technical).toMatchObject({ minLen: 9, maxNotes: 0 });
   });
 });
