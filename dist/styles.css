@@ -2006,3 +2006,16 @@ body.ntt-notion-look .callout.is-collapsible:has(> .callout-content > p:only-chi
 @media (prefers-reduced-motion: reduce) {
   body.ntt-notion-look .callout.is-collapsible > .callout-title:not(:has(> .callout-fold))::before { transition: none !important; }
 }
+
+/* v1.9.0 — voice mode bar (Lovable-style: waveform, ✕ discard, ✓ finish) */
+.ntt-voice-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 72px); width: min(560px, calc(100vw - 20px)); z-index: var(--layer-notice, 60); background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 22px; box-shadow: var(--shadow-l); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.ntt-voice-top { display: flex; justify-content: space-between; font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.ntt-voice-time { font-variant-numeric: tabular-nums; color: var(--text-normal); }
+.ntt-voice-wave { display: flex; align-items: center; gap: 2px; height: 34px; }
+.ntt-voice-b { flex: 1; height: 100%; border-radius: 2px; background: var(--text-normal); transform: scaleY(0.08); transition: transform 90ms linear; }
+.ntt-voice-bar.is-paused .ntt-voice-b, .ntt-voice-bar.is-finishing .ntt-voice-b { opacity: 0.35; }
+.ntt-voice-row { display: flex; justify-content: space-between; align-items: center; }
+.ntt-voice-btn { width: 40px; height: 40px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; padding: 0; box-shadow: none; }
+.ntt-voice-done { background: var(--text-normal) !important; color: var(--background-primary) !important; }
+.ntt-voice-bar.is-finishing .ntt-voice-btn { pointer-events: none; opacity: 0.5; }
+@media (prefers-reduced-motion: reduce) { .ntt-voice-b { transition: none; } }

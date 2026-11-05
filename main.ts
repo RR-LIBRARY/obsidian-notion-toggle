@@ -253,6 +253,7 @@ import {
 } from "./src/modals";
 import { ScrollSheetModal } from "./src/sheet-modal";
 import { installResearch, uninstallResearch } from "./src/research/wire";
+import { installVoice } from "./src/voice/wire";
 import { DEFAULT_OUTLINE_SETTINGS, type OutlineSettings } from "./src/outline-service";
 import { registerOutlineCommand, type OutlineCommandHost } from "./src/outline-command";
 import type { ResearchService } from "./src/research/service";
@@ -1186,6 +1187,7 @@ export default class NotionTogglePlugin extends Plugin {
     registerPaddingDiagnostic(this);
     // v1.7.0 — web research: side panel, commands, ribbon, background runs.
     installResearch(this);
+    installVoice(this); // v1.9.0 voice mode — see src/voice/
     // v1.8.23 — "Outline selection with AI": same-level toggles from the selection.
     registerOutlineCommand(this as unknown as OutlineCommandHost);
     this.addSettingTab(new NotionToggleSettingTab(this.app, this));
