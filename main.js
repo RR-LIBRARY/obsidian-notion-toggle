@@ -9678,6 +9678,8 @@ var VoiceController = class {
         let text;
         try {
           text = await transcribeWithRetry(voiceTransport, this.s, await vault.readBinary(wavFile));
+          if (this.s.voiceAutoLink)
+            text = autoLink(text, vault.getMarkdownFiles().map((f) => f.basename), item.note.replace(/^.*\//, "").replace(/\.md$/, ""));
         } catch (e) {
           if (manual)
             new import_obsidian11.Notice(`Voice: ${friendlyError(e instanceof VoiceError ? e.status : -1, e.message)}`, 8e3);

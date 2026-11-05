@@ -299,6 +299,7 @@ class VoiceController {
         let text: string;
         try {
           text = await transcribeWithRetry(voiceTransport, this.s, await vault.readBinary(wavFile));
+          if (this.s.voiceAutoLink) text = autoLink(text, vault.getMarkdownFiles().map((f) => f.basename), item.note.replace(/^.*\//, "").replace(/\.md$/, ""));
         } catch (e) {
           if (manual) new Notice(`Voice: ${friendlyError(e instanceof VoiceError ? e.status : -1, (e as Error).message)}`, 8000);
           break;

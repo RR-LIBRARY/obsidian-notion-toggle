@@ -1,3 +1,6 @@
+## 1.9.10
+- Voice: recordings written after the internet returns also get note auto-links.
+
 ## 1.9.9
 - Voice: spoken words matching an existing note name become [[links]] automatically (toggle in settings).
 - Voice: "Voice mode: self-test (5 sec)" command writes a mic/server/text report into the note.
