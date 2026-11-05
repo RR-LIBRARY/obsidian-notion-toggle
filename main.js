@@ -8773,7 +8773,9 @@ var DEFAULT_VOICE_SETTINGS = {
   voicePending: [],
   voiceAutoLink: true,
   voiceTermLink: false,
-  voicePhraseLink: false
+  voicePhraseLink: false,
+  voiceTermMinLen: 7,
+  voiceTermMaxNotes: 3
 };
 var VoiceError = class extends Error {
   constructor(message, status = 0) {
@@ -8918,14 +8920,21 @@ var COMMON = new Set("because between without through another something everythi
 function termsOf(body) {
   const out = /* @__PURE__ */ new Set();
   const clean = body.replace(/```[\s\S]*?```|`[^`]*`|\[\[[^\]]*\]\]|https?:\/\/\S+/g, " ");
-  for (const m of clean.matchAll(/[\p{L}][\p{L}\p{M}'-]{6,}/gu)) {
+  for (const m of clean.matchAll(/[\p{L}][\p{L}\p{M}'-]{3,}/gu)) {
     const w = m[0].toLowerCase();
     if (!COMMON.has(w))
       out.add(w);
   }
   return out;
 }
-function linkTerms(text, index, skip = "", max = 3) {
+function clampTermOpts(minLen, maxNotes) {
+  const n = (v, d, lo, hi) => {
+    const x = Math.round(Number(v));
+    return Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d;
+  };
+  return { minLen: n(minLen, 7, 4, 15), maxNotes: n(maxNotes, 3, 1, 10) };
+}
+function linkTerms(text, index, skip = "", max = 3, minLen = 7, maxNotes = 3) {
   const protect = /\[\[[^\]]*\]\]|`[^`]*`|https?:\/\/\S+/g;
   const parts = [];
   let i = 0;
@@ -8939,13 +8948,15 @@ function linkTerms(text, index, skip = "", max = 3) {
   const out = parts.map((p) => {
     if (p.lock)
       return p.t;
-    return p.t.replace(/[\p{L}][\p{L}\p{M}'-]{6,}/gu, (w) => {
+    return p.t.replace(/[\p{L}][\p{L}\p{M}'-]{3,}/gu, (w) => {
       var _a;
       const key = w.toLowerCase();
+      if ([...w].length < minLen || COMMON.has(key))
+        return w;
       if (made >= max || seen.has(key))
         return w;
       const notes = ((_a = index.get(key)) != null ? _a : []).filter((n) => n.toLowerCase() !== skip.toLowerCase());
-      if (!notes.length || notes.length > 3)
+      if (!notes.length || notes.length > maxNotes)
         return w;
       seen.add(key);
       made++;
@@ -9611,7 +9622,8 @@ async function linkAll(p, s, text, current) {
     text = autoLink(text, p.app.vault.getMarkdownFiles().map((f) => f.basename), current);
   if (s.voiceTermLink) {
     termIndex != null ? termIndex : termIndex = new TermIndex(p);
-    text = linkTerms(text, await termIndex.get(), current);
+    const o = clampTermOpts(s.voiceTermMinLen, s.voiceTermMaxNotes);
+    text = linkTerms(text, await termIndex.get(), current, 3, o.minLen, o.maxNotes);
   }
   return text;
 }
@@ -10029,12 +10041,20 @@ function renderVoiceSettings(containerEl, host) {
       await save();
     })
   );
-  new import_obsidian12.Setting(containerEl).setName("Advanced: link terms from other notes").setDesc("Thinking mode \u2014 bolte waqt koi khaas shabd (jaise 'ophthalmologist') kisi aur note me likha ho, to us note se link ho jayega. Sirf 7+ letter wale aur 1\u20133 notes me milne wale shabd; ek hisse me max 3 link. Note-name linking alag hai aur waise hi chalta hai.").addToggle(
+  new import_obsidian12.Setting(containerEl).setName("Advanced: link terms from other notes").setDesc("Thinking mode \u2014 bolte waqt koi khaas shabd (jaise 'ophthalmologist') kisi aur note me likha ho, to us note se link ho jayega. Shabd ki lambai aur notes ki ginti neeche ke 2 slider se badlein; ek hisse me max 3 link. Note-name linking alag hai aur waise hi chalta hai.").addToggle(
     (t) => t.setValue(s.voiceTermLink).onChange(async (v) => {
       s.voiceTermLink = v;
       await save();
     })
   );
+  const num = (name, desc, key, lo, hi) => new import_obsidian12.Setting(containerEl).setName(name).setDesc(desc).addSlider(
+    (sl) => sl.setLimits(lo, hi, 1).setValue(Number(s[key]) || (key === "voiceTermMinLen" ? 7 : 3)).setDynamicTooltip().onChange(async (v) => {
+      s[key] = v;
+      await save();
+    })
+  );
+  num("Term link: shortest word", "Itne ya zyada letter wala shabd hi link banega. Sujhav: 7 (kam karne par 'paani', 'kitab' jaise aam shabd bhi link hone lagenge).", "voiceTermMinLen", 4, 15);
+  num("Term link: max notes", "Shabd itne ya kam notes me likha ho tabhi link banega; zyada notes me ho to aam shabd maana jayega. Sujhav: 3 (chhota vault 2, bada vault 5).", "voiceTermMaxNotes", 1, 10);
   new import_obsidian12.Setting(containerEl).setName("Advanced: link matching lines").setDesc("Bolte waqt 4 ya zyada shabdon ki line agar kisi aur note me hu-ba-hu likhi ho, to wo line us note (aur uske heading) se link ho jayegi, jaise [[My work#Voice|offline me live text nahi dikhega]]. 2 se zyada notes me mili line ko aam maan kar chhod diya jata hai; ek hisse me max 2 line-link.").addToggle(
     (t) => t.setValue(s.voicePhraseLink).onChange(async (v) => {
       s.voicePhraseLink = v;

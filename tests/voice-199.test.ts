@@ -114,3 +114,22 @@ describe("voice line linking — Hinglish spellings", () => {
     expect(linkPhrases("offline mein live text nahin dikhega", idx)).toBe("[[My work#Voice|offline mein live text nahin dikhega]]");
   });
 });
+
+import { clampTermOpts } from "../src/voice/client";
+describe("term link settings", () => {
+  const idx = new Map<string, string[]>([["kidney", ["Bio"]], ["revision", ["A", "B", "C", "D"]], ["glaucoma", ["Eye"]]]);
+  it("default 7 letters: 6-letter word not linked, 8-letter linked", () => {
+    expect(linkTerms("kidney glaucoma", idx)).toBe("kidney [[Eye|glaucoma]]");
+  });
+  it("shortest word 6 links 'kidney'", () => {
+    expect(linkTerms("kidney", idx, "", 3, 6, 3)).toBe("[[Bio|kidney]]");
+  });
+  it("max notes 4 allows a word written in 4 notes", () => {
+    expect(linkTerms("revision", idx, "", 3, 7, 3)).toBe("revision");
+    expect(linkTerms("revision", idx, "", 3, 7, 4)).toBe("[[A|revision]]");
+  });
+  it("settings are clamped to safe ranges", () => {
+    expect(clampTermOpts(2, 50)).toEqual({ minLen: 4, maxNotes: 10 });
+    expect(clampTermOpts("x", undefined)).toEqual({ minLen: 7, maxNotes: 3 });
+  });
+});

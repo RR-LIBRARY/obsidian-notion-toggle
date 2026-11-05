@@ -82,3 +82,8 @@ Settings → "Advanced: link terms from other notes". When ON, a specific word y
 Settings → "Advanced: link matching lines". A spoken run of 4+ words that is written in another note becomes `[[Note#Heading|spoken words]]` and opens at that heading. Lines found in 3+ notes are skipped as common; max 2 per piece; current note skipped; me/mein, nahi/nahin, hai/he count as the same word. Default OFF.
 
 Tips: keep the term switch and line switch both ON for best "thinking mode"; write key ideas under clear headings so links land at the right place; if links feel too many, turn off the term switch and keep only lines.
+
+
+## Term link sliders (1.9.13)
+- **Shortest word** (default 7): words shorter than this never link. Lower = more links, more noise.
+- **Max notes** (default 3): a word written in more notes than this is treated as common. Small vault: 2, big vault: 5.

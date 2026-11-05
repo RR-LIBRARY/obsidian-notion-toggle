@@ -1,3 +1,6 @@
+## 1.9.13
+- Voice: sliders for term linking — shortest word (4–15, default 7) and max notes (1–10, default 3).
+
 ## 1.9.12
 - Voice: advanced switch "link matching lines" (off by default) — a spoken line of 4+ words written in another note links to that note and heading. Hinglish spellings (me/mein, nahi/nahin, hai/he) match.
 

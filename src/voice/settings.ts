@@ -85,13 +85,22 @@ export function renderVoiceSettings(containerEl: HTMLElement, host: { settings: 
     );
   new Setting(containerEl)
     .setName("Advanced: link terms from other notes")
-    .setDesc("Thinking mode — bolte waqt koi khaas shabd (jaise 'ophthalmologist') kisi aur note me likha ho, to us note se link ho jayega. Sirf 7+ letter wale aur 1–3 notes me milne wale shabd; ek hisse me max 3 link. Note-name linking alag hai aur waise hi chalta hai.")
+    .setDesc("Thinking mode — bolte waqt koi khaas shabd (jaise 'ophthalmologist') kisi aur note me likha ho, to us note se link ho jayega. Shabd ki lambai aur notes ki ginti neeche ke 2 slider se badlein; ek hisse me max 3 link. Note-name linking alag hai aur waise hi chalta hai.")
     .addToggle((t) =>
       t.setValue(s.voiceTermLink).onChange(async (v) => {
         s.voiceTermLink = v;
         await save();
       })
     );
+  const num = (name: string, desc: string, key: "voiceTermMinLen" | "voiceTermMaxNotes", lo: number, hi: number) =>
+    new Setting(containerEl).setName(name).setDesc(desc).addSlider((sl) =>
+      sl.setLimits(lo, hi, 1).setValue(Number(s[key]) || (key === "voiceTermMinLen" ? 7 : 3)).setDynamicTooltip().onChange(async (v) => {
+        s[key] = v;
+        await save();
+      })
+    );
+  num("Term link: shortest word", "Itne ya zyada letter wala shabd hi link banega. Sujhav: 7 (kam karne par 'paani', 'kitab' jaise aam shabd bhi link hone lagenge).", "voiceTermMinLen", 4, 15);
+  num("Term link: max notes", "Shabd itne ya kam notes me likha ho tabhi link banega; zyada notes me ho to aam shabd maana jayega. Sujhav: 3 (chhota vault 2, bada vault 5).", "voiceTermMaxNotes", 1, 10);
   new Setting(containerEl)
     .setName("Advanced: link matching lines")
     .setDesc("Bolte waqt 4 ya zyada shabdon ki line agar kisi aur note me hu-ba-hu likhi ho, to wo line us note (aur uske heading) se link ho jayegi, jaise [[My work#Voice|offline me live text nahi dikhega]]. 2 se zyada notes me mili line ko aam maan kar chhod diya jata hai; ek hisse me max 2 line-link.")

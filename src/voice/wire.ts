@@ -4,7 +4,7 @@
  */
 import { MarkdownView, Modal, Notice, TFile, requestUrl, setIcon, type Editor, type Plugin } from "obsidian";
 import { VoiceBar } from "./bar";
-import { DEFAULT_VOICE_SETTINGS, VoiceError, autoLink, linkPhrases, linkTerms, shinglesOf, termsOf, type PhraseHit, buildContext, friendlyError, transcribe, transcribeWithRetry, wavSeconds, type VoiceSettings, type VoiceTransport } from "./client";
+import { DEFAULT_VOICE_SETTINGS, VoiceError, autoLink, clampTermOpts, linkPhrases, linkTerms, shinglesOf, termsOf, type PhraseHit, buildContext, friendlyError, transcribe, transcribeWithRetry, wavSeconds, type VoiceSettings, type VoiceTransport } from "./client";
 import { VoiceRecorder } from "./recorder";
 import { CursorAnchor } from "./cursor";
 import { encodeWav } from "./audio";
@@ -129,7 +129,8 @@ async function linkAll(p: VoicePluginHost, s: VoiceSettings, text: string, curre
   if (s.voiceAutoLink) text = autoLink(text, p.app.vault.getMarkdownFiles().map((f) => f.basename), current);
   if (s.voiceTermLink) {
     termIndex ??= new TermIndex(p);
-    text = linkTerms(text, await termIndex.get(), current);
+    const o = clampTermOpts(s.voiceTermMinLen, s.voiceTermMaxNotes);
+    text = linkTerms(text, await termIndex.get(), current, 3, o.minLen, o.maxNotes);
   }
   return text;
 }

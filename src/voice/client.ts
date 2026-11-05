@@ -35,6 +35,10 @@ export interface VoiceSettings {
   voiceTermLink: boolean;
   /** v1.9.12 — advanced: link a spoken line (4+ words) to the note & heading where it is written. */
   voicePhraseLink: boolean;
+  /** v1.9.13 — advanced term linking: shortest word that can link (letters). */
+  voiceTermMinLen: number;
+  /** v1.9.13 — a word found in more notes than this is too common to link. */
+  voiceTermMaxNotes: number;
 }
 
 export const DEFAULT_VOICE_ENDPOINT = "https://notion-toggle-voice.lovable.app/api/public/transcribe";
@@ -57,6 +61,8 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   voiceAutoLink: true,
   voiceTermLink: false,
   voicePhraseLink: false,
+  voiceTermMinLen: 7,
+  voiceTermMaxNotes: 3,
 };
 
 export interface VoiceRequest {
@@ -215,11 +221,11 @@ export function autoLink(text: string, titles: string[], skip = ""): string {
 
 const COMMON = new Set("because between without through another something everything anything important question answer however actually already problem example different together sometimes tomorrow yesterday morning evening probably remember understand nothing whatever whenever wherever students teacher chapter question questions lekin kyunki isliye matlab jaisa wahan yahan bahut sabse hamesha".split(" "));
 
-/** Words of a note body worth indexing (lowercased, 7+ letters, not common). */
+/** Words of a note body worth indexing (lowercased, 4+ letters, not common; length limit applied at link time). */
 export function termsOf(body: string): Set<string> {
   const out = new Set<string>();
   const clean = body.replace(/```[\s\S]*?```|`[^`]*`|\[\[[^\]]*\]\]|https?:\/\/\S+/g, " ");
-  for (const m of clean.matchAll(/[\p{L}][\p{L}\p{M}'-]{6,}/gu)) {
+  for (const m of clean.matchAll(/[\p{L}][\p{L}\p{M}'-]{3,}/gu)) {
     const w = m[0].toLowerCase();
     if (!COMMON.has(w)) out.add(w);
   }
@@ -232,7 +238,15 @@ export function termsOf(body: string): Set<string> {
  * as specific (words used everywhere are skipped); max 3 new links per piece;
  * never inside existing links/code/URLs; the current note is skipped.
  */
-export function linkTerms(text: string, index: Map<string, string[]>, skip = "", max = 3): string {
+export function clampTermOpts(minLen: unknown, maxNotes: unknown): { minLen: number; maxNotes: number } {
+  const n = (v: unknown, d: number, lo: number, hi: number) => {
+    const x = Math.round(Number(v));
+    return Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d;
+  };
+  return { minLen: n(minLen, 7, 4, 15), maxNotes: n(maxNotes, 3, 1, 10) };
+}
+
+export function linkTerms(text: string, index: Map<string, string[]>, skip = "", max = 3, minLen = 7, maxNotes = 3): string {
   const protect = /\[\[[^\]]*\]\]|`[^`]*`|https?:\/\/\S+/g;
   const parts: Array<{ t: string; lock: boolean }> = [];
   let i = 0;
@@ -245,11 +259,12 @@ export function linkTerms(text: string, index: Map<string, string[]>, skip = "",
   let made = 0;
   const out = parts.map((p) => {
     if (p.lock) return p.t;
-    return p.t.replace(/[\p{L}][\p{L}\p{M}'-]{6,}/gu, (w) => {
+    return p.t.replace(/[\p{L}][\p{L}\p{M}'-]{3,}/gu, (w) => {
       const key = w.toLowerCase();
+      if ([...w].length < minLen || COMMON.has(key)) return w;
       if (made >= max || seen.has(key)) return w;
       const notes = (index.get(key) ?? []).filter((n) => n.toLowerCase() !== skip.toLowerCase());
-      if (!notes.length || notes.length > 3) return w;
+      if (!notes.length || notes.length > maxNotes) return w;
       seen.add(key);
       made++;
       return `[[${notes[0]}|${w}]]`;
