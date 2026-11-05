@@ -1,3 +1,8 @@
+## 1.9.6
+- Voice: phone-friendly setup box (big key field and buttons).
+- Voice: when the screen turns off, what you said so far is sent right away; when you come back the mic and keep-awake are re-opened automatically.
+- Clean-up keeps phrases like "theek hai?" and removes only filler sounds.
+
 ## 1.9.5
 - Voice card always fits inside the screen edges.
 

@@ -29,6 +29,29 @@ export class VoiceRecorder {
 
   constructor(private readonly ev: RecorderEvents) {}
 
+  /** v1.9.6 — screen turning off: send what was said so far right away. */
+  onHidden(): void {
+    if (this.chunks.length) this.flush(false);
+  }
+
+  /** v1.9.6 — back on screen: wake the audio engine, or re-open the mic if
+   *  the phone took it away. Returns true when the mic had to be re-opened. */
+  async revive(): Promise<boolean> {
+    if (!this.ctx) return false;
+    const track = this.stream?.getAudioTracks()[0];
+    if (track && track.readyState === "live" && this.ctx.state !== "closed") {
+      if (this.ctx.state !== "running") await this.ctx.resume().catch(() => undefined);
+      return false;
+    }
+    const keep = this.startedAt;
+    if (this.node) this.node.onaudioprocess = null;
+    this.stream?.getTracks().forEach((t) => t.stop());
+    try { await this.ctx.close(); } catch { /* already closed */ }
+    await this.start();
+    this.startedAt = keep;
+    return true;
+  }
+
   async start(): Promise<void> {
     const md = navigator.mediaDevices;
     if (!md?.getUserMedia) throw new Error("This device does not allow microphone access here.");

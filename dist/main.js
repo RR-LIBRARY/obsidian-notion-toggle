@@ -9135,6 +9135,35 @@ var VoiceRecorder = class {
     this.paused = false;
     this.startedAt = 0;
   }
+  /** v1.9.6 — screen turning off: send what was said so far right away. */
+  onHidden() {
+    if (this.chunks.length)
+      this.flush(false);
+  }
+  /** v1.9.6 — back on screen: wake the audio engine, or re-open the mic if
+   *  the phone took it away. Returns true when the mic had to be re-opened. */
+  async revive() {
+    var _a, _b;
+    if (!this.ctx)
+      return false;
+    const track = (_a = this.stream) == null ? void 0 : _a.getAudioTracks()[0];
+    if (track && track.readyState === "live" && this.ctx.state !== "closed") {
+      if (this.ctx.state !== "running")
+        await this.ctx.resume().catch(() => void 0);
+      return false;
+    }
+    const keep = this.startedAt;
+    if (this.node)
+      this.node.onaudioprocess = null;
+    (_b = this.stream) == null ? void 0 : _b.getTracks().forEach((t) => t.stop());
+    try {
+      await this.ctx.close();
+    } catch (e) {
+    }
+    await this.start();
+    this.startedAt = keep;
+    return true;
+  }
   async start() {
     const md = navigator.mediaDevices;
     if (!(md == null ? void 0 : md.getUserMedia))
@@ -9325,6 +9354,7 @@ var VoiceController = class {
     this.session = null;
     this.wake = null;
     this.fab = null;
+    this.screenOff = null;
   }
   get s() {
     return this.plugin.settings;
@@ -9414,6 +9444,7 @@ var VoiceController = class {
         }
       }
     );
+    this.watchScreen();
     if (this.s.voiceKeepAwake) {
       try {
         this.wake = (_f = await ((_e = navigator.wakeLock) == null ? void 0 : _e.request("screen"))) != null ? _f : null;
@@ -9422,8 +9453,37 @@ var VoiceController = class {
       }
     }
   }
+  /** v1.9.6 — keep going around screen-off: send the audio captured so far when
+   *  the screen goes off, and on return wake the mic and the keep-awake lock. */
+  watchScreen() {
+    const h = async () => {
+      var _a, _b;
+      const rec = this.rec;
+      if (!rec)
+        return;
+      if (document.visibilityState === "hidden")
+        return rec.onHidden();
+      try {
+        if (await rec.revive())
+          new import_obsidian11.Notice("Voice: mic re-opened after the screen was off \u2014 keep talking.", 5e3);
+      } catch (e) {
+        new import_obsidian11.Notice(`Voice: could not re-open the mic (${e.message}). Tap \u2713 to save what you said.`, 8e3);
+      }
+      if (this.s.voiceKeepAwake) {
+        try {
+          this.wake = (_b = await ((_a = navigator.wakeLock) == null ? void 0 : _a.request("screen"))) != null ? _b : this.wake;
+        } catch (e) {
+        }
+      }
+    };
+    const fn = () => void h();
+    document.addEventListener("visibilitychange", fn);
+    this.screenOff = () => document.removeEventListener("visibilitychange", fn);
+  }
   async finish(send) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
+    (_a = this.screenOff) == null ? void 0 : _a.call(this);
+    this.screenOff = null;
     const rec = this.rec;
     const bar = this.bar;
     const session = this.session;
@@ -9431,10 +9491,10 @@ var VoiceController = class {
       return;
     this.rec = null;
     await rec.stop(send);
-    void ((_a = this.wake) == null ? void 0 : _a.release().catch(() => void 0));
+    void ((_b = this.wake) == null ? void 0 : _b.release().catch(() => void 0));
     this.wake = null;
     if (!send) {
-      (_b = this.fab) == null ? void 0 : _b.removeClass("is-hidden");
+      (_c = this.fab) == null ? void 0 : _c.removeClass("is-hidden");
       bar == null ? void 0 : bar.destroy();
       this.bar = null;
       this.session = null;
@@ -9444,7 +9504,7 @@ var VoiceController = class {
     await session.end();
     await new Promise((r) => setTimeout(r, 900));
     bar == null ? void 0 : bar.destroy();
-    (_c = this.fab) == null ? void 0 : _c.removeClass("is-hidden");
+    (_d = this.fab) == null ? void 0 : _d.removeClass("is-hidden");
     if (this.bar === bar)
       this.bar = null;
     if (this.session === session)

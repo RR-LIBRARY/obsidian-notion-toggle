@@ -157,6 +157,7 @@ class VoiceController {
         },
       }
     );
+    this.watchScreen();
     if (this.s.voiceKeepAwake) {
       try {
         this.wake = await (navigator as unknown as { wakeLock?: { request(t: string): Promise<{ release(): Promise<void> }> } }).wakeLock?.request("screen") ?? null;
@@ -166,7 +167,33 @@ class VoiceController {
     }
   }
 
+  private screenOff: (() => void) | null = null;
+  /** v1.9.6 — keep going around screen-off: send the audio captured so far when
+   *  the screen goes off, and on return wake the mic and the keep-awake lock. */
+  private watchScreen(): void {
+    const h = async () => {
+      const rec = this.rec;
+      if (!rec) return;
+      if (document.visibilityState === "hidden") return rec.onHidden();
+      try {
+        if (await rec.revive()) new Notice("Voice: mic re-opened after the screen was off — keep talking.", 5000);
+      } catch (e) {
+        new Notice(`Voice: could not re-open the mic (${(e as Error).message}). Tap ✓ to save what you said.`, 8000);
+      }
+      if (this.s.voiceKeepAwake) {
+        try {
+          this.wake = (await (navigator as unknown as { wakeLock?: { request(t: string): Promise<{ release(): Promise<void> }> } }).wakeLock?.request("screen")) ?? this.wake;
+        } catch { /* not allowed */ }
+      }
+    };
+    const fn = () => void h();
+    document.addEventListener("visibilitychange", fn);
+    this.screenOff = () => document.removeEventListener("visibilitychange", fn);
+  }
+
   async finish(send: boolean): Promise<void> {
+    this.screenOff?.();
+    this.screenOff = null;
     const rec = this.rec;
     const bar = this.bar;
     const session = this.session;
