@@ -1,3 +1,6 @@
+## 1.9.5
+- Voice card always fits inside the screen edges.
+
 ## 1.9.4
 - Voice card: long-press and slide to move it up or down (position is remembered); choose compact or with live text, grey or colour wave; reset position in settings.
 - Pause / resume button lights up while paused.
