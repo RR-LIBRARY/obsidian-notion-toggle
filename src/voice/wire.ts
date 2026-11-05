@@ -146,7 +146,16 @@ class VoiceController {
           this.bar?.setPaused(this.rec.isPaused);
         },
       },
-      this.rec.startedAt
+      this.rec.startedAt,
+      {
+        lift: this.s.voiceBarLift ?? 0,
+        style: this.s.voiceBarStyle ?? "full",
+        wave: this.s.voiceBarWave ?? "muted",
+        onMoved: (lift) => {
+          this.s.voiceBarLift = lift;
+          void (this.plugin as unknown as { saveSettings?: () => Promise<void> }).saveSettings?.();
+        },
+      }
     );
     if (this.s.voiceKeepAwake) {
       try {

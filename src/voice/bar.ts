@@ -5,6 +5,14 @@
  */
 import { setIcon } from "obsidian";
 
+export interface VoiceBarLook {
+  lift: number;
+  style: "full" | "compact";
+  wave: "muted" | "accent";
+  /** Called once a long-press drag ends, with the new lift in px. */
+  onMoved(lift: number): void;
+}
+
 export interface VoiceBarActions {
   cancel(): void;
   done(): void;
@@ -27,7 +35,7 @@ export class VoiceBar {
   private pausedMs = 0;
   private pausedAt = 0;
 
-  constructor(private readonly actions: VoiceBarActions, private readonly startedAt: number) {
+  constructor(private readonly actions: VoiceBarActions, private readonly startedAt: number, private readonly look?: VoiceBarLook) {
     this.el = document.body.createDiv({ cls: "ntt-voice-bar", attr: { role: "region", "aria-label": "Voice mode" } });
     const top = this.el.createDiv({ cls: "ntt-voice-top" });
     this.timeEl = top.createSpan({ cls: "ntt-voice-time", text: "0:00" });
@@ -48,6 +56,56 @@ export class VoiceBar {
     done.onclick = () => this.actions.done();
     this.pauseBtn.onclick = () => this.actions.togglePause();
     this.timer = window.setInterval(() => this.tick(), 250);
+    if (look) {
+      this.el.toggleClass("is-compact", look.style === "compact");
+      this.el.toggleClass("is-accent", look.wave === "accent");
+      this.setLift(look.lift);
+      this.enableDrag();
+    }
+  }
+
+  private lift = 0;
+  private setLift(px: number): void {
+    const max = Math.max(0, window.innerHeight - this.el.offsetHeight - 120);
+    this.lift = Math.round(Math.min(max, Math.max(-60, px)));
+    this.el.style.setProperty("--ntt-voice-lift", `${this.lift}px`);
+  }
+
+  /** v1.9.4 — long-press the card (not a button), then slide up or down. */
+  private enableDrag(): void {
+    let timer = 0;
+    let startY = 0;
+    let startLift = 0;
+    let dragging = false;
+    const end = () => {
+      window.clearTimeout(timer);
+      if (dragging) {
+        dragging = false;
+        this.el.removeClass("is-dragging");
+        this.look?.onMoved(this.lift);
+      }
+    };
+    this.el.addEventListener("pointerdown", (e) => {
+      if ((e.target as HTMLElement).closest("button")) return;
+      startY = e.clientY;
+      startLift = this.lift;
+      timer = window.setTimeout(() => {
+        dragging = true;
+        this.el.addClass("is-dragging");
+        try { this.el.setPointerCapture(e.pointerId); } catch { /* ok */ }
+        (navigator as Navigator & { vibrate?: (n: number) => void }).vibrate?.(15);
+      }, 400);
+    });
+    this.el.addEventListener("pointermove", (e) => {
+      if (!dragging) {
+        if (Math.abs(e.clientY - startY) > 10) window.clearTimeout(timer);
+        return;
+      }
+      e.preventDefault();
+      this.setLift(startLift + (startY - e.clientY));
+    });
+    this.el.addEventListener("pointerup", end);
+    this.el.addEventListener("pointercancel", end);
   }
 
   private tick(): void {

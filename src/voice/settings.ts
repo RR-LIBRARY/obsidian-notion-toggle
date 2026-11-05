@@ -46,6 +46,28 @@ export function renderVoiceSettings(containerEl: HTMLElement, host: { settings: 
       await save();
     })
   );
+  new Setting(containerEl)
+    .setName("Voice card look")
+    .setDesc("Tip: long-press the voice card and slide it up or down to move it.")
+    .addDropdown((d) =>
+      d.addOption("full", "With live text").addOption("compact", "Compact (wave + buttons)").setValue(s.voiceBarStyle ?? "full").onChange(async (v) => {
+        s.voiceBarStyle = v as VoiceSettings["voiceBarStyle"];
+        await save();
+      })
+    )
+    .addDropdown((d) =>
+      d.addOption("muted", "Grey wave").addOption("accent", "Colour wave").setValue(s.voiceBarWave ?? "muted").onChange(async (v) => {
+        s.voiceBarWave = v as VoiceSettings["voiceBarWave"];
+        await save();
+      })
+    )
+    .addButton((btn) =>
+      btn.setButtonText("Reset position").onClick(async () => {
+        s.voiceBarLift = 0;
+        await save();
+        new Notice("Voice card is back in its normal spot.");
+      })
+    );
   new Setting(containerEl).setName("Keep screen on while recording").addToggle((t) =>
     t.setValue(s.voiceKeepAwake).onChange(async (v) => {
       s.voiceKeepAwake = v;

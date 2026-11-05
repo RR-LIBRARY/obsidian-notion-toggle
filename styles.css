@@ -2039,3 +2039,10 @@ body:not(:has(.ntt-fab-wrap)) .ntt-voice-fab { bottom: calc(env(safe-area-inset-
 @keyframes ntt-voice-pulse { 50% { opacity: 0.15; } }
 .ntt-voice-setup input { width: 100%; margin: 8px 0; }
 .ntt-voice-setup .ntt-voice-setup-row { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* v1.9.4 — movable, customisable voice card */
+.ntt-voice-bar { bottom: calc(env(safe-area-inset-bottom, 0px) + 72px + var(--ntt-voice-lift, 0px)); touch-action: pan-x; user-select: none; -webkit-user-select: none; transition: box-shadow 150ms, scale 150ms; }
+.ntt-voice-bar.is-dragging { scale: 1.03; box-shadow: var(--shadow-l), 0 0 0 2px var(--interactive-accent); }
+.ntt-voice-bar.is-compact .ntt-voice-text { display: none; }
+.ntt-voice-bar.is-accent .ntt-voice-b { background: var(--interactive-accent); }
+.ntt-voice-bar.is-paused .ntt-voice-pause { color: var(--interactive-accent) !important; }

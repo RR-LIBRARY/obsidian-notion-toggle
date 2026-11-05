@@ -15,6 +15,11 @@ export interface VoiceSettings {
   voiceKeywords: string;
   /** Floating mic button on notes. */
   voiceFab: boolean;
+  /** v1.9.4 — how far the voice card is lifted from its normal spot (px; long-press to drag). */
+  voiceBarLift: number;
+  /** "full" shows the live text box, "compact" only wave + buttons. */
+  voiceBarStyle: "full" | "compact";
+  voiceBarWave: "muted" | "accent";
   /** Keep the screen on while recording (mobile). */
   voiceKeepAwake: boolean;
   /** Folder for recordings that could not be transcribed (never lose audio). */
@@ -30,6 +35,9 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   voiceScript: "roman",
   voiceKeywords: "",
   voiceFab: true,
+  voiceBarLift: 0,
+  voiceBarStyle: "full",
+  voiceBarWave: "muted",
   voiceKeepAwake: true,
   voiceRescueFolder: "Voice recordings",
 };

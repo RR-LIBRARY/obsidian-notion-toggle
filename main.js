@@ -8763,6 +8763,9 @@ var DEFAULT_VOICE_SETTINGS = {
   voiceScript: "roman",
   voiceKeywords: "",
   voiceFab: true,
+  voiceBarLift: 0,
+  voiceBarStyle: "full",
+  voiceBarWave: "muted",
   voiceKeepAwake: true,
   voiceRescueFolder: "Voice recordings"
 };
@@ -8981,14 +8984,16 @@ var import_obsidian11 = require("obsidian");
 var import_obsidian10 = require("obsidian");
 var BARS = 56;
 var VoiceBar = class {
-  constructor(actions, startedAt) {
+  constructor(actions, startedAt, look) {
     this.actions = actions;
     this.startedAt = startedAt;
+    this.look = look;
     this.bars = [];
     this.levels = new Array(BARS).fill(0);
     this.shown = "";
     this.pausedMs = 0;
     this.pausedAt = 0;
+    this.lift = 0;
     this.el = document.body.createDiv({ cls: "ntt-voice-bar", attr: { role: "region", "aria-label": "Voice mode" } });
     const top = this.el.createDiv({ cls: "ntt-voice-top" });
     this.timeEl = top.createSpan({ cls: "ntt-voice-time", text: "0:00" });
@@ -9010,6 +9015,60 @@ var VoiceBar = class {
     done.onclick = () => this.actions.done();
     this.pauseBtn.onclick = () => this.actions.togglePause();
     this.timer = window.setInterval(() => this.tick(), 250);
+    if (look) {
+      this.el.toggleClass("is-compact", look.style === "compact");
+      this.el.toggleClass("is-accent", look.wave === "accent");
+      this.setLift(look.lift);
+      this.enableDrag();
+    }
+  }
+  setLift(px3) {
+    const max = Math.max(0, window.innerHeight - this.el.offsetHeight - 120);
+    this.lift = Math.round(Math.min(max, Math.max(-60, px3)));
+    this.el.style.setProperty("--ntt-voice-lift", `${this.lift}px`);
+  }
+  /** v1.9.4 — long-press the card (not a button), then slide up or down. */
+  enableDrag() {
+    let timer = 0;
+    let startY = 0;
+    let startLift = 0;
+    let dragging = false;
+    const end = () => {
+      var _a;
+      window.clearTimeout(timer);
+      if (dragging) {
+        dragging = false;
+        this.el.removeClass("is-dragging");
+        (_a = this.look) == null ? void 0 : _a.onMoved(this.lift);
+      }
+    };
+    this.el.addEventListener("pointerdown", (e) => {
+      if (e.target.closest("button"))
+        return;
+      startY = e.clientY;
+      startLift = this.lift;
+      timer = window.setTimeout(() => {
+        var _a;
+        dragging = true;
+        this.el.addClass("is-dragging");
+        try {
+          this.el.setPointerCapture(e.pointerId);
+        } catch (e2) {
+        }
+        (_a = navigator.vibrate) == null ? void 0 : _a.call(navigator, 15);
+      }, 400);
+    });
+    this.el.addEventListener("pointermove", (e) => {
+      if (!dragging) {
+        if (Math.abs(e.clientY - startY) > 10)
+          window.clearTimeout(timer);
+        return;
+      }
+      e.preventDefault();
+      this.setLift(startLift + (startY - e.clientY));
+    });
+    this.el.addEventListener("pointerup", end);
+    this.el.addEventListener("pointercancel", end);
   }
   tick() {
     const now = this.pausedAt || Date.now();
@@ -9280,7 +9339,7 @@ var VoiceController = class {
       void this.start();
   }
   async start() {
-    var _a, _b, _c;
+    var _a, _b, _c, _d, _e, _f;
     const view = this.plugin.app.workspace.getActiveViewOfType(import_obsidian11.MarkdownView);
     if (!view)
       return void new import_obsidian11.Notice("Open a note first, then start voice mode.");
@@ -9343,11 +9402,21 @@ var VoiceController = class {
           (_a2 = this.bar) == null ? void 0 : _a2.setPaused(this.rec.isPaused);
         }
       },
-      this.rec.startedAt
+      this.rec.startedAt,
+      {
+        lift: (_b = this.s.voiceBarLift) != null ? _b : 0,
+        style: (_c = this.s.voiceBarStyle) != null ? _c : "full",
+        wave: (_d = this.s.voiceBarWave) != null ? _d : "muted",
+        onMoved: (lift) => {
+          var _a2, _b2;
+          this.s.voiceBarLift = lift;
+          void ((_b2 = (_a2 = this.plugin).saveSettings) == null ? void 0 : _b2.call(_a2));
+        }
+      }
     );
     if (this.s.voiceKeepAwake) {
       try {
-        this.wake = (_c = await ((_b = navigator.wakeLock) == null ? void 0 : _b.request("screen"))) != null ? _c : null;
+        this.wake = (_f = await ((_e = navigator.wakeLock) == null ? void 0 : _e.request("screen"))) != null ? _f : null;
       } catch (e) {
         this.wake = null;
       }
@@ -9456,6 +9525,29 @@ function renderVoiceSettings(containerEl, host) {
     (t) => t.setValue(s.voiceFab).onChange(async (v) => {
       s.voiceFab = v;
       await save();
+    })
+  );
+  new import_obsidian12.Setting(containerEl).setName("Voice card look").setDesc("Tip: long-press the voice card and slide it up or down to move it.").addDropdown(
+    (d) => {
+      var _a;
+      return d.addOption("full", "With live text").addOption("compact", "Compact (wave + buttons)").setValue((_a = s.voiceBarStyle) != null ? _a : "full").onChange(async (v) => {
+        s.voiceBarStyle = v;
+        await save();
+      });
+    }
+  ).addDropdown(
+    (d) => {
+      var _a;
+      return d.addOption("muted", "Grey wave").addOption("accent", "Colour wave").setValue((_a = s.voiceBarWave) != null ? _a : "muted").onChange(async (v) => {
+        s.voiceBarWave = v;
+        await save();
+      });
+    }
+  ).addButton(
+    (btn) => btn.setButtonText("Reset position").onClick(async () => {
+      s.voiceBarLift = 0;
+      await save();
+      new import_obsidian12.Notice("Voice card is back in its normal spot.");
     })
   );
   new import_obsidian12.Setting(containerEl).setName("Keep screen on while recording").addToggle(

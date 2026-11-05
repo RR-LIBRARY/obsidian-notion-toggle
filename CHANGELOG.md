@@ -1,3 +1,7 @@
+## 1.9.4
+- Voice card: long-press and slide to move it up or down (position is remembered); choose compact or with live text, grey or colour wave; reset position in settings.
+- Pause / resume button lights up while paused.
+
 ## 1.9.3
 - Voice mode: Lovable-style wave (centre-out, tapered), bigger ✕ and ✓ buttons, text appears every few seconds even in noisy places, smarter clean-up of mis-heard words, one-step key setup on first mic tap.
 
