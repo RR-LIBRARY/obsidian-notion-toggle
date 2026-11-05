@@ -2026,3 +2026,16 @@ body.ntt-notion-look .callout.is-collapsible:has(> .callout-content > p:only-chi
 .ntt-voice-fab.is-off, .ntt-voice-fab.is-hidden { display: none; }
 /* v1.9.2 — with the autoscroll button turned off, the mic takes its place */
 body:not(:has(.ntt-fab-wrap)) .ntt-voice-fab { bottom: calc(env(safe-area-inset-bottom, 0px) + 100px); }
+
+/* v1.9.3 — Lovable look: soft symmetric wave, clear ✕ and ✓ buttons */
+.ntt-voice-bar { border-radius: 28px; padding: 12px 14px; }
+.ntt-voice-wave { gap: 3px; height: 40px; }
+.ntt-voice-b { border-radius: 99px; background: var(--text-muted); transition: transform 120ms ease-out; }
+.ntt-voice-row .ntt-voice-cancel { width: 44px; height: 44px; background: var(--background-primary) !important; border: 1px solid var(--background-modifier-border) !important; color: var(--text-normal) !important; }
+.ntt-voice-row .ntt-voice-done { width: 48px; height: 48px; box-shadow: var(--shadow-s); }
+.ntt-voice-row .ntt-voice-pause { width: 36px; height: 36px; background: transparent !important; color: var(--text-muted) !important; }
+.ntt-voice-btn svg { width: 22px; height: 22px; }
+.ntt-voice-bar.is-finishing .ntt-voice-b { animation: ntt-voice-pulse 1.2s ease-in-out infinite; }
+@keyframes ntt-voice-pulse { 50% { opacity: 0.15; } }
+.ntt-voice-setup input { width: 100%; margin: 8px 0; }
+.ntt-voice-setup .ntt-voice-setup-row { display: flex; gap: 8px; justify-content: flex-end; }

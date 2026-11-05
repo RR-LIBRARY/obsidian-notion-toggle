@@ -2,10 +2,11 @@
  * v1.9.0 — installs voice mode: ribbon mic, commands, the bar, and writing
  * into the note at the cursor. One call from onload() keeps main.ts small.
  */
-import { MarkdownView, Notice, requestUrl, setIcon, type Editor, type Plugin } from "obsidian";
+import { MarkdownView, Modal, Notice, requestUrl, setIcon, type Editor, type Plugin } from "obsidian";
 import { VoiceBar } from "./bar";
-import { DEFAULT_VOICE_SETTINGS, transcribeWithRetry, type VoiceSettings, type VoiceTransport } from "./client";
+import { DEFAULT_VOICE_SETTINGS, transcribe, transcribeWithRetry, type VoiceSettings, type VoiceTransport } from "./client";
 import { VoiceRecorder } from "./recorder";
+import { encodeWav } from "./audio";
 import { DictationSession } from "./session";
 
 export interface VoicePluginHost extends Plugin {
@@ -22,6 +23,52 @@ export function withVoiceDefaults(settings: object): VoiceSettings {
   const s = settings as Record<string, unknown>;
   for (const [k, v] of Object.entries(DEFAULT_VOICE_SETTINGS)) if (s[k] === undefined || s[k] === null) s[k] = v;
   return settings as VoiceSettings;
+}
+
+/** v1.9.3 — one-step setup: paste the key, it is checked and saved, then recording starts. */
+class VoiceSetupModal extends Modal {
+  constructor(private readonly host: VoicePluginHost, private readonly then: () => void) {
+    super(host.app);
+  }
+  onOpen(): void {
+    const s = this.host.settings as VoiceSettings;
+    this.contentEl.addClass("ntt-voice-setup");
+    this.titleEl.setText("Set up voice mode");
+    this.contentEl.createEl("p", { text: "Paste your voice key once (Lovable → Settings → Secrets → VOICE_PLUGIN_KEY). After that, just tap the mic." });
+    const input = this.contentEl.createEl("input", { type: "password", attr: { placeholder: "Voice key" } });
+    const row = this.contentEl.createDiv({ cls: "ntt-voice-setup-row" });
+    const paste = row.createEl("button", { text: "Paste" });
+    const go = row.createEl("button", { text: "Connect & start", cls: "mod-cta" });
+    paste.onclick = async () => {
+      try { input.value = (await navigator.clipboard.readText()).trim(); } catch { new Notice("Long-press the box and paste instead."); }
+    };
+    go.onclick = async () => {
+      const key = input.value.trim();
+      if (!key) return void new Notice("Paste the key first.");
+      go.disabled = true;
+      go.setText("Checking…");
+      const old = s.voiceKey;
+      s.voiceKey = key;
+      try {
+        await transcribe(voiceTransport, s, encodeWav(new Float32Array(16000), 16000));
+      } catch (e) {
+        const msg = (e as Error).message;
+        if (!/empty|no speech/i.test(msg)) {
+          s.voiceKey = old;
+          go.disabled = false;
+          go.setText("Connect & start");
+          return void new Notice(`Voice: ${msg}`, 8000);
+        }
+      }
+      await (this.host as unknown as { saveSettings?: () => Promise<void> }).saveSettings?.();
+      new Notice("Voice mode is connected ✓");
+      this.close();
+      this.then();
+    };
+  }
+  onClose(): void {
+    this.contentEl.empty();
+  }
 }
 
 class VoiceController {
@@ -48,7 +95,7 @@ class VoiceController {
     const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view) return void new Notice("Open a note first, then start voice mode.");
     if (!this.s.voiceKey.trim()) {
-      new Notice("Voice mode needs your voice key: Settings → Notion Toggle → Voice mode.", 8000);
+      new VoiceSetupModal(this.plugin, () => void this.start()).open();
       return;
     }
     const editor = view.editor;

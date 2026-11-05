@@ -106,9 +106,10 @@ export function hasSpeech(samples: Float32Array, rate = TARGET_RATE, threshold =
  */
 export class Segmenter {
   private quietMs = 0;
+  private floor = 0.01;
   constructor(
-    private readonly softSec = 5,
-    private readonly hardSec = 25,
+    private readonly softSec = 3,
+    private readonly hardSec = 12,
     private readonly pauseMs = 700,
     private readonly threshold = 0.012
   ) {}
@@ -117,7 +118,11 @@ export class Segmenter {
   }
   /** Feed one chunk; returns true when the piece should be cut now. */
   push(level: number, chunkMs: number, pieceSec: number): boolean {
-    this.quietMs = level < this.threshold ? this.quietMs + chunkMs : 0;
+    // v1.9.3 — follow the room's background noise so pauses are found even
+    // in a noisy place (fan, traffic), not only in a silent room.
+    this.floor = level < this.floor ? level : this.floor * 0.995 + level * 0.005;
+    const quiet = level < Math.max(this.threshold, this.floor * 2);
+    this.quietMs = quiet ? this.quietMs + chunkMs : 0;
     if (pieceSec >= this.hardSec) return true;
     return pieceSec >= this.softSec && this.quietMs >= this.pauseMs;
   }

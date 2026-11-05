@@ -8820,7 +8820,7 @@ async function transcribe(transport, s, wav) {
   var _a;
   if (!s.voiceEndpoint.trim() || !s.voiceKey.trim())
     throw new VoiceError("Add the voice key in Settings \u2192 Notion Toggle \u2192 Voice mode.", 401);
-  const { body, contentType } = buildMultipart({ prompt: buildPrompt(s), languages: s.voiceLanguages, script: s.voiceScript }, wav);
+  const { body, contentType } = buildMultipart({ prompt: buildPrompt(s), languages: s.voiceLanguages, script: s.voiceScript, polish: "1" }, wav);
   let res;
   try {
     res = await transport({ url: s.voiceEndpoint.trim(), method: "POST", headers: { "x-voice-key": s.voiceKey.trim() }, body, contentType });
@@ -8944,19 +8944,22 @@ function hasSpeech(samples, rate = TARGET_RATE, threshold = 0.012) {
   return voiced * 0.05 >= 0.3;
 }
 var Segmenter = class {
-  constructor(softSec = 5, hardSec = 25, pauseMs = 700, threshold = 0.012) {
+  constructor(softSec = 3, hardSec = 12, pauseMs = 700, threshold = 0.012) {
     this.softSec = softSec;
     this.hardSec = hardSec;
     this.pauseMs = pauseMs;
     this.threshold = threshold;
     this.quietMs = 0;
+    this.floor = 0.01;
   }
   reset() {
     this.quietMs = 0;
   }
   /** Feed one chunk; returns true when the piece should be cut now. */
   push(level, chunkMs, pieceSec) {
-    this.quietMs = level < this.threshold ? this.quietMs + chunkMs : 0;
+    this.floor = level < this.floor ? level : this.floor * 0.995 + level * 5e-3;
+    const quiet = level < Math.max(this.threshold, this.floor * 2);
+    this.quietMs = quiet ? this.quietMs + chunkMs : 0;
     if (pieceSec >= this.hardSec)
       return true;
     return pieceSec >= this.softSec && this.quietMs >= this.pauseMs;
@@ -8976,7 +8979,7 @@ var import_obsidian11 = require("obsidian");
 
 // src/voice/bar.ts
 var import_obsidian10 = require("obsidian");
-var BARS = 48;
+var BARS = 56;
 var VoiceBar = class {
   constructor(actions, startedAt) {
     this.actions = actions;
@@ -9013,11 +9016,19 @@ var VoiceBar = class {
     const s = Math.max(0, Math.floor((now - this.startedAt - this.pausedMs) / 1e3));
     this.timeEl.setText(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`);
   }
+  /** v1.9.3 — Lovable-style wave: newest sound in the centre, spreading out
+   *  to both sides, tall in the middle and tapering to dots at the edges. */
   level(l) {
-    this.levels.push(Math.min(1, l * 9));
-    this.levels.shift();
-    for (let i = 0; i < BARS; i++)
-      this.bars[i].style.transform = `scaleY(${0.08 + this.levels[i] * 0.92})`;
+    const v = Math.min(1, Math.sqrt(l * 12));
+    this.levels.unshift(v);
+    this.levels.pop();
+    const mid = (BARS - 1) / 2;
+    for (let i = 0; i < BARS; i++) {
+      const d = Math.abs(i - mid);
+      const taper = Math.cos(d / (mid + 1) * (Math.PI / 2));
+      const h = this.levels[Math.floor(d)] * taper;
+      this.bars[i].style.transform = `scaleY(${0.1 + h * 0.9})`;
+    }
   }
   setPaused(p) {
     if (p)
@@ -9195,6 +9206,58 @@ function withVoiceDefaults(settings) {
       s[k] = v;
   return settings;
 }
+var VoiceSetupModal = class extends import_obsidian11.Modal {
+  constructor(host, then) {
+    super(host.app);
+    this.host = host;
+    this.then = then;
+  }
+  onOpen() {
+    const s = this.host.settings;
+    this.contentEl.addClass("ntt-voice-setup");
+    this.titleEl.setText("Set up voice mode");
+    this.contentEl.createEl("p", { text: "Paste your voice key once (Lovable \u2192 Settings \u2192 Secrets \u2192 VOICE_PLUGIN_KEY). After that, just tap the mic." });
+    const input = this.contentEl.createEl("input", { type: "password", attr: { placeholder: "Voice key" } });
+    const row = this.contentEl.createDiv({ cls: "ntt-voice-setup-row" });
+    const paste = row.createEl("button", { text: "Paste" });
+    const go = row.createEl("button", { text: "Connect & start", cls: "mod-cta" });
+    paste.onclick = async () => {
+      try {
+        input.value = (await navigator.clipboard.readText()).trim();
+      } catch (e) {
+        new import_obsidian11.Notice("Long-press the box and paste instead.");
+      }
+    };
+    go.onclick = async () => {
+      var _a, _b;
+      const key = input.value.trim();
+      if (!key)
+        return void new import_obsidian11.Notice("Paste the key first.");
+      go.disabled = true;
+      go.setText("Checking\u2026");
+      const old = s.voiceKey;
+      s.voiceKey = key;
+      try {
+        await transcribe(voiceTransport, s, encodeWav(new Float32Array(16e3), 16e3));
+      } catch (e) {
+        const msg = e.message;
+        if (!/empty|no speech/i.test(msg)) {
+          s.voiceKey = old;
+          go.disabled = false;
+          go.setText("Connect & start");
+          return void new import_obsidian11.Notice(`Voice: ${msg}`, 8e3);
+        }
+      }
+      await ((_b = (_a = this.host).saveSettings) == null ? void 0 : _b.call(_a));
+      new import_obsidian11.Notice("Voice mode is connected \u2713");
+      this.close();
+      this.then();
+    };
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
 var VoiceController = class {
   constructor(plugin) {
     this.plugin = plugin;
@@ -9222,7 +9285,7 @@ var VoiceController = class {
     if (!view)
       return void new import_obsidian11.Notice("Open a note first, then start voice mode.");
     if (!this.s.voiceKey.trim()) {
-      new import_obsidian11.Notice("Voice mode needs your voice key: Settings \u2192 Notion Toggle \u2192 Voice mode.", 8e3);
+      new VoiceSetupModal(this.plugin, () => void this.start()).open();
       return;
     }
     const editor = view.editor;

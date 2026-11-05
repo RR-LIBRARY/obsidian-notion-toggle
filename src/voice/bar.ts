@@ -11,7 +11,7 @@ export interface VoiceBarActions {
   togglePause(): void;
 }
 
-const BARS = 48;
+const BARS = 56;
 
 export class VoiceBar {
   readonly el: HTMLElement;
@@ -56,10 +56,19 @@ export class VoiceBar {
     this.timeEl.setText(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`);
   }
 
+  /** v1.9.3 — Lovable-style wave: newest sound in the centre, spreading out
+   *  to both sides, tall in the middle and tapering to dots at the edges. */
   level(l: number): void {
-    this.levels.push(Math.min(1, l * 9));
-    this.levels.shift();
-    for (let i = 0; i < BARS; i++) this.bars[i].style.transform = `scaleY(${0.08 + this.levels[i] * 0.92})`;
+    const v = Math.min(1, Math.sqrt(l * 12));
+    this.levels.unshift(v);
+    this.levels.pop();
+    const mid = (BARS - 1) / 2;
+    for (let i = 0; i < BARS; i++) {
+      const d = Math.abs(i - mid);
+      const taper = Math.cos((d / (mid + 1)) * (Math.PI / 2));
+      const h = this.levels[Math.floor(d)] * taper;
+      this.bars[i].style.transform = `scaleY(${0.1 + h * 0.9})`;
+    }
   }
 
   setPaused(p: boolean): void {

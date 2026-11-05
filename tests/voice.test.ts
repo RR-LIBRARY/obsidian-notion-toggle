@@ -21,10 +21,17 @@ describe("voice audio", () => {
     const out = normalize(tone(1, 0.01));
     expect(Math.max(...out)).toBeCloseTo(0.08, 2);
   });
-  test("piece cut: at a pause after 25 s, always at 60 s, never early", () => {
+  test("piece cut: at a pause after 3 s, always at 12 s, never early", () => {
     const seg = new Segmenter();
-    expect(seg.push(0, 800, 3)).toBe(false);
-    expect(seg.push(0, 800, 26)).toBe(true);
+    expect(seg.push(0, 800, 2)).toBe(false);
+    expect(seg.push(0, 800, 4)).toBe(true);
+    expect(new Segmenter().push(0.5, 90, 12)).toBe(true);
+  });
+  test("pauses are found in a noisy room", () => {
+    const seg = new Segmenter();
+    for (let i = 0; i < 800; i++) seg.push(0.05, 90, 1);
+    expect(seg.push(0.3, 90, 4)).toBe(false);
+    expect(seg.push(0.05, 800, 4)).toBe(true);
     expect(new Segmenter().push(0.5, 90, 60)).toBe(true);
   });
   test("pieces join with one space", () => {

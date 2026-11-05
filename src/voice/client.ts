@@ -88,7 +88,7 @@ export function buildMultipart(fields: Record<string, string>, wav: ArrayBuffer)
 
 export async function transcribe(transport: VoiceTransport, s: VoiceSettings, wav: ArrayBuffer): Promise<string> {
   if (!s.voiceEndpoint.trim() || !s.voiceKey.trim()) throw new VoiceError("Add the voice key in Settings → Notion Toggle → Voice mode.", 401);
-  const { body, contentType } = buildMultipart({ prompt: buildPrompt(s), languages: s.voiceLanguages, script: s.voiceScript }, wav);
+  const { body, contentType } = buildMultipart({ prompt: buildPrompt(s), languages: s.voiceLanguages, script: s.voiceScript, polish: "1" }, wav);
   let res: { status: number; text: string };
   try {
     res = await transport({ url: s.voiceEndpoint.trim(), method: "POST", headers: { "x-voice-key": s.voiceKey.trim() }, body, contentType });
