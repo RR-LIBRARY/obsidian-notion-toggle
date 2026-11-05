@@ -248,3 +248,5 @@ The rules were already the reader's; now the **loop mechanics** are too (ported 
 ## Voice mode
 
 Speak to write notes — setup, voice commands, settings and limitations: see [docs/VOICE_MODE.md](docs/VOICE_MODE.md).
+
+📋 **All features in one place:** [docs/FEATURES.md](docs/FEATURES.md)
