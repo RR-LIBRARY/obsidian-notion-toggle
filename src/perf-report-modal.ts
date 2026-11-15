@@ -48,6 +48,8 @@ export async function exportPerfReport(host: PerfHost): Promise<void> {
 
 export class PerfReportModal extends Modal {
   private readonly body: string;
+  /** v1.9.28 — real Component so Obsidian can clean up rendered content (a Modal is not one). */
+  private readonly view = new Component();
 
   constructor(private readonly host: PerfHost) {
     super(host.app);
@@ -60,8 +62,9 @@ export class PerfReportModal extends Modal {
     contentEl.addClass("notion-toggle-perf-modal");
     contentEl.createEl("h2", { text: "Quiz performance report" });
     const md = contentEl.createDiv({ cls: "ntt-perf-body" });
+    this.view.load();
     try {
-      void MarkdownRenderer.render(this.host.app, this.body, md, "", this as unknown as Component);
+      void MarkdownRenderer.render(this.host.app, this.body, md, "", this.view);
     } catch {
       md.createEl("pre", { text: this.body });
     }
@@ -84,6 +87,7 @@ export class PerfReportModal extends Modal {
   }
 
   onClose(): void {
+    this.view.unload();
     this.contentEl.empty();
   }
 }

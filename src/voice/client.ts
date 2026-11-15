@@ -79,10 +79,11 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
 
 export interface VoiceRequest {
   url: string;
-  method: "POST";
+  method: "POST" | "GET";
   headers: Record<string, string>;
-  body: ArrayBuffer;
-  contentType: string;
+  /** Absent for the v1.9.28 GET health check. */
+  body?: ArrayBuffer;
+  contentType?: string;
 }
 export type VoiceTransport = (req: VoiceRequest) => Promise<{ status: number; text: string }>;
 
@@ -122,6 +123,28 @@ export function friendlyError(status: number, msg: string): string {
   if (status === 401) return "Voice key galat hai. Settings → Voice mode me sahi key daalein.";
   if (status === 0) return "Internet nahi hai. Audio save ho gaya — net aate hi apne aap likh diya jayega.";
   return msg;
+}
+
+/**
+ * v1.9.28 — asks the voice server whether its own AI key works (GET on the same address).
+ * Catches the "workspace moved, server key broke" case before any audio is recorded.
+ */
+export async function checkServer(transport: VoiceTransport, s: Pick<VoiceSettings, "voiceEndpoint" | "voiceKey">): Promise<{ ok: boolean; text: string }> {
+  let res: { status: number; text: string };
+  try {
+    res = await transport({ url: s.voiceEndpoint.trim(), method: "GET", headers: { "x-voice-key": s.voiceKey.trim() } });
+  } catch (e) {
+    return { ok: false, text: `Server tak nahi pahunche (${(e as Error).message || "network"})` };
+  }
+  let d: { ok?: boolean; ai?: string; problem?: string } = {};
+  try { d = JSON.parse(res.text); } catch { /* old server without health check */ }
+  if (d.ai === "ok") return { ok: true, text: "Server AI ready" };
+  if (d.ai?.startsWith("not_checked")) return { ok: false, text: "Server ne voice key nahi maani — Settings me sahi key daalein" };
+  if (d.problem === "no_credits") return { ok: false, text: "Server AI: Lovable credits khatam" };
+  if (d.problem === "ai_key_broken" || d.problem === "missing_secret")
+    return { ok: false, text: 'Server ki AI key band hai (workspace move?) — Lovable me bhejiye: "Voice health check karke fix karo"' };
+  if (typeof d.ok !== "boolean") return { ok: true, text: `Server reachable (${res.status}), health check not available` };
+  return { ok: false, text: `Server AI problem (${d.problem ?? res.status})` };
 }
 
 /** v1.9.9 — "pichhla mitao" / "undo last" spoken on its own removes the last written piece. */

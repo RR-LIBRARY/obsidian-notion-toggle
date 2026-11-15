@@ -4,7 +4,7 @@
  */
 import { FuzzySuggestModal, MarkdownView, Modal, Notice, TFile, requestUrl, setIcon, type Editor, type Plugin } from "obsidian";
 import { VoiceBar } from "./bar";
-import { DEFAULT_VOICE_SETTINGS, VoiceError, autoLink, autoMaxNotes, clampTermOpts, linkPhrases, linkTerms, shinglesOf, termsOf, type PhraseHit, buildContext, friendlyError, transcribe, transcribeWithRetry, wavSeconds, withTimeout, upgradeVoiceEndpoint, type VoiceSettings, type VoiceTransport } from "./client";
+import { DEFAULT_VOICE_SETTINGS, VoiceError, autoLink, autoMaxNotes, clampTermOpts, linkPhrases, linkTerms, shinglesOf, termsOf, type PhraseHit, buildContext, friendlyError, checkServer, transcribe, transcribeWithRetry, wavSeconds, withTimeout, upgradeVoiceEndpoint, type VoiceSettings, type VoiceTransport } from "./client";
 import { VoiceRecorder } from "./recorder";
 import { CursorAnchor } from "./cursor";
 import { TARGET_RATE, downsample, encodeWav, hasSpeech, joinPiece, normalize, splitLong } from "./audio";
@@ -516,6 +516,10 @@ class VoiceController {
     const add = (ok: boolean, t: string) => lines.push(`> ${ok ? "✅" : "❌"} ${t}`);
     add(!!this.s.voiceKey.trim(), "Voice key saved");
     add(navigator.onLine !== false, "Internet");
+    if (this.s.voiceKey.trim()) {
+      const h = await checkServer(voiceTransport, this.s);
+      add(h.ok, h.text);
+    }
     const pieces: ArrayBuffer[] = [];
     let peak = 0;
     const rec = new VoiceRecorder({ onLevel: (l) => (peak = Math.max(peak, l)), onPiece: (w) => w && pieces.push(w) });

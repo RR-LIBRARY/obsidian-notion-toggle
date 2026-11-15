@@ -1,3 +1,10 @@
+## 1.9.28
+- Voice self-test now checks the voice server's own AI first and says plainly if it broke (for example after the Lovable project moved workspace), with the exact message to send to Lovable. Works even when the mic does not open.
+- If the server's AI key breaks, recordings show a clear message instead of a vague error, and the audio stays saved to be written later.
+- Fixed "Quiz performance report": it no longer causes an Obsidian memory-leak warning (renderMarkdown now gets a real Component).
+- Deep checks in real Obsidian 1.13.7: plugin load, all 86 commands, mic recording into a note, self-test, and offline recording surviving a full restart.
+- New checks: tests/voice-server-health.test.ts, tests/perf-report-component.test.ts.
+
 ## 1.9.27
 - Voice: fixed "LOVABLE_API_KEY is not registered for this project". The old voice server stopped working, so voice mode now uses a new voice server. Saved settings move over automatically; a custom address you typed yourself is kept.
 - Audio saved in the rescue folder while the old server failed is written into its note automatically once the new server answers (or run "Voice mode: write saved recordings now").
