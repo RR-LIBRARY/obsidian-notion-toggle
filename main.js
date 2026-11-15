@@ -9443,7 +9443,14 @@ var VoiceBar = class {
 };
 
 // src/voice/client.ts
-var DEFAULT_VOICE_ENDPOINT = "https://notion-toggle-voice.lovable.app/api/public/transcribe";
+var DEFAULT_VOICE_ENDPOINT = "https://project--c35eb88f-50bf-4da0-b80f-c79f43c5b539.lovable.app/api/public/transcribe";
+var OLD_VOICE_ENDPOINTS = ["https://notion-toggle-voice.lovable.app/api/public/transcribe"];
+function upgradeVoiceEndpoint(current) {
+  const v = typeof current === "string" ? current.trim().replace(/\/+$/, "") : "";
+  if (!v || OLD_VOICE_ENDPOINTS.includes(v))
+    return DEFAULT_VOICE_ENDPOINT;
+  return v;
+}
 var DEFAULT_VOICE_SETTINGS = {
   voiceEndpoint: DEFAULT_VOICE_ENDPOINT,
   voiceKey: "",
@@ -10136,6 +10143,7 @@ function withVoiceDefaults(settings) {
   for (const [k, v] of Object.entries(DEFAULT_VOICE_SETTINGS))
     if (s[k] === void 0 || s[k] === null)
       s[k] = Array.isArray(v) ? [...v] : v;
+  s.voiceEndpoint = upgradeVoiceEndpoint(s.voiceEndpoint);
   return settings;
 }
 var VoiceSetupModal = class extends import_obsidian13.Modal {

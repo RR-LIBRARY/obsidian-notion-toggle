@@ -1,3 +1,8 @@
+## 1.9.27
+- Voice: fixed "LOVABLE_API_KEY is not registered for this project". The old voice server stopped working, so voice mode now uses a new voice server. Saved settings move over automatically; a custom address you typed yourself is kept.
+- Audio saved in the rescue folder while the old server failed is written into its note automatically once the new server answers (or run "Voice mode: write saved recordings now").
+- New checks: tests/voice-endpoint.test.ts.
+
 ## 1.9.26
 - Voice (Android): the mic button could stop responding until Obsidian was restarted. The audio engine is now created on the tap itself (before the mic permission dialog) and never waits forever to wake up.
 - Voice: a voice upload that hangs on a weak phone network now times out after 45 s, is retried, and the audio is saved to the rescue folder. "Writing 1 piece…" / finishing can no longer get stuck.

@@ -2,7 +2,7 @@
 
 Notion-style collapsible toggles for Obsidian, plus a recall workflow built on top of them: traffic-light grading, a floating Pomodoro timer, and SM-2 spaced repetition. You never type `<details>`, `<summary>` or `>` brackets by hand.
 
-Works on desktop and mobile. Current version: 1.9.26.
+Works on desktop and mobile. Current version: 1.9.27.
 
 All commands and usage: [docs/COMMANDS.md](docs/COMMANDS.md).
 

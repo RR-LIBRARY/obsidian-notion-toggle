@@ -6,7 +6,7 @@ Bol kar Obsidian note likhiye. Aap bolte rahiye, text har kuch second me note me
 
 1. Plugin update kariye (BRAT → "Check for updates") aur Obsidian restart kariye.
 2. Koi note kholiye aur **mic** button dabaiye (neeche-daayein gol button, left ribbon, ya command "Voice mode: start / finish").
-3. Pehli baar ek chhota box khulega: apni **voice key** paste kariye (Lovable → project → Settings → Secrets → `VOICE_PLUGIN_KEY`) aur **Connect & start** dabaiye.
+3. Pehli baar ek chhota box khulega: apni **voice key** paste kariye (Lovable → "Obsidian Notion Toggle" project → Settings → Secrets → `VOICE_PLUGIN_KEY`) aur **Connect & start** dabaiye.
 4. Microphone permission maange to **Allow** kariye.
 
 ## 2. Roz ka use
