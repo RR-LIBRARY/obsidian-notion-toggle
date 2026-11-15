@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { EditorSelection, EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import type { Editor } from "obsidian";
+import { Modal, type Editor } from "obsidian";
 import type NotionTogglePlugin from "../main";
 import {
   DEFAULT_NOTION_WRITING,
@@ -227,6 +227,33 @@ describe("v1.8.0 notion writing — install", () => {
     expect(f.plugin.settings.notionLook).toBe(true);
     expect(document.body.classList.contains(NOTION_LOOK_CLASS)).toBe(true);
     expect(f.calls.save).toBe(2);
+  });
+
+  test("All Notion works after Native callouts and All callouts switches back", async () => {
+    const f = fake({ notionLook: false, calloutLookTypes: [] });
+    installNotionWriting(f.plugin);
+    let opened: Modal | undefined;
+    const originalOpen = Modal.prototype.open;
+    Modal.prototype.open = function () { opened = this; originalOpen.call(this); };
+    try {
+      await f.commands.find((item) => item.id === "callout-appearance-filter")!.callback!();
+      const modal = opened!.contentEl;
+
+      clickButton(modal, "All Notion");
+      await flush();
+      expect(f.plugin.settings.notionLook).toBe(true);
+      expect(f.plugin.settings.calloutLookTypes).toEqual([]);
+      expect(document.body.classList.contains(NOTION_LOOK_CLASS)).toBe(true);
+      expect(f.calls.save).toBe(1);
+
+      clickButton(modal, "All callouts");
+      await flush();
+      expect(f.plugin.settings.notionLook).toBe(true);
+      expect(f.plugin.settings.calloutLookTypes.length).toBeGreaterThan(0);
+      expect(f.calls.save).toBe(2);
+    } finally {
+      Modal.prototype.open = originalOpen;
+    }
   });
 });
 
@@ -482,6 +509,26 @@ describe("v1.8.0 notion writing — settings section", () => {
     expect(f.plugin.settings.notionLook).toBe(false);
     expect(document.body.classList.contains(NOTION_LOOK_CLASS)).toBe(false);
     expect(f.calls.save).toBe(2);
+  });
+
+  test("Settings → All Notion re-enables Notion mode and syncs the appearance dropdown", async () => {
+    const f = fake({ notionLook: false });
+    const root = document.createElement("div");
+    renderNotionWritingSettings(root, f.plugin);
+    let opened: Modal | undefined;
+    const originalOpen = Modal.prototype.open;
+    Modal.prototype.open = function () { opened = this; originalOpen.call(this); };
+    try {
+      clickButton(root, "Choose types");
+      clickButton(opened!.contentEl, "All Notion");
+      await flush();
+      expect(f.plugin.settings.notionLook).toBe(true);
+      expect((root.querySelector("select") as HTMLSelectElement).value).toBe("notion");
+      expect(root.textContent).toContain("Every type: Notion toggle");
+      expect(f.calls.save).toBe(1);
+    } finally {
+      Modal.prototype.open = originalOpen;
+    }
   });
 });
 

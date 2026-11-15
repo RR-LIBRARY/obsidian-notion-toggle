@@ -24,7 +24,7 @@ export class CalloutFormatModal extends Modal {
 
     new Setting(this.contentEl)
       .setName("Quick selection")
-      .setDesc("You can also turn every type into a callout with the Toggle appearance setting.")
+      .setDesc("All Notion also turns Notion appearance back on. Number-specific choices, if any, still take priority.")
       .addButton((button) => button.setButtonText("All Notion").onClick(async () => {
         this.selected = [];
         await this.onChange([]);

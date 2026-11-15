@@ -2444,7 +2444,7 @@ var CalloutFormatModal = class extends import_obsidian.Modal {
       cls: "setting-item-description",
       text: "Checked types show Obsidian's icon, colour box and chevron. Unchecked types use the plain Notion toggle. No note text is changed."
     });
-    new import_obsidian.Setting(this.contentEl).setName("Quick selection").setDesc("You can also turn every type into a callout with the Toggle appearance setting.").addButton((button3) => button3.setButtonText("All Notion").onClick(async () => {
+    new import_obsidian.Setting(this.contentEl).setName("Quick selection").setDesc("All Notion also turns Notion appearance back on. Number-specific choices, if any, still take priority.").addButton((button3) => button3.setButtonText("All Notion").onClick(async () => {
       this.selected = [];
       await this.onChange([]);
       this.renderList();
@@ -2583,6 +2583,15 @@ function refreshNotionLook(plugin) {
       (_b2 = (_a2 = preview == null ? void 0 : preview.renderer) == null ? void 0 : _a2.rerender) == null ? void 0 : _b2.call(_a2, true);
   });
 }
+function openCalloutFormat(plugin, onChanged) {
+  new CalloutFormatModal(plugin.app, plugin.settings.calloutLookTypes, async (types) => {
+    plugin.settings.notionLook = true;
+    plugin.settings.calloutLookTypes = types;
+    onChanged == null ? void 0 : onChanged();
+    refreshNotionLook(plugin);
+    await plugin.saveSettings();
+  }).open();
+}
 function insertToggleFromShortcut(plugin, view) {
   const sel = view.state.selection.main;
   const line = view.state.doc.lineAt(sel.head);
@@ -2701,13 +2710,7 @@ function installNotionWriting(plugin) {
     id: "callout-appearance-filter",
     icon: "list-filter",
     name: "Appearance: choose native callout types",
-    callback: () => {
-      new CalloutFormatModal(plugin.app, plugin.settings.calloutLookTypes, async (types) => {
-        plugin.settings.calloutLookTypes = types;
-        refreshNotionLook(plugin);
-        await plugin.saveSettings();
-      }).open();
-    }
+    callback: () => openCalloutFormat(plugin)
   });
   plugin.registerEditorExtension(
     cleanTogglesExtension({
@@ -2898,14 +2901,13 @@ function renderNotionWritingSettings(containerEl, plugin) {
       await save();
     });
   });
+  let syncAppearance;
   const filterSetting = new import_obsidian3.Setting(containerEl).setName("Callout format filter").setDesc(calloutLookSummary(plugin.settings)).addButton((button3) => {
     button3.setButtonText("Choose types").onClick(() => {
-      new CalloutFormatModal(plugin.app, plugin.settings.calloutLookTypes, async (types) => {
-        plugin.settings.calloutLookTypes = types;
+      openCalloutFormat(plugin, () => {
         filterSetting.setDesc(calloutLookSummary(plugin.settings));
-        refreshNotionLook(plugin);
-        await save();
-      }).open();
+        syncAppearance == null ? void 0 : syncAppearance();
+      });
     });
   });
   new import_obsidian3.Setting(containerEl).setName("Toggle numbers: appearance").addButton((c) => c.setButtonText("Choose numbers").onClick(() => openNumberFormat(plugin)));
@@ -2913,7 +2915,8 @@ function renderNotionWritingSettings(containerEl, plugin) {
   new import_obsidian3.Setting(containerEl).setName("Toggle appearance").setDesc("Notion: arrow + title. Native callout: Obsidian's icon, colour box and chevron. Changes the look only, never your Markdown.").addDropdown((dropdown) => {
     dropdown.addOption("notion", "Notion toggles");
     dropdown.addOption("callout", "Native callouts");
-    dropdown.setValue(plugin.settings.notionLook ? "notion" : "callout");
+    syncAppearance = () => dropdown.setValue(plugin.settings.notionLook ? "notion" : "callout");
+    syncAppearance();
     dropdown.onChange(async (value) => {
       plugin.settings.notionLook = value === "notion";
       plugin.settings.calloutLookTypes = [];

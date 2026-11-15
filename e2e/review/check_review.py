@@ -9,9 +9,25 @@ async def main():
    page=await b.new_page(viewport={'width':w,'height':h});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
    await page.goto((P/'index.html').as_uri());await page.wait_for_function('window.wb')
    assert await page.locator('.ntt-notion-callout').count()==8
+   first=page.locator('.callout').first;title=first.locator(':scope > .callout-title')
+   assert await first.evaluate('(el)=>el.classList.contains("is-collapsed")')
+   await title.click();assert not await first.evaluate('(el)=>el.classList.contains("is-collapsed")')
+   await title.click();assert await first.evaluate('(el)=>el.classList.contains("is-collapsed")')
    await page.get_by_role('button',name='Appearance',exact=True).click();assert await page.locator('.ntt-native-callout').count()==8
    assert await page.locator('.callout-icon').first.evaluate('(el)=>getComputedStyle(el).display')!='none'
-   await page.get_by_role('button',name='Appearance',exact=True).click()
+   await title.click();assert not await first.evaluate('(el)=>el.classList.contains("is-collapsed")')
+   await title.click();assert await first.evaluate('(el)=>el.classList.contains("is-collapsed")')
+   await page.get_by_role('button',name='Format filter',exact=True).click()
+   await page.get_by_role('button',name='All Notion',exact=True).click();assert await page.locator('.ntt-notion-callout').count()==8
+   assert await page.evaluate('wb.settings.notionLook') is True
+   await page.locator('.modal-container').evaluate('(el)=>el.style.display="none"');await page.evaluate('document.getElementById("notice").replaceChildren()')
+   await page.screenshot(path=str(P/f'{w}_notion_cards.png'));await page.locator('.modal-container').evaluate('(el)=>el.style.display=""')
+   await page.get_by_role('button',name='All callouts',exact=True).click();assert await page.locator('.ntt-native-callout').count()==8
+   await page.locator('.modal-container').evaluate('(el)=>el.style.display="none"')
+   await page.screenshot(path=str(P/f'{w}_callout_cards.png'))
+   await page.locator('.modal-container').evaluate('(el)=>el.remove()')
+   await page.get_by_role('button',name='Appearance',exact=True).click();assert await page.locator('.ntt-native-callout').count()==8
+   await page.get_by_role('button',name='Appearance',exact=True).click();assert await page.locator('.ntt-notion-callout').count()==8
    await page.get_by_role('button',name='Numbers',exact=True).click();await page.get_by_placeholder('6-11, 13').fill('6-11');await page.get_by_role('button',name='Apply',exact=True).click()
    assert await page.locator('.ntt-native-callout').count()==6;assert await page.locator('.ntt-notion-callout').count()==2
    await page.evaluate('wb.late()');await page.wait_for_timeout(100);assert await page.locator('.ntt-native-callout').count()==7
