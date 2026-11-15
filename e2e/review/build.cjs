@@ -1,0 +1,1 @@
+const path=require('node:path'); const fs=require('node:fs'); require('esbuild').buildSync({entryPoints:[path.join(__dirname,'entry.ts')],bundle:true,format:'iife',outfile:path.join(__dirname,'workbench.js'),alias:{obsidian:path.join(__dirname,'obsidian.ts')}}); fs.copyFileSync(path.join(__dirname,'../../styles.css'),path.join(__dirname,'styles.css'));

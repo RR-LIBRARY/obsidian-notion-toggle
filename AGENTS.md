@@ -1,3 +1,6 @@
 - Typed page-name linking uses a debounced CodeMirror extension limited to user typing/paste; programmatic voice writes remain independent.
 - Resolve typed wiki-link destinations with Obsidian's metadata cache and skip ambiguous titles to avoid linking to the wrong note.
-- Callout appearance filtering is presentation-only and keyed by callout type; never rewrite note Markdown when switching Notion/native looks.
+- Appearance is presentation-only with per-element classes and per-note source-number overrides; never rewrite Markdown for Notion/native switching.
+- Source numbering and grade edits use the shared quote-aware fence scanner; never infer unnumbered ordinals from viewport position.
+- Grading uses targeted editor transactions to preserve native Undo; browse filters suspend before session measurements and never determine session targets.
+- Treat missing or empty transcription replies as recoverable audio failures, not successful writes; release mic resources when audio-engine startup fails.

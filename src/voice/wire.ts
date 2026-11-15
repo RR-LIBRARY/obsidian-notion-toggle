@@ -11,6 +11,7 @@ import { TARGET_RATE, downsample, encodeWav, hasSpeech, joinPiece, normalize, sp
 import { DictationSession } from "./session";
 
 export interface VoicePluginHost extends Plugin {
+  scrollRunning?: boolean;
   settings: object;
   addCommand(cmd: Parameters<Plugin["addCommand"]>[0]): ReturnType<Plugin["addCommand"]>;
 }
@@ -221,6 +222,8 @@ class VoiceController {
   private session: DictationSession | null = null;
   private wake: { release(): Promise<void> } | null = null;
   fab: HTMLElement | null = null;
+  private starting = false;
+  private finishing = false;
 
   constructor(private readonly plugin: VoicePluginHost) {}
   private get s(): VoiceSettings {
@@ -231,17 +234,21 @@ class VoiceController {
   }
 
   toggle(): void {
+    if (this.starting || this.finishing) return;
     if (this.rec) void this.finish(true);
     else void this.start();
   }
 
   async start(): Promise<void> {
+    if (this.starting || this.finishing || this.rec) return;
     const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view) return void new Notice("Open a note first, then start voice mode.");
     if (!this.s.voiceKey.trim()) {
       new VoiceSetupModal(this.plugin, () => void this.start()).open();
       return;
     }
+    if (!view.editor) { new Notice("Open this note in edit mode, then start voice mode."); return; }
+    this.starting = true;
     const notePath = view.file?.path ?? "";
     // v1.9.19 — never write into a stale editor. Obsidian may rebuild the editor
     // (note switched, screen off, reading mode); always find the live one for this note.
@@ -346,11 +353,13 @@ class VoiceController {
       await this.rec.start();
     } catch (e) {
       this.rec = null;
+      this.starting = false;
       this.session = null;
       const msg = (e as Error).name === "NotAllowedError" ? "Microphone permission was denied. Allow it for Obsidian in system settings." : (e as Error).message;
       new Notice(`Voice: ${msg}`, 8000);
       return;
     }
+    this.starting = false;
     this.fab?.addClass("is-hidden");
     this.bar = new VoiceBar(
       {
@@ -417,12 +426,14 @@ class VoiceController {
   }
 
   async finish(send: boolean): Promise<void> {
+    if (this.starting || this.finishing) return;
     this.screenOff?.();
     this.screenOff = null;
     const rec = this.rec;
     const bar = this.bar;
     const session = this.session;
     if (!rec || !session) return;
+    this.finishing = true;
     this.rec = null;
     await rec.stop(send);
     void this.wake?.release().catch(() => undefined);
@@ -432,6 +443,7 @@ class VoiceController {
       bar?.destroy();
       this.bar = null;
       this.session = null;
+      this.finishing = false;
       return;
     }
     bar?.finishing();
@@ -441,6 +453,7 @@ class VoiceController {
     this.fab?.removeClass("is-hidden");
     if (this.bar === bar) this.bar = null;
     if (this.session === session) this.session = null;
+    this.finishing = false;
   }
 
   private async rescue(wav: ArrayBuffer): Promise<string | null> {
@@ -583,6 +596,7 @@ export function installVoice(plugin: VoicePluginHost): void {
     const sync = () => {
       fab.toggleClass("is-off", !plugin.app.workspace.getActiveViewOfType(MarkdownView));
       fab.toggleClass("is-disabled", !s.voiceFab);
+      fab.toggleClass("is-autoscrolling", !!plugin.scrollRunning);
     };
     refreshFab = sync;
     plugin.addCommand({ id: "voice-mode-fab", name: "Voice mode: show / hide floating mic button", icon: "mic", callback: async () => {

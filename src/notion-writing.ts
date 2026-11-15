@@ -30,7 +30,10 @@ import { convertDetailsToCallouts, newTogglePlan, nextToggleNumber } from "./edi
 import { AT_TOP_LEVEL, NO_TOGGLE_ABOVE, installIndentBridge, type BridgeEditor, type CoreCommand } from "./indent-bridge";
 import { INDENT_COMMAND_ID, OUTDENT_COMMAND_ID } from "./naming";
 import { CalloutFormatModal } from "./look-filter-modal";
-import { calloutLookSummary, paintCalloutLooks } from "./look-filter";
+import { calloutLookSummary, paintCalloutLooks, assignSourceOrdinals, watchCalloutLooks, type ToggleLookRule } from "./look-filter";
+
+import { ToggleNumberFormatModal, ReviewColorModal } from './review-format-modal';
+import { gradeNumberEdits, applyGradeEdits } from './toggle-review';
 
 /* ---------- settings ---------- */
 
@@ -41,6 +44,8 @@ export interface NotionWritingSettings {
   notionLook: boolean;
   /** v1.9.23: these callout types keep Obsidian's native look while Notion look is on. */
   calloutLookTypes: string[];
+  toggleLookRules: Record<string, ToggleLookRule>;
+  reviewColorFilters: Record<string, string[]>;
   /** v1.8.0: typing `>` then a space on an empty line starts a toggle. */
   notionShortcut: boolean;
   /** v1.8.0: pasted `<details>` blocks become toggles automatically. */
@@ -59,6 +64,8 @@ export const DEFAULT_NOTION_WRITING: NotionWritingSettings = {
   cleanEditing: true,
   notionLook: true,
   calloutLookTypes: [],
+  toggleLookRules: {},
+  reviewColorFilters: {},
   notionShortcut: true,
   convertDetailsOnPaste: true,
   detailsNudge: true,
@@ -80,6 +87,7 @@ function calloutMode(plugin: NotionTogglePlugin): boolean {
 /** Apply / remove the plain Notion look. Called on load and whenever the setting flips. */
 export function applyNotionLook(plugin: NotionTogglePlugin): void {
   document.body.classList.toggle(NOTION_LOOK_CLASS, plugin.settings.notionLook);
+  paintOpenViews(plugin);
 }
 
 /** Repaint open Reading views and Live Preview immediately after a look change. */
@@ -201,10 +209,18 @@ export function uninstallNotionWriting(): void {
 
 /** Register everything. Called once from `onload`; cleanup rides on the plugin lifecycle. */
 export function installNotionWriting(plugin: NotionTogglePlugin): void {
-  // Appearance is per callout type, not a destructive Markdown conversion.
-  plugin.registerMarkdownPostProcessor((el) => {
-    paintCalloutLooks(el, plugin.settings);
+  plugin.registerMarkdownPostProcessor((el, ctx) => {
+    const root = el.closest<HTMLElement>('.markdown-preview-view, .markdown-source-view') ?? el;
+    root.dataset.nttLookPath = ctx?.sourcePath ?? "";
+    const section = ctx?.getSectionInfo(el);
+    if (section) { sourceByRoot.set(root, section.text); assignSourceOrdinals(el, section.text, ctx?.sourcePath ?? "", section.lineStart); }
+    paintCalloutLooks(el, plugin.settings, ctx?.sourcePath ?? "");
   });
+  plugin.register(watchCalloutLooks(document.body, () => paintOpenViews(plugin)));
+  plugin.registerEvent(plugin.app.workspace.on('layout-change', () => paintOpenViews(plugin)));
+  plugin.registerEvent(plugin.app.workspace.on('active-leaf-change', () => paintOpenViews(plugin)));
+  plugin.addCommand({ id:'toggle-number-appearance', name:'Appearance: choose toggle numbers (this note)', icon:'list-filter', callback:()=>openNumberFormat(plugin) });
+  plugin.addCommand({ id:'review-color-filter', name:'Review: grade and filter red / yellow / green', icon:'list-filter', callback:()=>openReviewColors(plugin) });
 
   plugin.addCommand({
     id: "toggle-appearance",
@@ -212,6 +228,7 @@ export function installNotionWriting(plugin: NotionTogglePlugin): void {
     name: "Appearance: Notion toggles ↔ native callouts",
     callback: async () => {
       plugin.settings.notionLook = !plugin.settings.notionLook;
+      plugin.settings.calloutLookTypes = []; plugin.settings.toggleLookRules = {};
       refreshNotionLook(plugin);
       await plugin.saveSettings();
       new Notice(plugin.settings.notionLook ? "Notion toggle look ON." : "Native callout look ON — every type.");
@@ -233,7 +250,7 @@ export function installNotionWriting(plugin: NotionTogglePlugin): void {
   plugin.registerEditorExtension(
     cleanTogglesExtension({
       livePreviewField: editorLivePreviewField,
-      enabled: () => plugin.settings.cleanEditing && calloutMode(plugin),
+      enabled: () => plugin.settings.cleanEditing && plugin.settings.notionLook && !plugin.settings.calloutLookTypes.length && !Object.keys(plugin.settings.toggleLookRules ?? {}).length && calloutMode(plugin),
       shortcutEnabled: () => plugin.settings.notionShortcut && calloutMode(plugin),
       insertToggleFromShortcut: (view) => insertToggleFromShortcut(plugin, view),
       moreChip: () => plugin.settings.cleanMoreChip,
@@ -294,7 +311,7 @@ export function installNotionWriting(plugin: NotionTogglePlugin): void {
     })
   );
 
-  plugin.registerEvent(plugin.app.workspace.on("file-open", (file) => void offerDetailsConversion(plugin, file)));
+  plugin.registerEvent(plugin.app.workspace.on("file-open", (file) => { paintOpenViews(plugin); void offerDetailsConversion(plugin, file); }));
 
   plugin.addCommand({
     id: "toggle-default-state",
@@ -317,7 +334,50 @@ export function installNotionWriting(plugin: NotionTogglePlugin): void {
   });
 
   applyNotionLook(plugin);
-  plugin.register(() => document.body.classList.remove(NOTION_LOOK_CLASS));
+  plugin.register(() => {
+    document.body.classList.remove(NOTION_LOOK_CLASS);
+    document.querySelectorAll('.ntt-native-callout, .ntt-notion-callout, .ntt-review-filtered-out').forEach(el => el.classList.remove('ntt-native-callout','ntt-notion-callout','ntt-review-filtered-out'));
+  });
+}
+
+const sourceByRoot = new WeakMap<HTMLElement,string>();
+/** Refresh each leaf from its own file, never the active file for all panes. */
+function paintOpenViews(plugin:NotionTogglePlugin):void {
+  plugin.app.workspace.iterateAllLeaves?.(leaf => {
+    if (!(leaf.view instanceof MarkdownView)) return;
+    const view=leaf.view, path=view.file?.path ?? '';
+    const roots=Array.from(view.containerEl.querySelectorAll<HTMLElement>('.markdown-preview-view, .markdown-source-view'));
+    if(view.containerEl.matches('.markdown-preview-view, .markdown-source-view')) roots.unshift(view.containerEl);
+    for(const root of roots){
+      if(root.dataset.nttLookPath !== path) { sourceByRoot.delete(root); root.querySelectorAll<HTMLElement>('[data-ntt-look-ordinal]').forEach(el=>{delete el.dataset.nttLookOrdinal;delete el.dataset.nttLookPath;}); }
+      root.dataset.nttLookPath=path;
+      const text=view.editor?.getValue() ?? sourceByRoot.get(root);
+      if(text !== undefined) assignSourceOrdinals(root,text,path);
+      paintCalloutLooks(root,plugin.settings,path);
+    }
+  });
+}
+function openNumberFormat(plugin:NotionTogglePlugin):void {
+  const file=plugin.app.workspace.getActiveFile();if(!file){new Notice('Open a note first.');return;}
+  new ToggleNumberFormatModal(plugin.app,plugin.settings.toggleLookRules?.[file.path],async rule=>{
+    const rules={...plugin.settings.toggleLookRules};if(rule)rules[file.path]=rule;else delete rules[file.path];
+    plugin.settings.toggleLookRules=rules;await plugin.saveSettings();refreshNotionLook(plugin);
+  }).open();
+}
+function openReviewColors(plugin:NotionTogglePlugin):void {
+  const file=plugin.app.workspace.getActiveFile();if(!file){new Notice('Open a note first.');return;}
+  new ReviewColorModal(plugin.app,plugin.settings.reviewColorFilters?.[file.path]??[],async colors=>{
+    plugin.settings.reviewColorFilters={...plugin.settings.reviewColorFilters,[file.path]:colors};await plugin.saveSettings();refreshNotionLook(plugin);
+  },async(numbers,grade)=>{
+    const view=plugin.app.workspace.getActiveViewOfType(MarkdownView);
+    let count=0;
+    if(view?.file?.path===file.path && view.editor){
+      const edits=gradeNumberEdits(view.editor.getValue(),numbers,grade);applyGradeEdits(view.editor,edits);count=edits.length;
+    } else await plugin.app.vault.process(file,text=>{
+      const edits=gradeNumberEdits(text,numbers,grade),lines=text.split('\n');for(const e of edits)lines[e.line]=e.text;count=edits.length;return lines.join('\n');
+    });
+    refreshNotionLook(plugin);return count;
+  }).open();
 }
 
 /* ---------- settings section ---------- */
@@ -364,6 +424,9 @@ export function renderNotionWritingSettings(containerEl: HTMLElement, plugin: No
       });
     });
 
+  new Setting(containerEl).setName('Toggle numbers: appearance').addButton(c=>c.setButtonText('Choose numbers').onClick(()=>openNumberFormat(plugin)));
+  new Setting(containerEl).setName('Review cards: traffic-light filter').addButton(c=>c.setButtonText('Grade / filter').onClick(()=>openReviewColors(plugin)));
+
   new Setting(containerEl)
     .setName("Toggle appearance")
     .setDesc("Notion: arrow + title. Native callout: Obsidian's icon, colour box and chevron. Changes the look only, never your Markdown.")
@@ -373,6 +436,7 @@ export function renderNotionWritingSettings(containerEl: HTMLElement, plugin: No
       dropdown.setValue(plugin.settings.notionLook ? "notion" : "callout");
       dropdown.onChange(async (value) => {
         plugin.settings.notionLook = value === "notion";
+        plugin.settings.calloutLookTypes = []; plugin.settings.toggleLookRules = {};
         filterSetting.setDesc(calloutLookSummary(plugin.settings));
         refreshNotionLook(plugin);
         await save();

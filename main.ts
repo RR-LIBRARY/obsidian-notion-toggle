@@ -253,7 +253,7 @@ import {
 } from "./src/modals";
 import { ScrollSheetModal } from "./src/sheet-modal";
 import { installResearch, uninstallResearch } from "./src/research/wire";
-import { installVoice } from "./src/voice/wire";
+import { installVoice, refreshVoiceFab } from "./src/voice/wire";
 import { DEFAULT_OUTLINE_SETTINGS, type OutlineSettings } from "./src/outline-service";
 import { registerOutlineCommand, type OutlineCommandHost } from "./src/outline-command";
 import type { ResearchService } from "./src/research/service";
@@ -2094,7 +2094,7 @@ export default class NotionTogglePlugin extends Plugin {
   }
   toggleAutoScroll() {
     if (this.scrollRunning) {
-      this.scrollRunning = false;
+      this.scrollRunning = false; refreshVoiceFab(); document.body.classList.toggle('ntt-review-scrolling', this.scrollRunning);
       this.renderScrollBar();
       this.syncScrollFab();
       new Notice(`Autoscroll paused — ${hotkeyLabel("smart-autoscroll")} se resume.`);
@@ -2102,7 +2102,7 @@ export default class NotionTogglePlugin extends Plugin {
     }
     if (this.scrollPlan.length === 0) this.startAutoScroll();
     else {
-      this.scrollRunning = true;
+      this.scrollRunning = true; refreshVoiceFab(); document.body.classList.toggle('ntt-review-scrolling', this.scrollRunning);
       // v1.7.3 — an Open all / Close all tapped while paused was a one-off.
       this.clearAnswerWant();
       this.scrollLastFrame = 0;
@@ -2338,7 +2338,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollNotePath = this.app.workspace.getActiveFile()?.path ?? null;
     this.scrollSeen = new Set();
     this.applyPerNoteScrollPrefs();
-    const plan = this.buildScrollPlan(container);
+    document.body.classList.add('ntt-review-measuring'); const plan = this.buildScrollPlan(container); document.body.classList.remove('ntt-review-measuring');
     if (plan.length === 0) {
       const anyToggle = this.collectStops(container).length > 0;
       // v1.5.4 — the source is the truth. A filter whose toggles exist in the
@@ -2375,7 +2375,7 @@ export default class NotionTogglePlugin extends Plugin {
       : firstStopFrom(plan, container.scrollTop, this.settings.scrollReverse);
     this.scrollHoldUntil = 0;
     this.scrollOpenedAt = 0;
-    this.scrollRunning = true;
+    this.scrollRunning = true; refreshVoiceFab(); document.body.classList.toggle('ntt-review-scrolling', this.scrollRunning);
     // v1.7.3 — the run owns every toggle from here on: a sticky Open all /
     // Close all would re-open (on the next DOM insert) whatever the run closes.
     this.clearAnswerWant();
@@ -2473,7 +2473,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.renderScrollBar();
   }
   stopAutoScroll(notify: boolean) {
-    this.scrollRunning = false;
+    this.scrollRunning = false; refreshVoiceFab(); document.body.classList.toggle('ntt-review-scrolling', this.scrollRunning);
     this.closeScrollVisit();
     this.restoreReadingMode();
     this.endFullRender();
@@ -3064,7 +3064,7 @@ export default class NotionTogglePlugin extends Plugin {
                 ? "Shuffle finished — every scheduled toggle revised."
                 : "Route finished — every waypoint visited."
             );
-            this.scrollRunning = false;
+            this.scrollRunning = false; refreshVoiceFab(); document.body.classList.toggle('ntt-review-scrolling', this.scrollRunning);
             this.renderScrollBar();
             this.endScrollFrame(ts);
             return;
@@ -3223,11 +3223,11 @@ export default class NotionTogglePlugin extends Plugin {
       return;
     }
     const filter = this.quizFilterColors();
-    const stops = planStops(
+    document.body.classList.add('ntt-review-measuring'); const stops = planStops(
       this.collectStops(container, filter),
       filter,
       this.settings.scrollReverse
-    ) as (ToggleStop & { el?: HTMLElement })[];
+    ) as (ToggleStop & { el?: HTMLElement })[]; document.body.classList.remove('ntt-review-measuring');
     if (stops.length === 0) {
       // v1.5.7 — the quiz now uses the same source-truth check as autoscroll:
       // the note's markdown, not the lazily rendered DOM, decides whether this

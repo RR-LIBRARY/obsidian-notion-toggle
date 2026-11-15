@@ -1,4 +1,4 @@
-# Notion Toggle — saare features ek jagah (1.9.23)
+# Notion Toggle — saare features ek jagah (1.9.24)
 
 Ye file plugin ke **har feature** ki ek list hai. Detail ke liye: [Voice mode manual](VOICE_MODE.md) · [Autoscroll features](AUTOSCROLL_FEATURES.md) · [Hindi guide](HINDI-GUIDE.md).
 
@@ -135,3 +135,12 @@ Rules: current note kabhi link nahi; code/URL/purane link ke andar kuch nahi bad
 | Tez shor me galti | Phone muh ke paas | Thoda |
 
 Jo code se ho sakta tha (offline queue, undo, self-test, saaf errors, usage, cursor, linking, mobile setup, button design) — sab ho chuka hai.
+
+## Number-based appearance and traffic-light review (1.9.24, prepared)
+- Appearance → choose toggle numbers (this note): enter Q6–Q11, 13; select native callouts or Notion.
+- Review → grade and filter red / yellow / green: grade selected numbers, then show Red, Yellow, Green, Red + Yellow, All graded or All.
+- Red = didn’t know; Yellow = half known; Green = known. Ungraded cards appear under All.
+- Matching nested cards keep their parent visible; other notes keep their own filters.
+- Grading uses a native undoable transaction, not whole-document replacement. Number/appearance changes do not rewrite Markdown.
+- Floating voice mic temporarily disappears during active autoscroll. Pause/stop returns it only if enabled.
+- See [every command](COMMANDS.md) and [verification report](VERIFY-1.9.24.md).

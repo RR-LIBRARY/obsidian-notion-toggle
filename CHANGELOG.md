@@ -1,3 +1,13 @@
+## 1.9.24 (prepared; not published)
+- Voice: prevent overlapping mic startup/finish, release mic resources after audio-engine failure, rescue empty/malformed service replies instead of silently losing audio. Real audio service check passed; user's unspecified phone issue remains unverified.
+- Uniform Notion/native appearance for every custom callout and HTML details, nested blocks and late rendering.
+- Per-note appearance selection by numbers/ranges (Q6–Q11, 13), source-derived numbering rather than viewport position.
+- Whole-note appearance clears type/number exceptions; mixed/native rendered modes disable the plain-editor decoration layer.
+- Review: grade numbered cards red/yellow/green with one native Undo transaction, then filter visible cards per note. Quiz/autoscroll keep independent targets; browsing filters suspend before session measurements.
+- Quote-aware, length-aware fence protection keeps code examples out of grading and numbering. Duplicate unnumbered titles without source-line information are not guessed.
+- Mic hides while autoscroll runs and returns on pause/stop only when enabled; recording remains independent.
+- Complete command reference: docs/COMMANDS.md. Automated/browser report: docs/VERIFY-1.9.24.md. Real-phone Obsidian verification remains separate.
+
 ## 1.9.23
 - Fixed native callout appearance: selected callouts now keep Obsidian's icon, tinted background, spacing and chevron instead of still looking like Notion rows.
 - Settings → Notion-like writing → **Toggle appearance**: choose **Notion toggles** or **Native callouts** for the whole note; the preview changes immediately.
