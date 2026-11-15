@@ -52,15 +52,113 @@ __export(main_exports, {
 });
 module.exports = __toCommonJS(main_exports);
 var import_obsidian22 = require("obsidian");
-var import_state2 = require("@codemirror/state");
-var import_view2 = require("@codemirror/view");
+var import_state3 = require("@codemirror/state");
+var import_view3 = require("@codemirror/view");
+
+// src/typed-links.ts
+var import_state = require("@codemirror/state");
+var import_view = require("@codemirror/view");
+var linked = import_state.Annotation.define();
+var word = /[\p{L}\p{N}\p{M}_]/u;
+var escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function planTypedLinks(text, edits, notes, current, target) {
+  var _a, _b, _c;
+  const locks = [];
+  const protectedText = /(?:^---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)(?:\r?\n|$))|(?:^[ \t]{0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]{0,3}\1[^\n]*(?:\n|$)|$(?![\s\S])))|(?:`+[^`\n]*`+)|(?:!?\[\[[^\n]*?(?:\]\]|$))|(?:!?\[[^\]\n]*\]\([^\n)]*\))|(?:https?:\/\/\S+)|(?:<[^>\n]*>)/gm;
+  for (const m of text.matchAll(protectedText))
+    locks.push({ from: m.index, to: m.index + m[0].length });
+  const names = /* @__PURE__ */ new Map();
+  for (const note of notes) {
+    if (note.basename.length < 3 || /[\[\]|#^]/.test(note.basename))
+      continue;
+    const key = note.basename.toLocaleLowerCase();
+    names.set(key, [...(_a = names.get(key)) != null ? _a : [], note]);
+  }
+  const changes = [];
+  for (const candidates of [...names.values()].sort((a, b) => {
+    var _a2, _b2, _c2, _d;
+    return ((_b2 = (_a2 = b[0]) == null ? void 0 : _a2.basename.length) != null ? _b2 : 0) - ((_d = (_c2 = a[0]) == null ? void 0 : _c2.basename.length) != null ? _d : 0);
+  })) {
+    const note = candidates[0];
+    if (!note || candidates.length !== 1 || note.path === current)
+      continue;
+    const re = new RegExp(escape(note.basename), "giu");
+    for (const edit of edits) {
+      const start = Math.max(0, edit.from - note.basename.length);
+      const end = Math.min(text.length, edit.to + note.basename.length);
+      for (const m of text.slice(start, end).matchAll(re)) {
+        const from = start + m.index, to = from + m[0].length;
+        if (to <= edit.from || from >= edit.to)
+          continue;
+        if (from > 0 && word.test((_b = text[from - 1]) != null ? _b : "") || word.test((_c = text[to]) != null ? _c : ""))
+          continue;
+        if (locks.some((r) => from < r.to && to > r.from) || changes.some((r) => from < r.to && to > r.from))
+          continue;
+        const link = target(note);
+        changes.push({ from, to, insert: link === m[0] ? `[[${link}]]` : `[[${link}|${m[0]}]]` });
+      }
+    }
+  }
+  return changes.sort((a, b) => a.from - b.from);
+}
+function typedLinkExtension(host) {
+  return import_view.ViewPlugin.fromClass(class {
+    constructor(view) {
+      this.view = view;
+      this.pending = [];
+    }
+    update(update) {
+      if (!update.docChanged)
+        return;
+      clearTimeout(this.timer);
+      if (!host.enabled() || update.transactions.some((tr) => tr.annotation(linked) || tr.isUserEvent("undo") || tr.isUserEvent("redo"))) {
+        this.pending = [];
+        return;
+      }
+      this.pending = this.pending.map((r) => ({ from: update.changes.mapPos(r.from, -1), to: update.changes.mapPos(r.to, 1) }));
+      const typed = update.transactions.some((tr) => tr.isUserEvent("input.type") || tr.isUserEvent("input.paste"));
+      if (!typed) {
+        this.pending = [];
+        return;
+      }
+      update.changes.iterChanges((_a, _b, from, to) => {
+        if (to > from)
+          this.pending.push({ from, to });
+      });
+      this.timer = setTimeout(() => this.flush(), 500);
+    }
+    flush() {
+      if (!host.enabled() || this.view.destroyed) {
+        this.pending = [];
+        return;
+      }
+      if (this.view.composing) {
+        this.timer = setTimeout(() => this.flush(), 200);
+        return;
+      }
+      const source = host.currentPath(this.view);
+      if (!source) {
+        this.pending = [];
+        return;
+      }
+      const changes = planTypedLinks(this.view.state.doc.toString(), this.pending, host.notes(), source, (note) => host.target(note, source));
+      this.pending = [];
+      if (changes.length)
+        this.view.dispatch({ changes, annotations: linked.of(true), userEvent: "input.autolink" });
+    }
+    destroy() {
+      clearTimeout(this.timer);
+      this.pending = [];
+    }
+  });
+}
 
 // src/notion-writing.ts
 var import_obsidian = require("obsidian");
 
 // src/clean-toggles-view.ts
-var import_state = require("@codemirror/state");
-var import_view = require("@codemirror/view");
+var import_state2 = require("@codemirror/state");
+var import_view2 = require("@codemirror/view");
 
 // src/editor-blocks.ts
 function convertDetailsToCallouts(doc, calloutType2, collapsed, boldSummary) {
@@ -1072,10 +1170,10 @@ function insertionText(lines, place, block) {
 }
 
 // src/clean-toggles-view.ts
-var setToggleOpen = import_state.StateEffect.define({
+var setToggleOpen = import_state2.StateEffect.define({
   map: (v, mapping) => ({ key: mapping.mapPos(v.key, 1), open: v.open })
 });
-var EMPTY = { decorations: import_view.Decoration.none, overrides: /* @__PURE__ */ new Map() };
+var EMPTY = { decorations: import_view2.Decoration.none, overrides: /* @__PURE__ */ new Map() };
 function triangle() {
   const ns = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(ns, "svg");
@@ -1087,7 +1185,7 @@ function triangle() {
   svg.appendChild(path);
   return svg;
 }
-var ArrowWidget = class extends import_view.WidgetType {
+var ArrowWidget = class extends import_view2.WidgetType {
   constructor(key, open, type) {
     super();
     this.key = key;
@@ -1119,7 +1217,7 @@ var ArrowWidget = class extends import_view.WidgetType {
     return true;
   }
 };
-var MoreWidget = class extends import_view.WidgetType {
+var MoreWidget = class extends import_view2.WidgetType {
   constructor(key) {
     super();
     this.key = key;
@@ -1192,7 +1290,7 @@ function applyToggle(view, key, open) {
     const parkAt = (_b = (_a = findBlockAt(view.state.doc, line.number)) == null ? void 0 : _a.titleTo) != null ? _b : line.to;
     const sel = view.state.selection.main;
     if (sel.head > parkAt)
-      spec.selection = import_state.EditorSelection.cursor(parkAt);
+      spec.selection = import_state2.EditorSelection.cursor(parkAt);
   }
   view.dispatch(spec);
   view.focus();
@@ -1213,26 +1311,26 @@ function decorationsFor(plans, moreChip = true) {
   for (const p of plans) {
     switch (p.kind) {
       case "line":
-        out.push(import_view.Decoration.line({ class: p.cls }).range(p.pos));
+        out.push(import_view2.Decoration.line({ class: p.cls }).range(p.pos));
         break;
       case "arrow":
         out.push(
-          import_view.Decoration.replace({
+          import_view2.Decoration.replace({
             widget: new ArrowWidget(p.key, p.open, p.type),
             inclusive: false
           }).range(p.from, p.to)
         );
         break;
       case "hide":
-        out.push(import_view.Decoration.replace({ inclusive: false }).range(p.from, p.to));
+        out.push(import_view2.Decoration.replace({ inclusive: false }).range(p.from, p.to));
         break;
       case "fold":
         out.push(
-          import_view.Decoration.replace(moreChip ? { widget: new MoreWidget(p.key), inclusive: false } : { inclusive: false }).range(p.from, p.to)
+          import_view2.Decoration.replace(moreChip ? { widget: new MoreWidget(p.key), inclusive: false } : { inclusive: false }).range(p.from, p.to)
         );
         break;
       case "placeholder":
-        out.push(import_view.Decoration.line({ class: "ntt-clean-empty-title" }).range(p.key));
+        out.push(import_view2.Decoration.line({ class: "ntt-clean-empty-title" }).range(p.key));
         break;
     }
   }
@@ -1253,12 +1351,12 @@ function compute(host, state, overrides) {
   try {
     const result = planClean(state.doc, selRanges(state), overrides);
     if (result.plans.length === 0)
-      return { decorations: import_view.Decoration.none, overrides: result.overrides };
+      return { decorations: import_view2.Decoration.none, overrides: result.overrides };
     const chip = host.moreChip ? host.moreChip() : false;
-    return { decorations: import_view.Decoration.set(decorationsFor(result.plans, chip), true), overrides: result.overrides };
+    return { decorations: import_view2.Decoration.set(decorationsFor(result.plans, chip), true), overrides: result.overrides };
   } catch (err) {
     reportOnce("clean toggles", err);
-    return { decorations: import_view.Decoration.none, overrides: new Map(overrides) };
+    return { decorations: import_view2.Decoration.none, overrides: new Map(overrides) };
   }
 }
 var reported = false;
@@ -1285,7 +1383,7 @@ function releaseCleanToggles() {
 }
 function cleanTogglesExtension(host) {
   dragHost = host;
-  const field = import_state.StateField.define({
+  const field = import_state2.StateField.define({
     create(state) {
       return compute(host, state, /* @__PURE__ */ new Map());
     },
@@ -1310,11 +1408,11 @@ function cleanTogglesExtension(host) {
       return compute(host, tr.state, overrides);
     },
     provide: (f) => [
-      import_view.EditorView.decorations.from(f, (v) => v.decorations),
-      import_view.EditorView.atomicRanges.of((view) => view.state.field(f).decorations)
+      import_view2.EditorView.decorations.from(f, (v) => v.decorations),
+      import_view2.EditorView.atomicRanges.of((view) => view.state.field(f).decorations)
     ]
   });
-  const keepCaretVisible = import_state.EditorState.transactionFilter.of((tr) => {
+  const keepCaretVisible = import_state2.EditorState.transactionFilter.of((tr) => {
     var _a, _b;
     if (!tr.selection || !host.enabled() || !livePreviewOn(host, tr.state))
       return tr;
@@ -1344,10 +1442,10 @@ function cleanTogglesExtension(host) {
     }
     if (target === null || target === sel.main.head)
       return tr;
-    return [tr, { selection: import_state.EditorSelection.range(sel.main.empty ? target : sel.main.anchor, target) }];
+    return [tr, { selection: import_state2.EditorSelection.range(sel.main.empty ? target : sel.main.anchor, target) }];
   });
-  const keys = import_state.Prec.high(
-    import_view.keymap.of([
+  const keys = import_state2.Prec.high(
+    import_view2.keymap.of([
       { key: "End", run: (view) => guard(() => endOfTitle(view, false)) },
       { key: "Shift-End", run: (view) => guard(() => endOfTitle(view, true)) },
       { key: "ArrowRight", run: (view) => guard(() => rightFromTitleEnd(view)) },
@@ -1364,7 +1462,7 @@ function cleanTogglesExtension(host) {
       { key: "Alt-Shift-ArrowDown", run: (view) => guard(() => moveKey(view, "down")) }
     ])
   );
-  const shortcutFromInput = import_view.EditorView.inputHandler.of((view, from, to, text) => {
+  const shortcutFromInput = import_view2.EditorView.inputHandler.of((view, from, to, text) => {
     if (text !== " " || from !== to)
       return false;
     const line = view.state.doc.lineAt(from);
@@ -1403,7 +1501,7 @@ function cleanTogglesExtension(host) {
       });
       view.dispatch({
         changes: { from: plan.from, to: plan.to, insert: plan.insert },
-        selection: import_state.EditorSelection.cursor(plan.caret),
+        selection: import_state2.EditorSelection.cursor(plan.caret),
         scrollIntoView: true,
         userEvent: "input"
       });
@@ -1412,7 +1510,7 @@ function cleanTogglesExtension(host) {
     const cut = markerEnd(line.text, block.depth);
     if (markerDepth(line.text) === block.depth && cut >= 0 && line.text.slice(cut).trim() === "" && line.number === block.lastLine) {
       const out = blankAt(block.depth - 1);
-      view.dispatch({ changes: { from: line.from, to: line.to, insert: out }, selection: import_state.EditorSelection.cursor(line.from + out.length), userEvent: "input" });
+      view.dispatch({ changes: { from: line.from, to: line.to, insert: out }, selection: import_state2.EditorSelection.cursor(line.from + out.length), userEvent: "input" });
       return true;
     }
     return false;
@@ -1428,7 +1526,7 @@ function cleanTogglesExtension(host) {
     if (!foldedBody && !block.boldWrap)
       return false;
     view.dispatch({
-      selection: extend ? import_state.EditorSelection.range(sel.anchor, block.titleTo) : import_state.EditorSelection.cursor(block.titleTo),
+      selection: extend ? import_state2.EditorSelection.range(sel.anchor, block.titleTo) : import_state2.EditorSelection.cursor(block.titleTo),
       scrollIntoView: true,
       userEvent: "select"
     });
@@ -1449,7 +1547,7 @@ function cleanTogglesExtension(host) {
     const target = afterTitle(view.state.doc, block, overrides);
     if (target === sel.head)
       return false;
-    view.dispatch({ selection: import_state.EditorSelection.cursor(target), scrollIntoView: true, userEvent: "select" });
+    view.dispatch({ selection: import_state2.EditorSelection.cursor(target), scrollIntoView: true, userEvent: "select" });
     return true;
   }
   function backspaceAtTitleStart(view) {
@@ -1463,7 +1561,7 @@ function cleanTogglesExtension(host) {
     const changes = [{ from: block.headerFrom + Math.max(0, keep), to: block.titleFrom }];
     if (block.boldWrap)
       changes.push({ from: block.titleTo, to: block.headerTo });
-    view.dispatch({ changes, selection: import_state.EditorSelection.cursor(block.headerFrom + Math.max(0, keep)), userEvent: "delete" });
+    view.dispatch({ changes, selection: import_state2.EditorSelection.cursor(block.headerFrom + Math.max(0, keep)), userEvent: "delete" });
     return true;
   }
   function deleteAtTitleEnd(view) {
@@ -1531,7 +1629,7 @@ function applyMove(view, before, r) {
   }
   view.dispatch({
     changes: { from: a, to: old.length - b, insert: text.slice(a, text.length - b) },
-    selection: import_state.EditorSelection.cursor(pos),
+    selection: import_state2.EditorSelection.cursor(pos),
     effects,
     scrollIntoView: true,
     userEvent: "move"
@@ -1557,7 +1655,7 @@ function unitStartAndCd(lines, n) {
   return { start: (_a = u == null ? void 0 : u.start) != null ? _a : n, cd: (_b = u == null ? void 0 : u.cd) != null ? _b : 0 };
 }
 function blockDrag(host, _field) {
-  return import_view.EditorView.domEventHandlers({
+  return import_view2.EditorView.domEventHandlers({
     pointerdown(e, view) {
       if (!dragAllowed(host, view) || e.button !== 0)
         return false;
@@ -3536,8 +3634,8 @@ function kindOf(calloutType2) {
   for (const kind of CALLOUT_KINDS)
     if (words.includes(kind))
       return kind;
-  for (const word of words) {
-    const alias = KIND_WORD_ALIASES[word];
+  for (const word2 of words) {
+    const alias = KIND_WORD_ALIASES[word2];
     if (alias)
       return alias;
   }
@@ -6885,7 +6983,7 @@ var NAMES = {
   other: "Ungraded \u2014 anything else"
 };
 function aliasesOf(kind) {
-  return Object.entries(KIND_WORD_ALIASES).filter(([, target]) => target === kind).map(([word]) => word).sort();
+  return Object.entries(KIND_WORD_ALIASES).filter(([, target]) => target === kind).map(([word2]) => word2).sort();
 }
 function metaOf(kind) {
   var _a;
@@ -6973,9 +7071,9 @@ var import_obsidian5 = require("obsidian");
 var PLAYGROUND_BASENAME = "Callout playground";
 function example(kind, n) {
   const m = metaOf(kind);
-  const word = GRADED_COLORS.includes(kind) ? `recall-${kind}` : kind;
+  const word2 = GRADED_COLORS.includes(kind) ? `recall-${kind}` : kind;
   return [
-    `> [!${word}]- **${n}. ${m.icon} ${m.name}**`,
+    `> [!${word2}]- **${n}. ${m.icon} ${m.name}**`,
     `> Filter name: **${m.name}**`,
     `> Types that match: ${kindWords(kind)}`,
     `> Deep link: \`obsidian://notion-toggle?action=autoscroll&filter=${m.param}\``,
@@ -8757,6 +8855,150 @@ function renderResearchSettings(containerEl, host) {
 // src/voice/settings.ts
 var import_obsidian12 = require("obsidian");
 
+// src/voice/wire.ts
+var import_obsidian11 = require("obsidian");
+
+// src/voice/bar.ts
+var import_obsidian10 = require("obsidian");
+var BARS = 56;
+var VoiceBar = class {
+  constructor(actions, startedAt, look) {
+    this.actions = actions;
+    this.startedAt = startedAt;
+    this.look = look;
+    this.bars = [];
+    this.levels = new Array(BARS).fill(0);
+    this.shown = "";
+    this.pausedMs = 0;
+    this.pausedAt = 0;
+    this.lift = 0;
+    this.el = document.body.createDiv({ cls: "ntt-voice-bar", attr: { role: "region", "aria-label": "Voice mode" } });
+    const top = this.el.createDiv({ cls: "ntt-voice-top" });
+    this.timeEl = top.createSpan({ cls: "ntt-voice-time", text: "0:00" });
+    this.statusEl = top.createSpan({ cls: "ntt-voice-status", text: "Listening\u2026" });
+    this.textEl = this.el.createDiv({ cls: "ntt-voice-text", attr: { "aria-live": "polite" } });
+    this.textEl.setText("Bolna shuru kijiye\u2026 text yahan dikhega");
+    this.textEl.addClass("is-empty");
+    this.wave = this.el.createDiv({ cls: "ntt-voice-wave" });
+    for (let i = 0; i < BARS; i++)
+      this.bars.push(this.wave.createDiv({ cls: "ntt-voice-b" }));
+    const row = this.el.createDiv({ cls: "ntt-voice-row" });
+    const cancel = row.createEl("button", { cls: "ntt-voice-btn ntt-voice-cancel", attr: { "aria-label": "Discard recording" } });
+    (0, import_obsidian10.setIcon)(cancel, "x");
+    this.pauseBtn = row.createEl("button", { cls: "ntt-voice-btn ntt-voice-pause", attr: { "aria-label": "Pause" } });
+    (0, import_obsidian10.setIcon)(this.pauseBtn, "pause");
+    const done = row.createEl("button", { cls: "ntt-voice-btn ntt-voice-done", attr: { "aria-label": "Finish and write" } });
+    (0, import_obsidian10.setIcon)(done, "check");
+    cancel.onclick = () => this.actions.cancel();
+    done.onclick = () => this.actions.done();
+    this.pauseBtn.onclick = () => this.actions.togglePause();
+    this.timer = window.setInterval(() => this.tick(), 250);
+    if (look) {
+      this.el.toggleClass("is-compact", look.style === "compact");
+      this.el.toggleClass("is-accent", look.wave === "accent");
+      this.setLift(look.lift);
+      this.enableDrag();
+    }
+  }
+  setLift(px3) {
+    const max = Math.max(0, window.innerHeight - this.el.offsetHeight - 120);
+    this.lift = Math.round(Math.min(max, Math.max(-60, px3)));
+    this.el.style.setProperty("--ntt-voice-lift", `${this.lift}px`);
+  }
+  /** v1.9.4 — long-press the card (not a button), then slide up or down. */
+  enableDrag() {
+    let timer = 0;
+    let startY = 0;
+    let startLift = 0;
+    let dragging = false;
+    const end = () => {
+      var _a;
+      window.clearTimeout(timer);
+      if (dragging) {
+        dragging = false;
+        this.el.removeClass("is-dragging");
+        (_a = this.look) == null ? void 0 : _a.onMoved(this.lift);
+      }
+    };
+    this.el.addEventListener("pointerdown", (e) => {
+      if (e.target.closest("button"))
+        return;
+      startY = e.clientY;
+      startLift = this.lift;
+      timer = window.setTimeout(() => {
+        var _a;
+        dragging = true;
+        this.el.addClass("is-dragging");
+        try {
+          this.el.setPointerCapture(e.pointerId);
+        } catch (e2) {
+        }
+        (_a = navigator.vibrate) == null ? void 0 : _a.call(navigator, 15);
+      }, 400);
+    });
+    this.el.addEventListener("pointermove", (e) => {
+      if (!dragging) {
+        if (Math.abs(e.clientY - startY) > 10)
+          window.clearTimeout(timer);
+        return;
+      }
+      e.preventDefault();
+      this.setLift(startLift + (startY - e.clientY));
+    });
+    this.el.addEventListener("pointerup", end);
+    this.el.addEventListener("pointercancel", end);
+  }
+  tick() {
+    const now = this.pausedAt || Date.now();
+    const s = Math.max(0, Math.floor((now - this.startedAt - this.pausedMs) / 1e3));
+    this.timeEl.setText(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`);
+  }
+  /** v1.9.3 — Lovable-style wave: newest sound in the centre, spreading out
+   *  to both sides, tall in the middle and tapering to dots at the edges. */
+  level(l) {
+    const v = Math.min(1, Math.sqrt(l * 12));
+    this.levels.unshift(v);
+    this.levels.pop();
+    const mid = (BARS - 1) / 2;
+    for (let i = 0; i < BARS; i++) {
+      const d = Math.abs(i - mid);
+      const taper = Math.cos(d / (mid + 1) * (Math.PI / 2));
+      const h = this.levels[Math.floor(d)] * taper;
+      this.bars[i].style.transform = `scaleY(${0.1 + h * 0.9})`;
+    }
+  }
+  setPaused(p) {
+    if (p)
+      this.pausedAt = Date.now();
+    else if (this.pausedAt) {
+      this.pausedMs += Date.now() - this.pausedAt;
+      this.pausedAt = 0;
+    }
+    this.el.toggleClass("is-paused", p);
+    (0, import_obsidian10.setIcon)(this.pauseBtn, p ? "mic" : "pause");
+    this.pauseBtn.setAttr("aria-label", p ? "Resume" : "Pause");
+    this.status(p ? "Paused" : "Listening\u2026");
+  }
+  status(text) {
+    this.statusEl.setText(text);
+  }
+  /** Live transcript box: shows what has been written so far (last ~400 chars). */
+  transcript(piece) {
+    this.shown = (this.shown + piece).slice(-400);
+    this.textEl.removeClass("is-empty");
+    this.textEl.setText(this.shown.trimStart());
+    this.textEl.scrollTop = this.textEl.scrollHeight;
+  }
+  finishing() {
+    this.el.addClass("is-finishing");
+    this.status("Writing\u2026");
+  }
+  destroy() {
+    window.clearInterval(this.timer);
+    this.el.remove();
+  }
+};
+
 // src/voice/client.ts
 var DEFAULT_VOICE_ENDPOINT = "https://notion-toggle-voice.lovable.app/api/public/transcribe";
 var DEFAULT_VOICE_SETTINGS = {
@@ -8770,6 +9012,7 @@ var DEFAULT_VOICE_SETTINGS = {
   voiceBarStyle: "full",
   voiceBarWave: "muted",
   voiceKeepAwake: true,
+  voiceAccuracy: "accurate",
   voiceRescueFolder: "Voice recordings",
   voiceUsageDay: "",
   voiceUsageSec: 0,
@@ -8871,7 +9114,7 @@ async function transcribe(transport, s, wav, context = "") {
   }
   if (res.status < 200 || res.status >= 300)
     throw new VoiceError(data.error || `Transcription failed (${res.status})`, res.status);
-  return String((_a = data.text) != null ? _a : "").trim();
+  return cleanPiece(String((_a = data.text) != null ? _a : ""));
 }
 async function transcribeWithRetry(transport, s, wav, context = "", sleep = (ms3) => new Promise((r) => setTimeout(r, ms3))) {
   let last = null;
@@ -8887,6 +9130,9 @@ async function transcribeWithRetry(transport, s, wav, context = "", sleep = (ms3
     }
   }
   throw last;
+}
+function cleanPiece(text) {
+  return text.replace(/\s*(?:\.{2,}|…)\s*$/g, "").replace(/^\s*(?:\.{2,}|…)\s*/g, "").replace(/\s*(?:\.{2,}|…)\s+(?=\p{Ll})/gu, " ").replace(/\s*(?:\.{2,}|…)\s+(?=\p{Lu}|\d)/gu, ". ").trim();
 }
 function autoLink(text, titles, skip = "") {
   const names = [...new Set(titles.map((t) => t.trim()))].filter((t) => t.length >= 3 && t.toLowerCase() !== skip.toLowerCase()).sort((a, b) => b.length - a.length);
@@ -9162,158 +9408,39 @@ function joinPiece(before, piece) {
     return "";
   if (/^(- |\d+\. |#{1,6} |\||> )/.test(t) && before && !/\n$/.test(before))
     return "\n" + t;
+  const last = before.slice(before.lastIndexOf("\n") + 1).trim();
+  if (last.startsWith("|") && !t.startsWith("|"))
+    return (/\n$/.test(before) ? "\n" : "\n\n") + t;
   if (!before || /[\s\n]$/.test(before))
     return t;
   return " " + t;
 }
-
-// src/voice/wire.ts
-var import_obsidian11 = require("obsidian");
-
-// src/voice/bar.ts
-var import_obsidian10 = require("obsidian");
-var BARS = 56;
-var VoiceBar = class {
-  constructor(actions, startedAt, look) {
-    this.actions = actions;
-    this.startedAt = startedAt;
-    this.look = look;
-    this.bars = [];
-    this.levels = new Array(BARS).fill(0);
-    this.shown = "";
-    this.pausedMs = 0;
-    this.pausedAt = 0;
-    this.lift = 0;
-    this.el = document.body.createDiv({ cls: "ntt-voice-bar", attr: { role: "region", "aria-label": "Voice mode" } });
-    const top = this.el.createDiv({ cls: "ntt-voice-top" });
-    this.timeEl = top.createSpan({ cls: "ntt-voice-time", text: "0:00" });
-    this.statusEl = top.createSpan({ cls: "ntt-voice-status", text: "Listening\u2026" });
-    this.textEl = this.el.createDiv({ cls: "ntt-voice-text", attr: { "aria-live": "polite" } });
-    this.textEl.setText("Bolna shuru kijiye\u2026 text yahan dikhega");
-    this.textEl.addClass("is-empty");
-    this.wave = this.el.createDiv({ cls: "ntt-voice-wave" });
-    for (let i = 0; i < BARS; i++)
-      this.bars.push(this.wave.createDiv({ cls: "ntt-voice-b" }));
-    const row = this.el.createDiv({ cls: "ntt-voice-row" });
-    const cancel = row.createEl("button", { cls: "ntt-voice-btn ntt-voice-cancel", attr: { "aria-label": "Discard recording" } });
-    (0, import_obsidian10.setIcon)(cancel, "x");
-    this.pauseBtn = row.createEl("button", { cls: "ntt-voice-btn ntt-voice-pause", attr: { "aria-label": "Pause" } });
-    (0, import_obsidian10.setIcon)(this.pauseBtn, "pause");
-    const done = row.createEl("button", { cls: "ntt-voice-btn ntt-voice-done", attr: { "aria-label": "Finish and write" } });
-    (0, import_obsidian10.setIcon)(done, "check");
-    cancel.onclick = () => this.actions.cancel();
-    done.onclick = () => this.actions.done();
-    this.pauseBtn.onclick = () => this.actions.togglePause();
-    this.timer = window.setInterval(() => this.tick(), 250);
-    if (look) {
-      this.el.toggleClass("is-compact", look.style === "compact");
-      this.el.toggleClass("is-accent", look.wave === "accent");
-      this.setLift(look.lift);
-      this.enableDrag();
-    }
-  }
-  setLift(px3) {
-    const max = Math.max(0, window.innerHeight - this.el.offsetHeight - 120);
-    this.lift = Math.round(Math.min(max, Math.max(-60, px3)));
-    this.el.style.setProperty("--ntt-voice-lift", `${this.lift}px`);
-  }
-  /** v1.9.4 — long-press the card (not a button), then slide up or down. */
-  enableDrag() {
-    let timer = 0;
-    let startY = 0;
-    let startLift = 0;
-    let dragging = false;
-    const end = () => {
-      var _a;
-      window.clearTimeout(timer);
-      if (dragging) {
-        dragging = false;
-        this.el.removeClass("is-dragging");
-        (_a = this.look) == null ? void 0 : _a.onMoved(this.lift);
+function splitLong(samples, rate = TARGET_RATE, minSec = 10, maxSec = 20) {
+  const out = [];
+  const win = Math.max(1, Math.floor(rate * 0.05));
+  let start = 0;
+  while (samples.length - start > maxSec * rate) {
+    let best = start + maxSec * rate;
+    let bestLevel = Infinity;
+    for (let i = start + minSec * rate; i + win <= start + maxSec * rate; i += win) {
+      const l = rms(samples.subarray(i, i + win));
+      if (l < bestLevel) {
+        bestLevel = l;
+        best = i + Math.floor(win / 2);
       }
-    };
-    this.el.addEventListener("pointerdown", (e) => {
-      if (e.target.closest("button"))
-        return;
-      startY = e.clientY;
-      startLift = this.lift;
-      timer = window.setTimeout(() => {
-        var _a;
-        dragging = true;
-        this.el.addClass("is-dragging");
-        try {
-          this.el.setPointerCapture(e.pointerId);
-        } catch (e2) {
-        }
-        (_a = navigator.vibrate) == null ? void 0 : _a.call(navigator, 15);
-      }, 400);
-    });
-    this.el.addEventListener("pointermove", (e) => {
-      if (!dragging) {
-        if (Math.abs(e.clientY - startY) > 10)
-          window.clearTimeout(timer);
-        return;
-      }
-      e.preventDefault();
-      this.setLift(startLift + (startY - e.clientY));
-    });
-    this.el.addEventListener("pointerup", end);
-    this.el.addEventListener("pointercancel", end);
-  }
-  tick() {
-    const now = this.pausedAt || Date.now();
-    const s = Math.max(0, Math.floor((now - this.startedAt - this.pausedMs) / 1e3));
-    this.timeEl.setText(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`);
-  }
-  /** v1.9.3 — Lovable-style wave: newest sound in the centre, spreading out
-   *  to both sides, tall in the middle and tapering to dots at the edges. */
-  level(l) {
-    const v = Math.min(1, Math.sqrt(l * 12));
-    this.levels.unshift(v);
-    this.levels.pop();
-    const mid = (BARS - 1) / 2;
-    for (let i = 0; i < BARS; i++) {
-      const d = Math.abs(i - mid);
-      const taper = Math.cos(d / (mid + 1) * (Math.PI / 2));
-      const h = this.levels[Math.floor(d)] * taper;
-      this.bars[i].style.transform = `scaleY(${0.1 + h * 0.9})`;
     }
+    out.push([start, best]);
+    start = best;
   }
-  setPaused(p) {
-    if (p)
-      this.pausedAt = Date.now();
-    else if (this.pausedAt) {
-      this.pausedMs += Date.now() - this.pausedAt;
-      this.pausedAt = 0;
-    }
-    this.el.toggleClass("is-paused", p);
-    (0, import_obsidian10.setIcon)(this.pauseBtn, p ? "mic" : "pause");
-    this.pauseBtn.setAttr("aria-label", p ? "Resume" : "Pause");
-    this.status(p ? "Paused" : "Listening\u2026");
-  }
-  status(text) {
-    this.statusEl.setText(text);
-  }
-  /** Live transcript box: shows what has been written so far (last ~400 chars). */
-  transcript(piece) {
-    this.shown = (this.shown + piece).slice(-400);
-    this.textEl.removeClass("is-empty");
-    this.textEl.setText(this.shown.trimStart());
-    this.textEl.scrollTop = this.textEl.scrollHeight;
-  }
-  finishing() {
-    this.el.addClass("is-finishing");
-    this.status("Writing\u2026");
-  }
-  destroy() {
-    window.clearInterval(this.timer);
-    this.el.remove();
-  }
-};
+  if (samples.length > start)
+    out.push([start, samples.length]);
+  return out;
+}
 
 // src/voice/recorder.ts
 var VoiceRecorder = class {
-  constructor(ev) {
+  /** v1.9.20 — accurate: wait ~6 s and a real pause before sending, so each piece is a full thought. */
+  constructor(ev, mode = "accurate") {
     this.ev = ev;
     this.stream = null;
     this.ctx = null;
@@ -9321,9 +9448,9 @@ var VoiceRecorder = class {
     this.source = null;
     this.chunks = [];
     this.pieceSamples = 0;
-    this.seg = new Segmenter();
     this.paused = false;
     this.startedAt = 0;
+    this.seg = mode === "fast" ? new Segmenter(3, 12, 700) : new Segmenter(6, 20, 900);
   }
   /** v1.9.6 — screen turning off: send what was said so far right away. */
   onHidden() {
@@ -9450,6 +9577,7 @@ var DictationSession = class {
     this.pending = 0;
     this.finals = [];
     this.ended = false;
+    this.writing = false;
   }
   add(wav) {
     const id = this.next++;
@@ -9470,21 +9598,43 @@ var DictationSession = class {
       this.drain();
     });
   }
+  /** v1.9.19 — writes one piece at a time (awaited), and an error in one piece never stops the rest. */
   drain() {
-    while (this.results.has(this.flushed)) {
-      const t = this.results.get(this.flushed);
-      this.results.delete(this.flushed);
-      this.flushed++;
-      if (this.d.undo && isUndoCommand(t)) {
-        this.d.undo();
-        continue;
+    if (this.writing)
+      return;
+    this.writing = true;
+    void (async () => {
+      var _a, _b;
+      try {
+        while (this.results.has(this.flushed)) {
+          const t = this.results.get(this.flushed);
+          this.results.delete(this.flushed);
+          this.flushed++;
+          try {
+            if (this.d.undo && isUndoCommand(t)) {
+              this.d.undo();
+              continue;
+            }
+            const piece = joinPiece(this.d.before(), t);
+            if (piece) {
+              await this.d.write(piece);
+              try {
+                (_b = (_a = this.d).afterWrite) == null ? void 0 : _b.call(_a, piece);
+              } catch (e) {
+              }
+            }
+          } catch (e) {
+            this.d.onError(e);
+          }
+        }
+      } finally {
+        this.writing = false;
       }
-      const piece = joinPiece(this.d.before(), t);
-      if (piece)
-        this.d.write(piece);
-    }
-    if (this.ended && this.flushed === this.next)
-      this.finals.splice(0).forEach((f) => f());
+      if (this.results.has(this.flushed))
+        return this.drain();
+      if (this.ended && this.flushed === this.next)
+        this.finals.splice(0).forEach((f) => f());
+    })();
   }
   /** Resolves once every piece added so far is written. */
   end() {
@@ -9644,6 +9794,97 @@ var saveOf = (p) => {
   var _a, _b;
   return (_b = (_a = p.saveSettings) == null ? void 0 : _a.call(p)) != null ? _b : Promise.resolve();
 };
+var AUDIO_EXT = ["m4a", "mp3", "wav", "ogg", "opus", "webm", "aac", "flac", "3gp", "mp4"];
+var PROGRESS = /%% voice-progress: (\d+)\/(\d+) %%/;
+var AudioPicker = class extends import_obsidian11.FuzzySuggestModal {
+  constructor(app, pick) {
+    super(app);
+    this.pick = pick;
+    this.setPlaceholder("Kaunsi recording likhni hai? (m4a, mp3, wav\u2026)");
+  }
+  getItems() {
+    return this.app.vault.getFiles().filter((f) => AUDIO_EXT.includes(f.extension.toLowerCase())).sort((a, b) => b.stat.mtime - a.stat.mtime);
+  }
+  getItemText(f) {
+    return f.path;
+  }
+  onChooseItem(f) {
+    this.pick(f);
+  }
+};
+async function transcribeFile(p, s, file) {
+  var _a, _b, _c;
+  if (!s.voiceKey.trim())
+    return void new import_obsidian11.Notice("Pehle Settings \u2192 Voice mode me key daalein.");
+  const vault = p.app.vault;
+  const notice = new import_obsidian11.Notice(`Voice: "${file.name}" padh raha hoon\u2026`, 0);
+  let samples;
+  try {
+    const AC = (_a = window.AudioContext) != null ? _a : window.webkitAudioContext;
+    const ctx = new AC();
+    const buf = await ctx.decodeAudioData((await vault.readBinary(file)).slice(0));
+    void ctx.close();
+    const mono = new Float32Array(buf.length);
+    for (let c = 0; c < buf.numberOfChannels; c++) {
+      const d = buf.getChannelData(c);
+      for (let i2 = 0; i2 < d.length; i2++)
+        mono[i2] += d[i2] / buf.numberOfChannels;
+    }
+    samples = downsample(mono, buf.sampleRate, TARGET_RATE);
+  } catch (e) {
+    notice.hide();
+    return void new import_obsidian11.Notice("Voice: ye audio format phone nahi khol paya. Recorder me m4a/mp3/wav chuniye.", 1e4);
+  }
+  const parts = splitLong(samples);
+  const dir = file.parent && file.parent.path !== "/" ? file.parent.path + "/" : "";
+  const path = `${dir}${file.basename} \u2014 transcript.md`;
+  let note = vault.getAbstractFileByPath(path);
+  if (!(note instanceof import_obsidian11.TFile))
+    note = await vault.create(path, `![[${file.name}]]
+
+%% voice-progress: 0/${parts.length} %%
+`);
+  const target = note;
+  const startAt = Number((_c = (_b = PROGRESS.exec(await vault.read(target))) == null ? void 0 : _b[1]) != null ? _c : parts.length);
+  const title = target.basename;
+  let i = startAt;
+  try {
+    for (; i < parts.length; i++) {
+      notice.setMessage(`Voice: "${file.name}" likh raha hoon\u2026 ${i + 1}/${parts.length}`);
+      const piece = normalize(samples.subarray(parts[i][0], parts[i][1]));
+      let text = "";
+      if (hasSpeech(piece)) {
+        const wav = encodeWav(piece, TARGET_RATE);
+        const body = await vault.read(target);
+        try {
+          text = await transcribeWithRetry(voiceTransport, s, wav, buildContext(file.basename, body.replace(PROGRESS, "").slice(-200)));
+        } catch (e) {
+          if (!(e instanceof VoiceError) || !/empty|no speech/i.test(e.message))
+            throw e;
+        }
+        if (text)
+          text = await linkAll(p, s, text, title);
+        addUsage(s, wavSeconds(wav));
+      }
+      const next = i + 1;
+      await vault.process(target, (c) => {
+        const m = PROGRESS.exec(c);
+        const before = m ? c.slice(0, m.index) : c;
+        const tag = next < parts.length ? `%% voice-progress: ${next}/${parts.length} %%
+` : "";
+        return before.replace(/\n$/, "") + (text ? joinPiece(before.replace(/\n$/, ""), text) : "") + "\n" + tag;
+      });
+    }
+    notice.hide();
+    new import_obsidian11.Notice(`Voice: poori recording likh di \u2713 (${parts.length} hisse)`, 6e3);
+  } catch (e) {
+    notice.hide();
+    new import_obsidian11.Notice(`Voice: ${i}/${parts.length} hisse likhe. ${friendlyError(e instanceof VoiceError ? e.status : -1, e.message)} Command dobara chalayein \u2014 wahin se aage likhega.`, 12e3);
+  } finally {
+    await saveOf(p);
+  }
+  await p.app.workspace.getLeaf(false).openFile(target);
+}
 var VoiceController = class {
   constructor(plugin) {
     this.plugin = plugin;
@@ -9676,19 +9917,70 @@ var VoiceController = class {
       new VoiceSetupModal(this.plugin, () => void this.start()).open();
       return;
     }
-    const editor = view.editor;
+    const notePath = (_b = (_a = view.file) == null ? void 0 : _a.path) != null ? _b : "";
+    const firstEditor = view.editor;
+    const liveEditor = () => {
+      let found = null;
+      try {
+        this.plugin.app.workspace.iterateAllLeaves((leaf) => {
+          var _a2, _b2;
+          const v = leaf.view;
+          if (!found && v instanceof import_obsidian11.MarkdownView && ((_a2 = v.file) == null ? void 0 : _a2.path) === notePath && ((_b2 = v.getMode) == null ? void 0 : _b2.call(v)) !== "preview")
+            found = v.editor;
+        });
+      } catch (e) {
+      }
+      return found != null ? found : notePath ? null : firstEditor;
+    };
+    const editorNow = () => {
+      var _a2;
+      return (_a2 = liveEditor()) != null ? _a2 : firstEditor;
+    };
+    const editor = firstEditor;
     const anchor = new CursorAnchor(editor.posToOffset(editor.getCursor("to")));
-    const here = (ed) => anchor.follow(ed.posToOffset(ed.getCursor("to")));
+    const here = (ed) => Math.min(anchor.follow(ed.posToOffset(ed.getCursor("to"))), ed.getValue().length);
     const write = (ed, text) => {
-      ed.replaceRange(text, ed.offsetToPos(here(ed)));
+      const at = here(ed);
+      anchor.offset = at;
+      ed.replaceRange(text, ed.offsetToPos(at));
       ed.setCursor(ed.offsetToPos(anchor.wrote(text.length)));
     };
-    const notePath = (_b = (_a = view.file) == null ? void 0 : _a.path) != null ? _b : "";
+    const safeWrite = async (text) => {
+      const ed = liveEditor();
+      if (ed) {
+        try {
+          const before = ed.getValue().length;
+          write(ed, text);
+          if (ed.getValue().length >= before + text.length)
+            return;
+        } catch (e) {
+        }
+      }
+      const file = this.plugin.app.vault.getAbstractFileByPath(notePath);
+      if (file instanceof import_obsidian11.TFile) {
+        try {
+          await this.plugin.app.vault.process(file, (c) => {
+            const at = Math.min(anchor.offset, c.length);
+            anchor.offset = at + text.length;
+            return c.slice(0, at) + text + c.slice(at);
+          });
+          return;
+        } catch (e) {
+        }
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (e) {
+      }
+      new import_obsidian11.Notice(`Voice: note me likh nahi paya \u2014 text clipboard me copy kar diya. Paste kar lijiye:
+${text.slice(0, 200)}`, 15e3);
+    };
     const title = (_d = (_c = view.file) == null ? void 0 : _c.basename) != null ? _d : "";
     let last = null;
     this.session = new DictationSession({
       transcribe: async (wav) => {
-        const ctx = buildContext(title, editor.getValue().slice(0, here(editor)));
+        const ed = editorNow();
+        const ctx = buildContext(title, ed.getValue().slice(0, here(ed)));
         let t = await transcribeWithRetry(voiceTransport, this.s, wav, ctx);
         t = await linkAll(this.plugin, this.s, t, title);
         addUsage(this.s, wavSeconds(wav));
@@ -9699,22 +9991,29 @@ var VoiceController = class {
         if (!last)
           return void new import_obsidian11.Notice("Voice: mitane ke liye kuch nahi hai.");
         const { at, len } = last;
-        editor.replaceRange("", editor.offsetToPos(at), editor.offsetToPos(at + len));
+        const editor2 = editorNow();
+        editor2.replaceRange("", editor2.offsetToPos(at), editor2.offsetToPos(at + len));
         anchor.follow(at);
-        editor.setCursor(editor.offsetToPos(at));
+        editor2.setCursor(editor2.offsetToPos(at));
         last = null;
         new import_obsidian11.Notice("Voice: pichhla hissa hata diya \u2713");
       },
       write: (t) => {
+        const ed = editorNow();
+        last = { at: here(ed), len: t.length };
+        return safeWrite(t);
+      },
+      afterWrite: (t) => {
         var _a2;
-        last = { at: here(editor), len: t.length };
-        write(editor, t);
         try {
           (_a2 = this.bar) == null ? void 0 : _a2.transcript(t);
         } catch (e) {
         }
       },
-      before: () => editor.getValue().slice(0, here(editor)),
+      before: () => {
+        const ed = editorNow();
+        return ed.getValue().slice(0, here(ed));
+      },
       rescue: async (wav) => {
         const path = await this.rescue(wav);
         if (path && notePath) {
@@ -9736,7 +10035,7 @@ var VoiceController = class {
         return (_a2 = this.bar) == null ? void 0 : _a2.level(l);
       },
       onPiece: (wav) => session.add(wav)
-    });
+    }, this.s.voiceAccuracy === "fast" ? "fast" : "accurate");
     try {
       await this.rec.start();
     } catch (e) {
@@ -9950,6 +10249,11 @@ ${lines.join("\n")}
     void this.finish(false);
   }
 };
+var refreshFab = () => {
+};
+function refreshVoiceFab() {
+  refreshFab();
+}
 function installVoice(plugin) {
   withVoiceDefaults(plugin.settings);
   const ctl = new VoiceController(plugin);
@@ -9964,17 +10268,35 @@ function installVoice(plugin) {
   } });
   plugin.addCommand({ id: "voice-mode-self-test", name: "Voice mode: self-test (5 sec)", icon: "stethoscope", callback: () => void ctl.selfTest() });
   plugin.addCommand({ id: "voice-mode-retry", name: "Voice mode: write saved recordings now", icon: "refresh-cw", callback: () => void ctl.retryPending(true) });
+  plugin.addCommand({ id: "voice-mode-file", name: "Voice mode: transcribe audio file", icon: "file-audio", callback: () => new AudioPicker(plugin.app, (f) => void transcribeFile(plugin, plugin.settings, f)).open() });
+  try {
+    plugin.registerEvent(plugin.app.workspace.on("file-menu", (menu, f) => {
+      if (f instanceof import_obsidian11.TFile && AUDIO_EXT.includes(f.extension.toLowerCase()))
+        menu.addItem((it) => it.setTitle("Voice: transcribe to note").setIcon("file-audio").onClick(() => void transcribeFile(plugin, plugin.settings, f)));
+    }));
+  } catch (e) {
+  }
   const onOnline = () => void ctl.retryPending();
   window.addEventListener("online", onOnline);
   plugin.register(() => window.removeEventListener("online", onOnline));
   plugin.app.workspace.onLayoutReady(() => setTimeout(() => void ctl.retryPending(), 4e3));
   const s = plugin.settings;
-  if (s.voiceFab) {
+  {
     const fab = document.body.createEl("button", { cls: "ntt-voice-fab", attr: { "aria-label": "Voice mode \u2014 tap to speak" } });
     (0, import_obsidian11.setIcon)(fab, "mic");
     fab.onclick = () => ctl.toggle();
     ctl.fab = fab;
-    const sync = () => fab.toggleClass("is-off", !plugin.app.workspace.getActiveViewOfType(import_obsidian11.MarkdownView));
+    const sync = () => {
+      fab.toggleClass("is-off", !plugin.app.workspace.getActiveViewOfType(import_obsidian11.MarkdownView));
+      fab.toggleClass("is-disabled", !s.voiceFab);
+    };
+    refreshFab = sync;
+    plugin.addCommand({ id: "voice-mode-fab", name: "Voice mode: show / hide floating mic button", icon: "mic", callback: async () => {
+      s.voiceFab = !s.voiceFab;
+      sync();
+      await saveOf(plugin);
+      new import_obsidian11.Notice(s.voiceFab ? "Floating mic button ON" : "Floating mic button OFF");
+    } });
     plugin.registerEvent(plugin.app.workspace.on("active-leaf-change", sync));
     plugin.app.workspace.onLayoutReady(sync);
     plugin.register(() => fab.remove());
@@ -9987,6 +10309,13 @@ function renderVoiceSettings(containerEl, host) {
   const s = withVoiceDefaults(host.settings);
   const save = () => host.saveSettings();
   new import_obsidian12.Setting(containerEl).setName("Voice mode (v1.9.0)").setHeading();
+  new import_obsidian12.Setting(containerEl).setName("Floating mic button").setDesc("Note par neeche-daayein gol mic button. OFF karte hi turant chhup jaata hai. Mic ribbon aur command se phir bhi chalega.").addToggle(
+    (t) => t.setValue(s.voiceFab).onChange(async (v) => {
+      s.voiceFab = v;
+      refreshVoiceFab();
+      await save();
+    })
+  );
   containerEl.createDiv({
     cls: "setting-item-description",
     text: "Tap the mic in the ribbon (or the 'Voice mode' command / mobile toolbar), speak, then tap \u2713. Long talks are written piece by piece while you speak."
@@ -10013,12 +10342,6 @@ function renderVoiceSettings(containerEl, host) {
   );
   text("Special words", "Names or terms you often say, comma separated.", "voiceKeywords");
   text("Rescue folder", "If writing fails, the audio is saved here so nothing is lost.", "voiceRescueFolder");
-  new import_obsidian12.Setting(containerEl).setName("Floating mic button").setDesc("A mic button on notes; restart Obsidian after changing.").addToggle(
-    (t) => t.setValue(s.voiceFab).onChange(async (v) => {
-      s.voiceFab = v;
-      await save();
-    })
-  );
   new import_obsidian12.Setting(containerEl).setName("Voice card look").setDesc("Tip: long-press the voice card and slide it up or down to move it.").addDropdown(
     (d) => {
       var _a;
@@ -10041,6 +10364,15 @@ function renderVoiceSettings(containerEl, host) {
       await save();
       new import_obsidian12.Notice("Voice card is back in its normal spot.");
     })
+  );
+  new import_obsidian12.Setting(containerEl).setName("Listening: accurate or fast").setDesc("Accurate (default): poora vaakya sun kar likhta hai \u2014 galtiyan kam, text ~6 sec baad. Fast: text jaldi, par galtiyan zyada.").addDropdown(
+    (d) => {
+      var _a;
+      return d.addOption("accurate", "Accurate").addOption("fast", "Fast").setValue((_a = s.voiceAccuracy) != null ? _a : "accurate").onChange(async (v) => {
+        s.voiceAccuracy = v === "fast" ? "fast" : "accurate";
+        await save();
+      });
+    }
   );
   new import_obsidian12.Setting(containerEl).setName("Keep screen on while recording").setDesc("Zaroor ON rakhein \u2014 screen lock hone par phone mic rok sakta hai.").addToggle(
     (t) => t.setValue(s.voiceKeepAwake).onChange(async (v) => {
@@ -10366,6 +10698,10 @@ var NotionToggleSettingTab = class extends import_obsidian15.PluginSettingTab {
     var _a;
     const { containerEl } = this;
     containerEl.empty();
+    new import_obsidian15.Setting(containerEl).setName("Auto-link note names while typing").setDesc("Likhe hue words bane note ke naam se match hon to [[link]] banenge. Voice linking alag rahegi.").addToggle((toggle) => toggle.setValue(this.plugin.settings.typedAutoLink).onChange(async (value) => {
+      this.plugin.settings.typedAutoLink = value;
+      await this.plugin.saveSettings();
+    }));
     new import_obsidian15.Setting(containerEl).setName("Toggle colour").setDesc("Traffic-light colours for active recall: red = hard, yellow = revise, green = mastered. Plain = clean black Notion look.").addDropdown((dropdown) => {
       for (const c of TOGGLE_COLORS)
         dropdown.addOption(c.id, c.label);
@@ -12867,6 +13203,7 @@ function nowMs() {
   return typeof (perf == null ? void 0 : perf.now) === "function" ? perf.now() : Date.now();
 }
 var DEFAULT_SETTINGS = {
+  typedAutoLink: true,
   ...DEFAULT_POMODORO,
   ...DEFAULT_AUTOSCROLL,
   ...DEFAULT_QUIZ,
@@ -13664,8 +14001,8 @@ var NotionTogglePlugin = class extends import_obsidian22.Plugin {
         this.startAutoScroll();
     });
     this.registerEditorExtension(
-      import_state2.Prec.highest(
-        import_view2.keymap.of([
+      import_state3.Prec.highest(
+        import_view3.keymap.of([
           {
             key: "Enter",
             run: (view) => {
@@ -13690,6 +14027,23 @@ var NotionTogglePlugin = class extends import_obsidian22.Plugin {
     registerPaddingDiagnostic(this);
     installResearch(this);
     installVoice(this);
+    this.registerEditorExtension(typedLinkExtension({
+      enabled: () => this.settings.typedAutoLink,
+      notes: () => this.app.vault.getMarkdownFiles(),
+      currentPath: (view) => {
+        let path = "";
+        this.app.workspace.iterateAllLeaves((leaf) => {
+          var _a, _b;
+          if (leaf.view instanceof import_obsidian22.MarkdownView && leaf.view.containerEl.contains(view.dom))
+            path = (_b = (_a = leaf.view.file) == null ? void 0 : _a.path) != null ? _b : "";
+        });
+        return path;
+      },
+      target: (note, source) => {
+        const file = this.app.vault.getFileByPath(note.path);
+        return file ? this.app.metadataCache.fileToLinktext(file, source, true) : note.path.replace(/\.md$/, "");
+      }
+    }));
     registerOutlineCommand(this);
     this.addSettingTab(new NotionToggleSettingTab(this.app, this));
   }

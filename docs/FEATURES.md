@@ -1,10 +1,19 @@
-# Notion Toggle — saare features ek jagah (1.9.21)
+# Notion Toggle — saare features ek jagah (1.9.22)
 
 Ye file plugin ke **har feature** ki ek list hai. Detail ke liye: [Voice mode manual](VOICE_MODE.md) · [Autoscroll features](AUTOSCROLL_FEATURES.md) · [Hindi guide](HINDI-GUIDE.md).
 
 ---
 
 ## A. Toggles (Notion jaise)
+
+### Typed note-name linking (1.9.22)
+- Default ON: Settings → Notion Toggle → **Auto-link note names while typing** (sabse upar).
+- `Physics` note pehle se bana hai: `physics` type karke thoda rukiye → `[[Physics|physics]]`.
+- Hindi aur multi-word note names bhi match hote hain; typing / paste ke ~0.5 sec baad link banta hai.
+- Voice auto-link setting bilkul alag aur unchanged; internet, voice key ya AI credits nahi lagte.
+- Sirf naye likhe/edited words: purane paragraphs apne aap nahi badalte. Current note, existing links, code, URLs aur frontmatter skip hote hain.
+- Same title wale multiple notes skip hote hain taaki galat page link na bane. Native Undo kaam karta hai.
+- Verification: real CodeMirror typing/cursor/toggle/undo integration tests and browser desktop/mobile checks; real Obsidian phone check still required.
 
 | Feature | Kya karta hai |
 |---|---|

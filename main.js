@@ -52,15 +52,113 @@ __export(main_exports, {
 });
 module.exports = __toCommonJS(main_exports);
 var import_obsidian22 = require("obsidian");
-var import_state2 = require("@codemirror/state");
-var import_view2 = require("@codemirror/view");
+var import_state3 = require("@codemirror/state");
+var import_view3 = require("@codemirror/view");
+
+// src/typed-links.ts
+var import_state = require("@codemirror/state");
+var import_view = require("@codemirror/view");
+var linked = import_state.Annotation.define();
+var word = /[\p{L}\p{N}\p{M}_]/u;
+var escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function planTypedLinks(text, edits, notes, current, target) {
+  var _a, _b, _c;
+  const locks = [];
+  const protectedText = /(?:^---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)(?:\r?\n|$))|(?:^[ \t]{0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]{0,3}\1[^\n]*(?:\n|$)|$(?![\s\S])))|(?:`+[^`\n]*`+)|(?:!?\[\[[^\n]*?(?:\]\]|$))|(?:!?\[[^\]\n]*\]\([^\n)]*\))|(?:https?:\/\/\S+)|(?:<[^>\n]*>)/gm;
+  for (const m of text.matchAll(protectedText))
+    locks.push({ from: m.index, to: m.index + m[0].length });
+  const names = /* @__PURE__ */ new Map();
+  for (const note of notes) {
+    if (note.basename.length < 3 || /[\[\]|#^]/.test(note.basename))
+      continue;
+    const key = note.basename.toLocaleLowerCase();
+    names.set(key, [...(_a = names.get(key)) != null ? _a : [], note]);
+  }
+  const changes = [];
+  for (const candidates of [...names.values()].sort((a, b) => {
+    var _a2, _b2, _c2, _d;
+    return ((_b2 = (_a2 = b[0]) == null ? void 0 : _a2.basename.length) != null ? _b2 : 0) - ((_d = (_c2 = a[0]) == null ? void 0 : _c2.basename.length) != null ? _d : 0);
+  })) {
+    const note = candidates[0];
+    if (!note || candidates.length !== 1 || note.path === current)
+      continue;
+    const re = new RegExp(escape(note.basename), "giu");
+    for (const edit of edits) {
+      const start = Math.max(0, edit.from - note.basename.length);
+      const end = Math.min(text.length, edit.to + note.basename.length);
+      for (const m of text.slice(start, end).matchAll(re)) {
+        const from = start + m.index, to = from + m[0].length;
+        if (to <= edit.from || from >= edit.to)
+          continue;
+        if (from > 0 && word.test((_b = text[from - 1]) != null ? _b : "") || word.test((_c = text[to]) != null ? _c : ""))
+          continue;
+        if (locks.some((r) => from < r.to && to > r.from) || changes.some((r) => from < r.to && to > r.from))
+          continue;
+        const link = target(note);
+        changes.push({ from, to, insert: link === m[0] ? `[[${link}]]` : `[[${link}|${m[0]}]]` });
+      }
+    }
+  }
+  return changes.sort((a, b) => a.from - b.from);
+}
+function typedLinkExtension(host) {
+  return import_view.ViewPlugin.fromClass(class {
+    constructor(view) {
+      this.view = view;
+      this.pending = [];
+    }
+    update(update) {
+      if (!update.docChanged)
+        return;
+      clearTimeout(this.timer);
+      if (!host.enabled() || update.transactions.some((tr) => tr.annotation(linked) || tr.isUserEvent("undo") || tr.isUserEvent("redo"))) {
+        this.pending = [];
+        return;
+      }
+      this.pending = this.pending.map((r) => ({ from: update.changes.mapPos(r.from, -1), to: update.changes.mapPos(r.to, 1) }));
+      const typed = update.transactions.some((tr) => tr.isUserEvent("input.type") || tr.isUserEvent("input.paste"));
+      if (!typed) {
+        this.pending = [];
+        return;
+      }
+      update.changes.iterChanges((_a, _b, from, to) => {
+        if (to > from)
+          this.pending.push({ from, to });
+      });
+      this.timer = setTimeout(() => this.flush(), 500);
+    }
+    flush() {
+      if (!host.enabled() || this.view.destroyed) {
+        this.pending = [];
+        return;
+      }
+      if (this.view.composing) {
+        this.timer = setTimeout(() => this.flush(), 200);
+        return;
+      }
+      const source = host.currentPath(this.view);
+      if (!source) {
+        this.pending = [];
+        return;
+      }
+      const changes = planTypedLinks(this.view.state.doc.toString(), this.pending, host.notes(), source, (note) => host.target(note, source));
+      this.pending = [];
+      if (changes.length)
+        this.view.dispatch({ changes, annotations: linked.of(true), userEvent: "input.autolink" });
+    }
+    destroy() {
+      clearTimeout(this.timer);
+      this.pending = [];
+    }
+  });
+}
 
 // src/notion-writing.ts
 var import_obsidian = require("obsidian");
 
 // src/clean-toggles-view.ts
-var import_state = require("@codemirror/state");
-var import_view = require("@codemirror/view");
+var import_state2 = require("@codemirror/state");
+var import_view2 = require("@codemirror/view");
 
 // src/editor-blocks.ts
 function convertDetailsToCallouts(doc, calloutType2, collapsed, boldSummary) {
@@ -1072,10 +1170,10 @@ function insertionText(lines, place, block) {
 }
 
 // src/clean-toggles-view.ts
-var setToggleOpen = import_state.StateEffect.define({
+var setToggleOpen = import_state2.StateEffect.define({
   map: (v, mapping) => ({ key: mapping.mapPos(v.key, 1), open: v.open })
 });
-var EMPTY = { decorations: import_view.Decoration.none, overrides: /* @__PURE__ */ new Map() };
+var EMPTY = { decorations: import_view2.Decoration.none, overrides: /* @__PURE__ */ new Map() };
 function triangle() {
   const ns = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(ns, "svg");
@@ -1087,7 +1185,7 @@ function triangle() {
   svg.appendChild(path);
   return svg;
 }
-var ArrowWidget = class extends import_view.WidgetType {
+var ArrowWidget = class extends import_view2.WidgetType {
   constructor(key, open, type) {
     super();
     this.key = key;
@@ -1119,7 +1217,7 @@ var ArrowWidget = class extends import_view.WidgetType {
     return true;
   }
 };
-var MoreWidget = class extends import_view.WidgetType {
+var MoreWidget = class extends import_view2.WidgetType {
   constructor(key) {
     super();
     this.key = key;
@@ -1192,7 +1290,7 @@ function applyToggle(view, key, open) {
     const parkAt = (_b = (_a = findBlockAt(view.state.doc, line.number)) == null ? void 0 : _a.titleTo) != null ? _b : line.to;
     const sel = view.state.selection.main;
     if (sel.head > parkAt)
-      spec.selection = import_state.EditorSelection.cursor(parkAt);
+      spec.selection = import_state2.EditorSelection.cursor(parkAt);
   }
   view.dispatch(spec);
   view.focus();
@@ -1213,26 +1311,26 @@ function decorationsFor(plans, moreChip = true) {
   for (const p of plans) {
     switch (p.kind) {
       case "line":
-        out.push(import_view.Decoration.line({ class: p.cls }).range(p.pos));
+        out.push(import_view2.Decoration.line({ class: p.cls }).range(p.pos));
         break;
       case "arrow":
         out.push(
-          import_view.Decoration.replace({
+          import_view2.Decoration.replace({
             widget: new ArrowWidget(p.key, p.open, p.type),
             inclusive: false
           }).range(p.from, p.to)
         );
         break;
       case "hide":
-        out.push(import_view.Decoration.replace({ inclusive: false }).range(p.from, p.to));
+        out.push(import_view2.Decoration.replace({ inclusive: false }).range(p.from, p.to));
         break;
       case "fold":
         out.push(
-          import_view.Decoration.replace(moreChip ? { widget: new MoreWidget(p.key), inclusive: false } : { inclusive: false }).range(p.from, p.to)
+          import_view2.Decoration.replace(moreChip ? { widget: new MoreWidget(p.key), inclusive: false } : { inclusive: false }).range(p.from, p.to)
         );
         break;
       case "placeholder":
-        out.push(import_view.Decoration.line({ class: "ntt-clean-empty-title" }).range(p.key));
+        out.push(import_view2.Decoration.line({ class: "ntt-clean-empty-title" }).range(p.key));
         break;
     }
   }
@@ -1253,12 +1351,12 @@ function compute(host, state, overrides) {
   try {
     const result = planClean(state.doc, selRanges(state), overrides);
     if (result.plans.length === 0)
-      return { decorations: import_view.Decoration.none, overrides: result.overrides };
+      return { decorations: import_view2.Decoration.none, overrides: result.overrides };
     const chip = host.moreChip ? host.moreChip() : false;
-    return { decorations: import_view.Decoration.set(decorationsFor(result.plans, chip), true), overrides: result.overrides };
+    return { decorations: import_view2.Decoration.set(decorationsFor(result.plans, chip), true), overrides: result.overrides };
   } catch (err) {
     reportOnce("clean toggles", err);
-    return { decorations: import_view.Decoration.none, overrides: new Map(overrides) };
+    return { decorations: import_view2.Decoration.none, overrides: new Map(overrides) };
   }
 }
 var reported = false;
@@ -1285,7 +1383,7 @@ function releaseCleanToggles() {
 }
 function cleanTogglesExtension(host) {
   dragHost = host;
-  const field = import_state.StateField.define({
+  const field = import_state2.StateField.define({
     create(state) {
       return compute(host, state, /* @__PURE__ */ new Map());
     },
@@ -1310,11 +1408,11 @@ function cleanTogglesExtension(host) {
       return compute(host, tr.state, overrides);
     },
     provide: (f) => [
-      import_view.EditorView.decorations.from(f, (v) => v.decorations),
-      import_view.EditorView.atomicRanges.of((view) => view.state.field(f).decorations)
+      import_view2.EditorView.decorations.from(f, (v) => v.decorations),
+      import_view2.EditorView.atomicRanges.of((view) => view.state.field(f).decorations)
     ]
   });
-  const keepCaretVisible = import_state.EditorState.transactionFilter.of((tr) => {
+  const keepCaretVisible = import_state2.EditorState.transactionFilter.of((tr) => {
     var _a, _b;
     if (!tr.selection || !host.enabled() || !livePreviewOn(host, tr.state))
       return tr;
@@ -1344,10 +1442,10 @@ function cleanTogglesExtension(host) {
     }
     if (target === null || target === sel.main.head)
       return tr;
-    return [tr, { selection: import_state.EditorSelection.range(sel.main.empty ? target : sel.main.anchor, target) }];
+    return [tr, { selection: import_state2.EditorSelection.range(sel.main.empty ? target : sel.main.anchor, target) }];
   });
-  const keys = import_state.Prec.high(
-    import_view.keymap.of([
+  const keys = import_state2.Prec.high(
+    import_view2.keymap.of([
       { key: "End", run: (view) => guard(() => endOfTitle(view, false)) },
       { key: "Shift-End", run: (view) => guard(() => endOfTitle(view, true)) },
       { key: "ArrowRight", run: (view) => guard(() => rightFromTitleEnd(view)) },
@@ -1364,7 +1462,7 @@ function cleanTogglesExtension(host) {
       { key: "Alt-Shift-ArrowDown", run: (view) => guard(() => moveKey(view, "down")) }
     ])
   );
-  const shortcutFromInput = import_view.EditorView.inputHandler.of((view, from, to, text) => {
+  const shortcutFromInput = import_view2.EditorView.inputHandler.of((view, from, to, text) => {
     if (text !== " " || from !== to)
       return false;
     const line = view.state.doc.lineAt(from);
@@ -1403,7 +1501,7 @@ function cleanTogglesExtension(host) {
       });
       view.dispatch({
         changes: { from: plan.from, to: plan.to, insert: plan.insert },
-        selection: import_state.EditorSelection.cursor(plan.caret),
+        selection: import_state2.EditorSelection.cursor(plan.caret),
         scrollIntoView: true,
         userEvent: "input"
       });
@@ -1412,7 +1510,7 @@ function cleanTogglesExtension(host) {
     const cut = markerEnd(line.text, block.depth);
     if (markerDepth(line.text) === block.depth && cut >= 0 && line.text.slice(cut).trim() === "" && line.number === block.lastLine) {
       const out = blankAt(block.depth - 1);
-      view.dispatch({ changes: { from: line.from, to: line.to, insert: out }, selection: import_state.EditorSelection.cursor(line.from + out.length), userEvent: "input" });
+      view.dispatch({ changes: { from: line.from, to: line.to, insert: out }, selection: import_state2.EditorSelection.cursor(line.from + out.length), userEvent: "input" });
       return true;
     }
     return false;
@@ -1428,7 +1526,7 @@ function cleanTogglesExtension(host) {
     if (!foldedBody && !block.boldWrap)
       return false;
     view.dispatch({
-      selection: extend ? import_state.EditorSelection.range(sel.anchor, block.titleTo) : import_state.EditorSelection.cursor(block.titleTo),
+      selection: extend ? import_state2.EditorSelection.range(sel.anchor, block.titleTo) : import_state2.EditorSelection.cursor(block.titleTo),
       scrollIntoView: true,
       userEvent: "select"
     });
@@ -1449,7 +1547,7 @@ function cleanTogglesExtension(host) {
     const target = afterTitle(view.state.doc, block, overrides);
     if (target === sel.head)
       return false;
-    view.dispatch({ selection: import_state.EditorSelection.cursor(target), scrollIntoView: true, userEvent: "select" });
+    view.dispatch({ selection: import_state2.EditorSelection.cursor(target), scrollIntoView: true, userEvent: "select" });
     return true;
   }
   function backspaceAtTitleStart(view) {
@@ -1463,7 +1561,7 @@ function cleanTogglesExtension(host) {
     const changes = [{ from: block.headerFrom + Math.max(0, keep), to: block.titleFrom }];
     if (block.boldWrap)
       changes.push({ from: block.titleTo, to: block.headerTo });
-    view.dispatch({ changes, selection: import_state.EditorSelection.cursor(block.headerFrom + Math.max(0, keep)), userEvent: "delete" });
+    view.dispatch({ changes, selection: import_state2.EditorSelection.cursor(block.headerFrom + Math.max(0, keep)), userEvent: "delete" });
     return true;
   }
   function deleteAtTitleEnd(view) {
@@ -1531,7 +1629,7 @@ function applyMove(view, before, r) {
   }
   view.dispatch({
     changes: { from: a, to: old.length - b, insert: text.slice(a, text.length - b) },
-    selection: import_state.EditorSelection.cursor(pos),
+    selection: import_state2.EditorSelection.cursor(pos),
     effects,
     scrollIntoView: true,
     userEvent: "move"
@@ -1557,7 +1655,7 @@ function unitStartAndCd(lines, n) {
   return { start: (_a = u == null ? void 0 : u.start) != null ? _a : n, cd: (_b = u == null ? void 0 : u.cd) != null ? _b : 0 };
 }
 function blockDrag(host, _field) {
-  return import_view.EditorView.domEventHandlers({
+  return import_view2.EditorView.domEventHandlers({
     pointerdown(e, view) {
       if (!dragAllowed(host, view) || e.button !== 0)
         return false;
@@ -3536,8 +3634,8 @@ function kindOf(calloutType2) {
   for (const kind of CALLOUT_KINDS)
     if (words.includes(kind))
       return kind;
-  for (const word of words) {
-    const alias = KIND_WORD_ALIASES[word];
+  for (const word2 of words) {
+    const alias = KIND_WORD_ALIASES[word2];
     if (alias)
       return alias;
   }
@@ -6885,7 +6983,7 @@ var NAMES = {
   other: "Ungraded \u2014 anything else"
 };
 function aliasesOf(kind) {
-  return Object.entries(KIND_WORD_ALIASES).filter(([, target]) => target === kind).map(([word]) => word).sort();
+  return Object.entries(KIND_WORD_ALIASES).filter(([, target]) => target === kind).map(([word2]) => word2).sort();
 }
 function metaOf(kind) {
   var _a;
@@ -6973,9 +7071,9 @@ var import_obsidian5 = require("obsidian");
 var PLAYGROUND_BASENAME = "Callout playground";
 function example(kind, n) {
   const m = metaOf(kind);
-  const word = GRADED_COLORS.includes(kind) ? `recall-${kind}` : kind;
+  const word2 = GRADED_COLORS.includes(kind) ? `recall-${kind}` : kind;
   return [
-    `> [!${word}]- **${n}. ${m.icon} ${m.name}**`,
+    `> [!${word2}]- **${n}. ${m.icon} ${m.name}**`,
     `> Filter name: **${m.name}**`,
     `> Types that match: ${kindWords(kind)}`,
     `> Deep link: \`obsidian://notion-toggle?action=autoscroll&filter=${m.param}\``,
@@ -10600,6 +10698,10 @@ var NotionToggleSettingTab = class extends import_obsidian15.PluginSettingTab {
     var _a;
     const { containerEl } = this;
     containerEl.empty();
+    new import_obsidian15.Setting(containerEl).setName("Auto-link note names while typing").setDesc("Likhe hue words bane note ke naam se match hon to [[link]] banenge. Voice linking alag rahegi.").addToggle((toggle) => toggle.setValue(this.plugin.settings.typedAutoLink).onChange(async (value) => {
+      this.plugin.settings.typedAutoLink = value;
+      await this.plugin.saveSettings();
+    }));
     new import_obsidian15.Setting(containerEl).setName("Toggle colour").setDesc("Traffic-light colours for active recall: red = hard, yellow = revise, green = mastered. Plain = clean black Notion look.").addDropdown((dropdown) => {
       for (const c of TOGGLE_COLORS)
         dropdown.addOption(c.id, c.label);
@@ -13101,6 +13203,7 @@ function nowMs() {
   return typeof (perf == null ? void 0 : perf.now) === "function" ? perf.now() : Date.now();
 }
 var DEFAULT_SETTINGS = {
+  typedAutoLink: true,
   ...DEFAULT_POMODORO,
   ...DEFAULT_AUTOSCROLL,
   ...DEFAULT_QUIZ,
@@ -13898,8 +14001,8 @@ var NotionTogglePlugin = class extends import_obsidian22.Plugin {
         this.startAutoScroll();
     });
     this.registerEditorExtension(
-      import_state2.Prec.highest(
-        import_view2.keymap.of([
+      import_state3.Prec.highest(
+        import_view3.keymap.of([
           {
             key: "Enter",
             run: (view) => {
@@ -13924,6 +14027,23 @@ var NotionTogglePlugin = class extends import_obsidian22.Plugin {
     registerPaddingDiagnostic(this);
     installResearch(this);
     installVoice(this);
+    this.registerEditorExtension(typedLinkExtension({
+      enabled: () => this.settings.typedAutoLink,
+      notes: () => this.app.vault.getMarkdownFiles(),
+      currentPath: (view) => {
+        let path = "";
+        this.app.workspace.iterateAllLeaves((leaf) => {
+          var _a, _b;
+          if (leaf.view instanceof import_obsidian22.MarkdownView && leaf.view.containerEl.contains(view.dom))
+            path = (_b = (_a = leaf.view.file) == null ? void 0 : _a.path) != null ? _b : "";
+        });
+        return path;
+      },
+      target: (note, source) => {
+        const file = this.app.vault.getFileByPath(note.path);
+        return file ? this.app.metadataCache.fileToLinktext(file, source, true) : note.path.replace(/\.md$/, "");
+      }
+    }));
     registerOutlineCommand(this);
     this.addSettingTab(new NotionToggleSettingTab(this.app, this));
   }

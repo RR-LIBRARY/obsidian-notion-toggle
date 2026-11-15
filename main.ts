@@ -1,6 +1,6 @@
 import { App, Editor, MarkdownView, Modal, Notice, Platform, Plugin, PluginSettingTab, Setting, type WorkspaceLeaf } from "obsidian";
 import { Prec } from "@codemirror/state";
-import { keymap } from "@codemirror/view";
+import { keymap } from "@codemirror/view"; import { typedLinkExtension } from "./src/typed-links";
 import { DEFAULT_NOTION_WRITING, cleanLayerOwnsEnter, installNotionWriting, uninstallNotionWriting, type NotionWritingSettings } from "./src/notion-writing";
 import { planToggleAll } from "./src/clean-toggles";
 import { anchorLine, writePlannedBlock } from "./src/insert-block";
@@ -291,6 +291,7 @@ import {
 export * from "./src/editor-blocks";
 export { CALLOUT_TYPES, TOGGLE_COLORS, calloutForColor, QUIZ_FILTER_OPTIONS };
 interface NotionToggleSettings extends PomodoroSettings, AutoScrollSettings, QuizSettings, ResearchSettings, NotionWritingSettings, OutlineSettings {
+  typedAutoLink: boolean;
   /** v1.6.2 — data.json shape stamp; see src/settings-migrate.ts. */
   settingsVersion?: number;
   calloutType: string;
@@ -331,7 +332,7 @@ interface NotionToggleSettings extends PomodoroSettings, AutoScrollSettings, Qui
   perfLog: boolean;
 }
 const DEFAULT_SETTINGS: NotionToggleSettings = {
-  ...DEFAULT_POMODORO,
+  typedAutoLink: true, ...DEFAULT_POMODORO,
   ...DEFAULT_AUTOSCROLL,
   ...DEFAULT_QUIZ,
   ...DEFAULT_RESEARCH_SETTINGS,
@@ -1188,6 +1189,9 @@ export default class NotionTogglePlugin extends Plugin {
     // v1.7.0 — web research: side panel, commands, ribbon, background runs.
     installResearch(this);
     installVoice(this); // v1.9.0 voice mode — see src/voice/
+    this.registerEditorExtension(typedLinkExtension({ enabled: () => this.settings.typedAutoLink, notes: () => this.app.vault.getMarkdownFiles(),
+      currentPath: (view) => { let path = ""; this.app.workspace.iterateAllLeaves((leaf) => { if (leaf.view instanceof MarkdownView && leaf.view.containerEl.contains(view.dom)) path = leaf.view.file?.path ?? ""; }); return path; },
+      target: (note, source) => { const file = this.app.vault.getFileByPath(note.path); return file ? this.app.metadataCache.fileToLinktext(file, source, true) : note.path.replace(/\.md$/, ""); } }));
     // v1.8.23 — "Outline selection with AI": same-level toggles from the selection.
     registerOutlineCommand(this as unknown as OutlineCommandHost);
     this.addSettingTab(new NotionToggleSettingTab(this.app, this));

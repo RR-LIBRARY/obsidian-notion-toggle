@@ -55,6 +55,14 @@ export class NotionToggleSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     new Setting(containerEl)
+      .setName("Auto-link note names while typing")
+      .setDesc("Likhe hue words bane note ke naam se match hon to [[link]] banenge. Voice linking alag rahegi.")
+      .addToggle((toggle) => toggle.setValue(this.plugin.settings.typedAutoLink).onChange(async (value) => {
+        this.plugin.settings.typedAutoLink = value;
+        await this.plugin.saveSettings();
+      }));
+
+    new Setting(containerEl)
       .setName("Toggle colour")
       .setDesc("Traffic-light colours for active recall: red = hard, yellow = revise, green = mastered. Plain = clean black Notion look.")
       .addDropdown((dropdown) => {

@@ -1,3 +1,8 @@
+## 1.9.22
+- Typed note names automatically become wiki links (ON by default, independent setting at the top of Notion Toggle settings).
+- Hindi/multiword titles, cursor mapping, native undo, IME-safe pause; skips code, URLs, existing links, current note and ambiguous titles.
+- Existing voice linking remains unchanged. No network requests or AI credits for typed linking.
+
 ## 1.9.16
 - Voice: floating mic button restyled like Lovable — white round button, thin border, soft shadow, dark mic icon.
 
