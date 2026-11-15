@@ -7319,6 +7319,8 @@ var PerfReportModal = class extends import_obsidian6.Modal {
   constructor(host) {
     super(host.app);
     this.host = host;
+    /** v1.9.28 — real Component so Obsidian can clean up rendered content (a Modal is not one). */
+    this.view = new import_obsidian6.Component();
     this.body = quizReportMarkdown(host);
   }
   onOpen() {
@@ -7327,8 +7329,9 @@ var PerfReportModal = class extends import_obsidian6.Modal {
     contentEl.addClass("notion-toggle-perf-modal");
     contentEl.createEl("h2", { text: "Quiz performance report" });
     const md = contentEl.createDiv({ cls: "ntt-perf-body" });
+    this.view.load();
     try {
-      void import_obsidian6.MarkdownRenderer.render(this.host.app, this.body, md, "", this);
+      void import_obsidian6.MarkdownRenderer.render(this.host.app, this.body, md, "", this.view);
     } catch (e) {
       md.createEl("pre", { text: this.body });
     }
@@ -7350,6 +7353,7 @@ var PerfReportModal = class extends import_obsidian6.Modal {
     row.createEl("button", { text: "Close" }).onclick = () => this.close();
   }
   onClose() {
+    this.view.unload();
     this.contentEl.empty();
   }
 };
@@ -9504,6 +9508,31 @@ function friendlyError(status, msg) {
     return "Internet nahi hai. Audio save ho gaya \u2014 net aate hi apne aap likh diya jayega.";
   return msg;
 }
+async function checkServer(transport, s) {
+  var _a, _b;
+  let res;
+  try {
+    res = await transport({ url: s.voiceEndpoint.trim(), method: "GET", headers: { "x-voice-key": s.voiceKey.trim() } });
+  } catch (e) {
+    return { ok: false, text: `Server tak nahi pahunche (${e.message || "network"})` };
+  }
+  let d = {};
+  try {
+    d = JSON.parse(res.text);
+  } catch (e) {
+  }
+  if (d.ai === "ok")
+    return { ok: true, text: "Server AI ready" };
+  if ((_a = d.ai) == null ? void 0 : _a.startsWith("not_checked"))
+    return { ok: false, text: "Server ne voice key nahi maani \u2014 Settings me sahi key daalein" };
+  if (d.problem === "no_credits")
+    return { ok: false, text: "Server AI: Lovable credits khatam" };
+  if (d.problem === "ai_key_broken" || d.problem === "missing_secret")
+    return { ok: false, text: 'Server ki AI key band hai (workspace move?) \u2014 Lovable me bhejiye: "Voice health check karke fix karo"' };
+  if (typeof d.ok !== "boolean")
+    return { ok: true, text: `Server reachable (${res.status}), health check not available` };
+  return { ok: false, text: `Server AI problem (${(_b = d.problem) != null ? _b : res.status})` };
+}
 function isUndoCommand(text) {
   return /^(pichh?la|last|aakhri)\s+(wala\s+)?(mitao|hatao|delete\s*karo|delete|undo|remove)[.!।]?$/i.test(text.trim());
 }
@@ -10714,6 +10743,10 @@ ${text.slice(0, 200)}`, 15e3);
     const add = (ok, t) => lines.push(`> ${ok ? "\u2705" : "\u274C"} ${t}`);
     add(!!this.s.voiceKey.trim(), "Voice key saved");
     add(navigator.onLine !== false, "Internet");
+    if (this.s.voiceKey.trim()) {
+      const h = await checkServer(voiceTransport, this.s);
+      add(h.ok, h.text);
+    }
     const pieces = [];
     let peak = 0;
     const rec = new VoiceRecorder({ onLevel: (l) => peak = Math.max(peak, l), onPiece: (w) => w && pieces.push(w) });
