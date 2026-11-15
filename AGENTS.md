@@ -4,3 +4,4 @@
 - Source numbering and grade edits use the shared quote-aware fence scanner; never infer unnumbered ordinals from viewport position.
 - Grading uses targeted editor transactions to preserve native Undo; browse filters suspend before session measurements and never determine session targets.
 - Treat missing or empty transcription replies as recoverable audio failures, not successful writes; release mic resources when audio-engine startup fails.
+- Voice network requests go through a timed transport and audio-engine wake-ups are time-boxed; never await requestUrl or AudioContext.resume() unbounded, because Android can leave either unanswered and freeze voice mode.

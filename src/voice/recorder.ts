@@ -6,6 +6,7 @@
  * Segmenter, and finished pieces are handed out as 16 kHz WAV while you keep
  * talking.
  */
+import { RESUME_WAIT_MS, resumeWithin } from "./wake";
 import { Segmenter, TARGET_RATE, concat, downsample, encodeWav, hasSpeech, normalize, rms } from "./audio";
 
 export interface RecorderEvents {
@@ -43,7 +44,7 @@ export class VoiceRecorder {
     if (!this.ctx) return false;
     const track = this.stream?.getAudioTracks()[0];
     if (track && track.readyState === "live" && this.ctx.state !== "closed") {
-      if (this.ctx.state !== "running") await this.ctx.resume().catch(() => undefined);
+      if (this.ctx.state !== "running") await resumeWithin(this.ctx, RESUME_WAIT_MS);
       return false;
     }
     const keep = this.startedAt;
@@ -58,30 +59,34 @@ export class VoiceRecorder {
   async start(): Promise<void> {
     const md = navigator.mediaDevices;
     if (!md?.getUserMedia) throw new Error("This device does not allow microphone access here.");
-    this.stream = await md.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-    });
-    try {
+    // v1.9.26 — Android: make the audio engine while the tap still counts. After the
+    // mic permission dialog the tap has "expired", and a context made then can stay
+    // silent and its resume() never answers — the mic looked stuck and the button dead.
     const Ctx: AnyAudioContext = (window.AudioContext || (window as unknown as { webkitAudioContext: AnyAudioContext }).webkitAudioContext);
     this.ctx = new Ctx();
-    await this.ctx.resume();
-    this.source = this.ctx.createMediaStreamSource(this.stream);
-    this.node = this.ctx.createScriptProcessor(4096, 1, 1);
-    const rate = this.ctx.sampleRate;
-    this.node.onaudioprocess = (e) => {
-      if (this.paused) return;
-      const raw = new Float32Array(e.inputBuffer.getChannelData(0));
-      const level = rms(raw);
-      this.ev.onLevel(level);
-      const small = downsample(raw, rate);
-      this.chunks.push(small);
-      this.pieceSamples += small.length;
-      const chunkMs = (raw.length / rate) * 1000;
-      if (this.seg.push(level, chunkMs, this.pieceSamples / TARGET_RATE)) this.flush(false);
-    };
-    this.source.connect(this.node);
-    this.node.connect(this.ctx.destination);
-    this.startedAt = Date.now();
+    void this.ctx.resume().catch(() => undefined);
+    try {
+      this.stream = await md.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+      });
+      await resumeWithin(this.ctx, RESUME_WAIT_MS);
+      this.source = this.ctx.createMediaStreamSource(this.stream);
+      this.node = this.ctx.createScriptProcessor(4096, 1, 1);
+      const rate = this.ctx.sampleRate;
+      this.node.onaudioprocess = (e) => {
+        if (this.paused) return;
+        const raw = new Float32Array(e.inputBuffer.getChannelData(0));
+        const level = rms(raw);
+        this.ev.onLevel(level);
+        const small = downsample(raw, rate);
+        this.chunks.push(small);
+        this.pieceSamples += small.length;
+        const chunkMs = (raw.length / rate) * 1000;
+        if (this.seg.push(level, chunkMs, this.pieceSamples / TARGET_RATE)) this.flush(false);
+      };
+      this.source.connect(this.node);
+      this.node.connect(this.ctx.destination);
+      this.startedAt = Date.now();
     } catch (error) {
       await this.stop(false);
       throw error;

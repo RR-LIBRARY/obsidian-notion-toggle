@@ -1,3 +1,8 @@
+## 1.9.26
+- Voice (Android): the mic button could stop responding until Obsidian was restarted. The audio engine is now created on the tap itself (before the mic permission dialog) and never waits forever to wake up.
+- Voice: a voice upload that hangs on a weak phone network now times out after 45 s, is retried, and the audio is saved to the rescue folder. "Writing 1 piece…" / finishing can no longer get stuck.
+- New checks: tests/voice-android-stuck.test.ts. Real-phone verification remains separate.
+
 ## 1.9.25
 - Fixed **Callout format filter → All Notion** after **Native callouts** was selected: it now re-enables Notion appearance, updates every open view immediately and saves the choice. Previously it only emptied the type list, so the look could stay unchanged.
 - **All callouts** switches every type back to native callouts; individual type switches use mixed Notion/native mode. The Settings appearance dropdown and filter summary stay in sync.

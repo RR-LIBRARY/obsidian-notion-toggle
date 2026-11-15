@@ -4,7 +4,7 @@
  */
 import { FuzzySuggestModal, MarkdownView, Modal, Notice, TFile, requestUrl, setIcon, type Editor, type Plugin } from "obsidian";
 import { VoiceBar } from "./bar";
-import { DEFAULT_VOICE_SETTINGS, VoiceError, autoLink, autoMaxNotes, clampTermOpts, linkPhrases, linkTerms, shinglesOf, termsOf, type PhraseHit, buildContext, friendlyError, transcribe, transcribeWithRetry, wavSeconds, type VoiceSettings, type VoiceTransport } from "./client";
+import { DEFAULT_VOICE_SETTINGS, VoiceError, autoLink, autoMaxNotes, clampTermOpts, linkPhrases, linkTerms, shinglesOf, termsOf, type PhraseHit, buildContext, friendlyError, transcribe, transcribeWithRetry, wavSeconds, withTimeout, type VoiceSettings, type VoiceTransport } from "./client";
 import { VoiceRecorder } from "./recorder";
 import { CursorAnchor } from "./cursor";
 import { TARGET_RATE, downsample, encodeWav, hasSpeech, joinPiece, normalize, splitLong } from "./audio";
@@ -16,10 +16,10 @@ export interface VoicePluginHost extends Plugin {
   addCommand(cmd: Parameters<Plugin["addCommand"]>[0]): ReturnType<Plugin["addCommand"]>;
 }
 
-export const voiceTransport: VoiceTransport = async (req) => {
+export const voiceTransport: VoiceTransport = withTimeout(async (req) => {
   const res = await requestUrl({ url: req.url, method: req.method, headers: req.headers, body: req.body, contentType: req.contentType, throw: false });
   return { status: res.status, text: res.text };
-};
+});
 
 export function withVoiceDefaults(settings: object): VoiceSettings {
   const s = settings as Record<string, unknown>;
