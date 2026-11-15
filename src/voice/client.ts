@@ -77,6 +77,25 @@ export interface VoiceRequest {
 }
 export type VoiceTransport = (req: VoiceRequest) => Promise<{ status: number; text: string }>;
 
+/** v1.9.26 — one upload may take this long on a slow phone network, then it counts as "no connection". */
+export const VOICE_REQUEST_TIMEOUT_MS = 45_000;
+
+/**
+ * v1.9.26 — Obsidian's requestUrl has no timeout. On a flaky mobile network a
+ * request could hang forever, so "Writing 1 piece…" / finishing never ended and
+ * the mic button stopped responding. A timed-out request now fails like a
+ * network error: it is retried, then the audio is saved to the rescue folder.
+ */
+export function withTimeout(transport: VoiceTransport, ms = VOICE_REQUEST_TIMEOUT_MS): VoiceTransport {
+  return (req) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`timed out after ${Math.round(ms / 1000)} s`)), ms);
+    });
+    return Promise.race([transport(req), late]).finally(() => clearTimeout(timer));
+  };
+}
+
 export class VoiceError extends Error {
   constructor(message: string, public readonly status = 0) {
     super(message);

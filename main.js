@@ -9466,6 +9466,16 @@ var DEFAULT_VOICE_SETTINGS = {
   voiceTermMinLen: 7,
   voiceTermMaxNotes: 0
 };
+var VOICE_REQUEST_TIMEOUT_MS = 45e3;
+function withTimeout(transport, ms3 = VOICE_REQUEST_TIMEOUT_MS) {
+  return (req) => {
+    let timer;
+    const late = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`timed out after ${Math.round(ms3 / 1e3)} s`)), ms3);
+    });
+    return Promise.race([transport(req), late]).finally(() => clearTimeout(timer));
+  };
+}
 var VoiceError = class extends Error {
   constructor(message, status = 0) {
     super(message);
@@ -9736,6 +9746,23 @@ function linkPhrases(text, index, skip = "", max = 2) {
   return out;
 }
 
+// src/voice/wake.ts
+var RESUME_WAIT_MS = 1500;
+async function resumeWithin(ctx, ms3) {
+  if (ctx.state === "running")
+    return true;
+  let timer;
+  const late = new Promise((r) => {
+    timer = setTimeout(r, ms3);
+  });
+  try {
+    await Promise.race([ctx.resume().catch(() => void 0), late]);
+  } finally {
+    clearTimeout(timer);
+  }
+  return ctx.state === "running";
+}
+
 // src/voice/audio.ts
 var TARGET_RATE = 16e3;
 function downsample(input, fromRate, toRate = TARGET_RATE) {
@@ -9913,7 +9940,7 @@ var VoiceRecorder = class {
     const track = (_a = this.stream) == null ? void 0 : _a.getAudioTracks()[0];
     if (track && track.readyState === "live" && this.ctx.state !== "closed") {
       if (this.ctx.state !== "running")
-        await this.ctx.resume().catch(() => void 0);
+        await resumeWithin(this.ctx, RESUME_WAIT_MS);
       return false;
     }
     const keep = this.startedAt;
@@ -9932,13 +9959,14 @@ var VoiceRecorder = class {
     const md = navigator.mediaDevices;
     if (!(md == null ? void 0 : md.getUserMedia))
       throw new Error("This device does not allow microphone access here.");
-    this.stream = await md.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 }
-    });
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    this.ctx = new Ctx();
+    void this.ctx.resume().catch(() => void 0);
     try {
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      this.ctx = new Ctx();
-      await this.ctx.resume();
+      this.stream = await md.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 }
+      });
+      await resumeWithin(this.ctx, RESUME_WAIT_MS);
       this.source = this.ctx.createMediaStreamSource(this.stream);
       this.node = this.ctx.createScriptProcessor(4096, 1, 1);
       const rate = this.ctx.sampleRate;
@@ -10099,10 +10127,10 @@ var DictationSession = class {
 };
 
 // src/voice/wire.ts
-var voiceTransport = async (req) => {
+var voiceTransport = withTimeout(async (req) => {
   const res = await (0, import_obsidian13.requestUrl)({ url: req.url, method: req.method, headers: req.headers, body: req.body, contentType: req.contentType, throw: false });
   return { status: res.status, text: res.text };
-};
+});
 function withVoiceDefaults(settings) {
   const s = settings;
   for (const [k, v] of Object.entries(DEFAULT_VOICE_SETTINGS))
