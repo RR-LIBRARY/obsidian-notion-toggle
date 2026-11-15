@@ -64,7 +64,10 @@ export function typedLinkExtension(host: TypedLinkHost) {
       this.timer = setTimeout(() => this.flush(), 500);
     }
     flush() {
-      if (!host.enabled() || this.view.destroyed) { this.pending = []; return; }
+      // CodeMirror 6.43 made `destroyed` private in its typings; the runtime
+      // flag is still the safest way to stop a delayed flush after unload.
+      const destroyed = (this.view as unknown as { destroyed?: boolean }).destroyed;
+      if (!host.enabled() || destroyed) { this.pending = []; return; }
       if (this.view.composing) { this.timer = setTimeout(() => this.flush(), 200); return; }
       const source = host.currentPath(this.view);
       if (!source) { this.pending = []; return; }

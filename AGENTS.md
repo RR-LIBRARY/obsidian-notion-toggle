@@ -1,2 +1,3 @@
 - Typed page-name linking uses a debounced CodeMirror extension limited to user typing/paste; programmatic voice writes remain independent.
 - Resolve typed wiki-link destinations with Obsidian's metadata cache and skip ambiguous titles to avoid linking to the wrong note.
+- Callout appearance filtering is presentation-only and keyed by callout type; never rewrite note Markdown when switching Notion/native looks.

@@ -1,3 +1,10 @@
+## 1.9.23
+- Fixed native callout appearance: selected callouts now keep Obsidian's icon, tinted background, spacing and chevron instead of still looking like Notion rows.
+- Settings → Notion-like writing → **Toggle appearance**: choose **Notion toggles** or **Native callouts** for the whole note; the preview changes immediately.
+- **Callout format filter → Choose types**: while Notion look is on, selected types (Question, Note, Warning, recall colours, etc.) stay native and every other type stays Notion. All Notion / All callouts shortcuts included.
+- Added mobile commands **Appearance: Notion toggles ↔ native callouts** and **Appearance: choose native callout types**. This is presentation-only; note Markdown is never rewritten.
+- Verified mixed formats and live switching at phone and desktop browser sizes; full plugin tests and typecheck.
+
 ## 1.9.22
 - Typed note names automatically become wiki links (ON by default, independent setting at the top of Notion Toggle settings).
 - Hindi/multiword titles, cursor mapping, native undo, IME-safe pause; skips code, URLs, existing links, current note and ambiguous titles.

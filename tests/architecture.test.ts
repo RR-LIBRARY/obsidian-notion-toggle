@@ -90,6 +90,8 @@ const OBSIDIAN_SHELLS = new Set([
   "src/padding-diagnose-view.ts",
   // v1.8.0 — Notion-like writing shell (clean editing, `>`+space, <details> paste/nudge).
   "src/notion-writing.ts",
+  // v1.9.23 — per-type Notion / native callout appearance picker.
+  "src/look-filter-modal.ts",
   // v1.8.23 — command + settings shells for the AI outline service.
   "src/outline-command.ts",
   "src/outline-settings.ts",

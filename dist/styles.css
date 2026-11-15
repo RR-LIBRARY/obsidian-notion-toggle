@@ -1732,11 +1732,11 @@ body.ntt-notion-look.is-mobile .markdown-source-view.mod-cm6 .cm-line.ntt-clean-
    Arrow first, then the title; no icon, no coloured box. Colour toggles keep a
    coloured arrow so the traffic-light meaning survives. Off by a setting; the
    body class comes from src/notion-writing.ts. */
-body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible,
-body.ntt-notion-look .callout[data-callout="question"].is-collapsible,
-body.ntt-notion-look .callout[data-callout="info"].is-collapsible,
-body.ntt-notion-look .callout[data-callout="note"].is-collapsible,
-body.ntt-notion-look .callout[data-callout="abstract"].is-collapsible {
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout^="recall-"].is-collapsible,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="question"].is-collapsible,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="info"].is-collapsible,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="note"].is-collapsible,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="abstract"].is-collapsible {
   background-color: transparent;
   border: none;
   box-shadow: none;
@@ -1745,28 +1745,28 @@ body.ntt-notion-look .callout[data-callout="abstract"].is-collapsible {
   border-radius: var(--radius-s);
   mix-blend-mode: normal;
 }
-body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible .callout-title,
-body.ntt-notion-look .callout[data-callout="question"].is-collapsible .callout-title,
-body.ntt-notion-look .callout[data-callout="info"].is-collapsible .callout-title,
-body.ntt-notion-look .callout[data-callout="note"].is-collapsible .callout-title,
-body.ntt-notion-look .callout[data-callout="abstract"].is-collapsible .callout-title {
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout^="recall-"].is-collapsible .callout-title,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="question"].is-collapsible .callout-title,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="info"].is-collapsible .callout-title,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="note"].is-collapsible .callout-title,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="abstract"].is-collapsible .callout-title {
   padding: 3px 4px 3px 0;
   gap: 0.15em;
   color: var(--text-normal);
   background-color: transparent;
 }
-body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible .callout-icon,
-body.ntt-notion-look .callout[data-callout="question"].is-collapsible .callout-icon,
-body.ntt-notion-look .callout[data-callout="info"].is-collapsible .callout-icon,
-body.ntt-notion-look .callout[data-callout="note"].is-collapsible .callout-icon,
-body.ntt-notion-look .callout[data-callout="abstract"].is-collapsible .callout-icon {
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout^="recall-"].is-collapsible .callout-icon,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="question"].is-collapsible .callout-icon,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="info"].is-collapsible .callout-icon,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="note"].is-collapsible .callout-icon,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="abstract"].is-collapsible .callout-icon {
   display: none;
 }
-body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible .callout-fold,
-body.ntt-notion-look .callout[data-callout="question"].is-collapsible .callout-fold,
-body.ntt-notion-look .callout[data-callout="info"].is-collapsible .callout-fold,
-body.ntt-notion-look .callout[data-callout="note"].is-collapsible .callout-fold,
-body.ntt-notion-look .callout[data-callout="abstract"].is-collapsible .callout-fold {
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout^="recall-"].is-collapsible .callout-fold,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="question"].is-collapsible .callout-fold,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="info"].is-collapsible .callout-fold,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="note"].is-collapsible .callout-fold,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="abstract"].is-collapsible .callout-fold {
   order: -1;
   margin: 0;
   padding: 0;
@@ -1778,34 +1778,34 @@ body.ntt-notion-look .callout[data-callout="abstract"].is-collapsible .callout-f
   color: var(--text-muted);
   /* Obsidian's default: chevron-down when open, rotated -90deg when closed (see top of file). */
 }
-body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible .callout-fold { color: rgb(var(--callout-color)); }
-body.ntt-notion-look .callout[data-callout="recall-plain"].is-collapsible .callout-fold { color: var(--text-normal); }
-body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible .callout-fold:hover,
-body.ntt-notion-look .callout[data-callout="question"].is-collapsible .callout-fold:hover,
-body.ntt-notion-look .callout[data-callout="info"].is-collapsible .callout-fold:hover,
-body.ntt-notion-look .callout[data-callout="note"].is-collapsible .callout-fold:hover,
-body.ntt-notion-look .callout[data-callout="abstract"].is-collapsible .callout-fold:hover {
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout^="recall-"].is-collapsible .callout-fold { color: rgb(var(--callout-color)); }
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="recall-plain"].is-collapsible .callout-fold { color: var(--text-normal); }
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout^="recall-"].is-collapsible .callout-fold:hover,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="question"].is-collapsible .callout-fold:hover,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="info"].is-collapsible .callout-fold:hover,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="note"].is-collapsible .callout-fold:hover,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="abstract"].is-collapsible .callout-fold:hover {
   background-color: var(--background-modifier-hover);
 }
-body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible .callout-title-inner,
-body.ntt-notion-look .callout[data-callout="question"].is-collapsible .callout-title-inner,
-body.ntt-notion-look .callout[data-callout="info"].is-collapsible .callout-title-inner,
-body.ntt-notion-look .callout[data-callout="note"].is-collapsible .callout-title-inner,
-body.ntt-notion-look .callout[data-callout="abstract"].is-collapsible .callout-title-inner {
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout^="recall-"].is-collapsible .callout-title-inner,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="question"].is-collapsible .callout-title-inner,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="info"].is-collapsible .callout-title-inner,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="note"].is-collapsible .callout-title-inner,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="abstract"].is-collapsible .callout-title-inner {
   font-weight: var(--font-normal);
 }
-body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible .callout-content,
-body.ntt-notion-look .callout[data-callout="question"].is-collapsible .callout-content,
-body.ntt-notion-look .callout[data-callout="info"].is-collapsible .callout-content,
-body.ntt-notion-look .callout[data-callout="note"].is-collapsible .callout-content,
-body.ntt-notion-look .callout[data-callout="abstract"].is-collapsible .callout-content {
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout^="recall-"].is-collapsible .callout-content,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="question"].is-collapsible .callout-content,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="info"].is-collapsible .callout-content,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="note"].is-collapsible .callout-content,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="abstract"].is-collapsible .callout-content {
   padding: 0 0 0.25em 1.8em;
   background-color: transparent;
 }
-body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible .callout-content > :first-child,
-body.ntt-notion-look .callout[data-callout="question"].is-collapsible .callout-content > :first-child { margin-top: 0.2em; }
-body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible .callout-content > :last-child,
-body.ntt-notion-look .callout[data-callout="question"].is-collapsible .callout-content > :last-child { margin-bottom: 0.2em; }
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout^="recall-"].is-collapsible .callout-content > :first-child,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="question"].is-collapsible .callout-content > :first-child { margin-top: 0.2em; }
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout^="recall-"].is-collapsible .callout-content > :last-child,
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="question"].is-collapsible .callout-content > :last-child { margin-bottom: 0.2em; }
 
 /* ---- One-tap "<details> → toggles" offer (a Notice with buttons) ---- */
 .ntt-details-nudge { display: flex; flex-direction: column; gap: 0.35em; }
@@ -1819,19 +1819,19 @@ body.ntt-notion-look .callout[data-callout="question"].is-collapsible .callout-c
 /* Respect the OS "reduce motion" preference for the arrow rotation. */
 @media (prefers-reduced-motion: reduce) {
   .ntt-clean-arrow svg,
-  body.ntt-notion-look .callout.is-collapsible .callout-fold svg { transition: none !important; }
+  body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible .callout-fold svg { transition: none !important; }
 }
 
 /* v1.8.5 — the fold arrow on every toggle callout now matches the Notion /
    Lovable FAQ video: one small solid dark triangle (right when closed, down
    when open), never Obsidian's coloured outline chevron. */
-body.ntt-notion-look .callout.is-collapsible .callout-fold {
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible .callout-fold {
   display: inline-flex;
   color: var(--text-normal) !important;
   background: transparent !important;
 }
-body.ntt-notion-look .callout.is-collapsible .callout-fold svg { display: none !important; }
-body.ntt-notion-look .callout.is-collapsible .callout-fold::before {
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible .callout-fold svg { display: none !important; }
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible .callout-fold::before {
   content: "";
   width: 0.55em;
   height: 0.62em;
@@ -1840,16 +1840,16 @@ body.ntt-notion-look .callout.is-collapsible .callout-fold::before {
   transform: rotate(90deg);
   transition: transform 120ms ease;
 }
-body.ntt-notion-look .callout.is-collapsible.is-collapsed .callout-fold::before { transform: none; }
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible.is-collapsed .callout-fold::before { transform: none; }
 body.ntt-notion-look .ntt-clean-arrow { color: var(--text-normal); }
 
 /* v1.8.6 — tuned to the Notion app video: a smaller solid triangle
    (about 0.45em) with a short gap, and a normal-weight title. */
-body.ntt-notion-look .callout.is-collapsible .callout-fold::before { width: 0.46em; height: 0.52em; }
-body.ntt-notion-look .callout.is-collapsible .callout-fold { width: 1.3em !important; }
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible .callout-fold::before { width: 0.46em; height: 0.52em; }
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible .callout-fold { width: 1.3em !important; }
 body.ntt-notion-look .ntt-clean-arrow svg { width: 0.6em; height: 0.6em; }
 body.ntt-notion-look .cm-line.ntt-clean-header.ntt-clean-bold,
-body.ntt-notion-look .callout.is-collapsible .callout-title-inner { font-weight: var(--font-normal, 400); }
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible .callout-title-inner { font-weight: var(--font-normal, 400); }
 
 /* v1.8.9 — nested toggles while editing: each level steps in by one arrow width */
 .markdown-source-view.mod-cm6 .cm-line.ntt-clean-d2 { margin-inline-start: 1.8em !important; }
@@ -1889,15 +1889,15 @@ body.ntt-notion-look .callout.is-collapsible .callout-title-inner { font-weight:
 /* v1.8.10 — arrow direction always right: ▶ closed, ▼ open. Obsidian (and some
    themes / the mobile app) also rotate the fold element or its svg; that extra
    turn made closed toggles point up (▲). Only our triangle turns now. */
-body.ntt-notion-look .callout.is-collapsible .callout-fold,
-body.ntt-notion-look .callout.is-collapsible .callout-fold.is-collapsed,
-body.ntt-notion-look .callout.is-collapsible .callout-fold svg { transform: none !important; rotate: none !important; }
-body.ntt-notion-look .callout.is-collapsible .callout-fold::before {
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible .callout-fold,
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible .callout-fold.is-collapsed,
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible .callout-fold svg { transform: none !important; rotate: none !important; }
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible .callout-fold::before {
   clip-path: polygon(15% 5%, 95% 50%, 15% 95%);
   transform: rotate(90deg) !important;
 }
-body.ntt-notion-look .callout.is-collapsible.is-collapsed .callout-fold::before,
-body.ntt-notion-look .callout.is-collapsible .callout-fold.is-collapsed::before { transform: rotate(0deg) !important; }
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible.is-collapsed .callout-fold::before,
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible .callout-fold.is-collapsed::before { transform: rotate(0deg) !important; }
 body.ntt-notion-look .ntt-clean-arrow svg { transform: none; }
 body.ntt-notion-look .ntt-clean-arrow.is-open svg { transform: rotate(90deg); }
 
@@ -1963,7 +1963,7 @@ body.ntt-no-select, body.ntt-no-select * {
    text goes inside) has no fold element, and with the Notion look — no box, no
    icon — it rendered as plain text. Draw the same solid triangle on the title
    row itself whenever the fold element is missing: ▶ when closed, ▼ when open. */
-body.ntt-notion-look .callout.is-collapsible > .callout-title:not(:has(> .callout-fold))::before {
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible > .callout-title:not(:has(> .callout-fold))::before {
   content: "";
   order: -1;
   flex: 0 0 auto;
@@ -1976,13 +1976,13 @@ body.ntt-notion-look .callout.is-collapsible > .callout-title:not(:has(> .callou
   transform: rotate(90deg);
   transition: transform 120ms ease;
 }
-body.ntt-notion-look .callout.is-collapsible.is-collapsed > .callout-title:not(:has(> .callout-fold))::before {
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible.is-collapsed > .callout-title:not(:has(> .callout-fold))::before {
   transform: rotate(0deg);
 }
-body.ntt-notion-look .callout[data-callout^="recall-"].is-collapsible > .callout-title:not(:has(> .callout-fold))::before {
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout^="recall-"].is-collapsible > .callout-title:not(:has(> .callout-fold))::before {
   color: rgb(var(--callout-color));
 }
-body.ntt-notion-look .callout[data-callout="recall-plain"].is-collapsible > .callout-title:not(:has(> .callout-fold))::before {
+body.ntt-notion-look .callout:not(.ntt-native-callout)[data-callout="recall-plain"].is-collapsible > .callout-title:not(:has(> .callout-fold))::before {
   color: var(--text-normal);
 }
 
@@ -1990,22 +1990,73 @@ body.ntt-notion-look .callout[data-callout="recall-plain"].is-collapsible > .cal
    etc.) when a fresh callout has no title. Notion shows a quiet "Toggle"
    placeholder instead. Restrict this to an empty rendered body so real titles
    are never hidden; the active Live Preview line uses its own IME-safe hint. */
-body.ntt-notion-look .callout.is-collapsible:has(> .callout-content:empty) > .callout-title > .callout-title-inner,
-body.ntt-notion-look .callout.is-collapsible:has(> .callout-content > p:only-child:empty) > .callout-title > .callout-title-inner,
-body.ntt-notion-look .callout.is-collapsible:has(> .callout-content > p:only-child > br:only-child) > .callout-title > .callout-title-inner {
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible:has(> .callout-content:empty) > .callout-title > .callout-title-inner,
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible:has(> .callout-content > p:only-child:empty) > .callout-title > .callout-title-inner,
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible:has(> .callout-content > p:only-child > br:only-child) > .callout-title > .callout-title-inner {
   font-size: 0;
   color: var(--text-faint);
 }
-body.ntt-notion-look .callout.is-collapsible:has(> .callout-content:empty) > .callout-title > .callout-title-inner::after,
-body.ntt-notion-look .callout.is-collapsible:has(> .callout-content > p:only-child:empty) > .callout-title > .callout-title-inner::after,
-body.ntt-notion-look .callout.is-collapsible:has(> .callout-content > p:only-child > br:only-child) > .callout-title > .callout-title-inner::after {
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible:has(> .callout-content:empty) > .callout-title > .callout-title-inner::after,
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible:has(> .callout-content > p:only-child:empty) > .callout-title > .callout-title-inner::after,
+body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible:has(> .callout-content > p:only-child > br:only-child) > .callout-title > .callout-title-inner::after {
   content: "Toggle";
   font-size: var(--font-text-size, 16px);
   font-weight: var(--font-normal, 400);
 }
 @media (prefers-reduced-motion: reduce) {
-  body.ntt-notion-look .callout.is-collapsible > .callout-title:not(:has(> .callout-fold))::before { transition: none !important; }
+  body.ntt-notion-look .callout:not(.ntt-native-callout).is-collapsible > .callout-title:not(:has(> .callout-fold))::before { transition: none !important; }
 }
+
+/* v1.9.23 — native callouts are a real alternative, not Notion rows with a
+   different arrow. The post processor adds this class per callout type. These
+   rules also undo the plugin's older generic border/background customisations. */
+body .callout.ntt-native-callout.is-collapsible[data-callout] {
+  background-color: rgba(var(--callout-color), var(--callout-alpha, 0.1)) !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: var(--size-4-3) var(--size-4-3) var(--size-4-3) var(--size-4-6) !important;
+  margin: var(--size-4-4) 0 !important;
+  border-radius: var(--radius-s) !important;
+  mix-blend-mode: normal !important;
+}
+body .callout.ntt-native-callout.is-collapsible[data-callout] > .callout-title {
+  padding: 0 !important;
+  gap: var(--size-4-2) !important;
+  color: rgb(var(--callout-color)) !important;
+  background-color: transparent !important;
+}
+body .callout.ntt-native-callout.is-collapsible[data-callout] .callout-icon {
+  display: flex !important;
+  order: 0 !important;
+}
+body .callout.ntt-native-callout.is-collapsible[data-callout] .callout-fold {
+  display: inline-flex !important;
+  order: 0 !important;
+  width: var(--icon-l) !important;
+  height: var(--icon-l) !important;
+  margin: 0 !important;
+  padding: var(--size-2-2) !important;
+  color: rgb(var(--callout-color)) !important;
+  background: transparent !important;
+}
+body .callout.ntt-native-callout.is-collapsible[data-callout] .callout-fold svg {
+  display: block !important;
+}
+body .callout.ntt-native-callout.is-collapsible[data-callout] .callout-fold::before,
+body .callout.ntt-native-callout.is-collapsible[data-callout] > .callout-title::before {
+  display: none !important;
+  content: none !important;
+}
+body .callout.ntt-native-callout.is-collapsible[data-callout] .callout-title-inner {
+  color: rgb(var(--callout-color)) !important;
+  font-weight: var(--font-semibold) !important;
+}
+body .callout.ntt-native-callout.is-collapsible[data-callout] > .callout-content {
+  padding: 0 var(--size-4-3) var(--size-4-3) var(--size-4-6) !important;
+  background-color: transparent !important;
+}
+.ntt-callout-format-list { max-height: min(60vh, 560px); overflow-y: auto; }
+.ntt-callout-format-modal button { min-height: 40px; }
 
 /* v1.9.0 — voice mode bar (Lovable-style: waveform, ✕ discard, ✓ finish) */
 .ntt-voice-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 72px); width: min(560px, calc(100vw - 20px)); z-index: var(--layer-notice, 60); background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 22px; box-shadow: var(--shadow-l); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
@@ -2025,7 +2076,7 @@ body.ntt-notion-look .callout.is-collapsible:has(> .callout-content > p:only-chi
 .ntt-voice-fab { position: fixed; right: 18px; bottom: calc(env(safe-area-inset-bottom, 0px) + 176px); width: 52px; height: 52px; border-radius: 50%; padding: 0; z-index: var(--layer-status-bar, 15); background: linear-gradient(180deg, var(--background-primary), var(--background-secondary)) !important; color: var(--text-normal) !important; border: 1px solid var(--background-modifier-border-hover) !important; box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 6px 16px rgba(0,0,0,.12) !important; display: inline-flex; align-items: center; justify-content: center; transition: transform .12s ease, box-shadow .12s ease; }
 .ntt-voice-fab svg { width: 24px; height: 24px; stroke-width: 2.2; }
 .ntt-voice-fab:active { transform: scale(.94); box-shadow: 0 1px 2px rgba(0,0,0,.1) !important; }
-.ntt-voice-fab.is-off, .ntt-voice-fab.is-hidden { display: none; }
+.ntt-voice-fab.is-off, .ntt-voice-fab.is-hidden, .ntt-voice-fab.is-disabled { display: none !important; }
 /* v1.9.2 — with the autoscroll button turned off, the mic takes its place */
 body:not(:has(.ntt-fab-wrap)) .ntt-voice-fab { bottom: calc(env(safe-area-inset-bottom, 0px) + 100px); }
 

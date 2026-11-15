@@ -1,10 +1,17 @@
-# Notion Toggle — saare features ek jagah (1.9.22)
+# Notion Toggle — saare features ek jagah (1.9.23)
 
 Ye file plugin ke **har feature** ki ek list hai. Detail ke liye: [Voice mode manual](VOICE_MODE.md) · [Autoscroll features](AUTOSCROLL_FEATURES.md) · [Hindi guide](HINDI-GUIDE.md).
 
 ---
 
 ## A. Toggles (Notion jaise)
+
+### Notion / Callout appearance filter (1.9.23)
+- Settings → Notion-like writing → **Toggle appearance**: poori note ke liye **Notion toggles** ya **Native callouts** chuniye; preview turant badalta hai.
+- **Callout format filter → Choose types** me jin types ko tick karenge (Question, Note, Warning, Red, Green, etc.), sirf wahi native callout rahenge; baaki Notion toggle rahenge.
+- Native callout me Obsidian ka icon, rangin background, spacing aur chevron wapas milta hai. **All Notion** aur **All callouts** shortcuts bhi hain.
+- Commands: **Appearance: Notion toggles ↔ native callouts** aur **Appearance: choose native callout types**.
+- Ye sirf dikhne ka tareeka badalta hai; note ka Markdown aur folding data nahi badalta. Clean editing ka alag setting waisa hi rahta hai.
 
 ### Typed note-name linking (1.9.22)
 - Default ON: Settings → Notion Toggle → **Auto-link note names while typing** (sabse upar).

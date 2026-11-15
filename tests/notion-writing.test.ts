@@ -61,8 +61,9 @@ class FakeEditor {
 interface Fake {
   plugin: NotionTogglePlugin;
   handlers: Record<string, ((...a: unknown[]) => unknown)[]>;
-  commands: { id: string; name: string; editorCallback?: (editor: Editor) => void }[];
+  commands: { id: string; name: string; editorCallback?: (editor: Editor) => void; callback?: () => unknown }[];
   extensions: unknown[];
+  postProcessors: ((el: HTMLElement) => unknown)[];
   cleanups: (() => void)[];
   calls: { save: number; updateOptions: number };
   setActive(editor: FakeEditor | null, path?: string): void;
@@ -73,6 +74,7 @@ function fake(settings: Partial<NotionTogglePlugin["settings"]> = {}): Fake {
   const handlers: Fake["handlers"] = {};
   const commands: Fake["commands"] = [];
   const extensions: unknown[] = [];
+  const postProcessors: ((el: HTMLElement) => unknown)[] = [];
   const cleanups: (() => void)[] = [];
   const calls = { save: 0, updateOptions: 0 };
   const vault = new Map<string, string>();
@@ -100,6 +102,7 @@ function fake(settings: Partial<NotionTogglePlugin["settings"]> = {}): Fake {
       vault: { cachedRead: async (file: { path: string }) => vault.get(file.path) ?? "" },
     },
     registerEditorExtension: (ext: unknown) => extensions.push(ext),
+    registerMarkdownPostProcessor: (fn: (el: HTMLElement) => unknown) => postProcessors.push(fn),
     registerEvent: () => {},
     addCommand: (c: Fake["commands"][number]) => commands.push(c),
     register: (f: () => void) => cleanups.push(f),
@@ -125,6 +128,7 @@ function fake(settings: Partial<NotionTogglePlugin["settings"]> = {}): Fake {
     handlers,
     commands,
     extensions,
+    postProcessors,
     cleanups,
     calls,
     vault,
@@ -167,6 +171,8 @@ describe("v1.8.0 notion writing — install", () => {
     expect(f.handlers["editor-paste"]?.length).toBe(1);
     expect(f.handlers["file-open"]?.length).toBe(1);
     expect(f.commands.map((c) => c.id)).toContain("toggle-default-state");
+    expect(f.commands.map((c) => c.id)).toEqual(expect.arrayContaining(["toggle-appearance", "callout-appearance-filter"]));
+    expect(f.postProcessors.length).toBe(1);
     expect(document.body.classList.contains(NOTION_LOOK_CLASS)).toBe(true);
     for (const c of f.cleanups) c();
     expect(document.body.classList.contains(NOTION_LOOK_CLASS)).toBe(false);
@@ -177,6 +183,7 @@ describe("v1.8.0 notion writing — install", () => {
       blockMoves: true,
       cleanEditing: true,
       notionLook: true,
+      calloutLookTypes: [],
       notionShortcut: true,
       convertDetailsOnPaste: true,
       detailsNudge: true,
@@ -192,6 +199,32 @@ describe("v1.8.0 notion writing — install", () => {
     f.plugin.settings.notionLook = true;
     applyNotionLook(f.plugin);
     expect(document.body.classList.contains(NOTION_LOOK_CLASS)).toBe(true);
+  });
+
+  test("the renderer mixes Notion and native callout types without changing Markdown", () => {
+    const f = fake({ calloutLookTypes: ["note", "recall-red"] });
+    installNotionWriting(f.plugin);
+    const root = document.createElement("div");
+    root.innerHTML = '<div class="callout is-collapsible" data-callout="question"></div><div class="callout is-collapsible" data-callout="note"></div><div class="callout is-collapsible" data-callout="recall-red"></div>';
+    f.postProcessors[0](root);
+    const items = Array.from(root.querySelectorAll(".callout"));
+    expect(items[0].classList.contains("ntt-native-callout")).toBe(false);
+    expect(items[1].classList.contains("ntt-native-callout")).toBe(true);
+    expect(items[2].classList.contains("ntt-native-callout")).toBe(true);
+  });
+
+  test("the mobile appearance command switches every type and saves both ways", async () => {
+    const f = fake();
+    installNotionWriting(f.plugin);
+    const command = f.commands.find((item) => item.id === "toggle-appearance");
+    expect(command).toBeTruthy();
+    await command!.callback!();
+    expect(f.plugin.settings.notionLook).toBe(false);
+    expect(document.body.classList.contains(NOTION_LOOK_CLASS)).toBe(false);
+    await command!.callback!();
+    expect(f.plugin.settings.notionLook).toBe(true);
+    expect(document.body.classList.contains(NOTION_LOOK_CLASS)).toBe(true);
+    expect(f.calls.save).toBe(2);
   });
 });
 
@@ -397,7 +430,7 @@ describe("v1.8.0 notion writing — `>` + space inserts a toggle skeleton", () =
 /* ---------- settings ---------- */
 
 describe("v1.8.0 notion writing — settings section", () => {
-  test("renders a heading and eight switches with the current values", () => {
+  test("renders appearance choices, the type filter and seven other switches", () => {
     const f = fake({ notionShortcut: false });
     const root = document.createElement("div");
     renderNotionWritingSettings(root, f.plugin);
@@ -406,7 +439,8 @@ describe("v1.8.0 notion writing — settings section", () => {
     expect(names).toEqual(
       expect.arrayContaining([
         "Clean editing",
-        "Plain Notion look",
+        "Toggle appearance",
+        "Callout format filter",
         "“>” + space starts a toggle",
         "Convert pasted <details> automatically",
         "Offer to convert old notes",
@@ -416,15 +450,18 @@ describe("v1.8.0 notion writing — settings section", () => {
       ])
     );
     const toggles = Array.from(root.querySelectorAll(".checkbox-container"));
-    expect(toggles.length).toBe(8);
-    expect(toggles[4].classList.contains("is-enabled")).toBe(true); // v1.8.14 Notion paste, on by default
-    expect(toggles[6].classList.contains("is-enabled")).toBe(true);
-    expect(toggles[7].classList.contains("is-enabled")).toBe(false);
+    expect(toggles.length).toBe(7);
+    expect(toggles[3].classList.contains("is-enabled")).toBe(true); // Notion paste, on by default
+    expect(toggles[5].classList.contains("is-enabled")).toBe(true);
+    expect(toggles[6].classList.contains("is-enabled")).toBe(false);
     expect(toggles[0].classList.contains("is-enabled")).toBe(true);
-    expect(toggles[2].classList.contains("is-enabled")).toBe(false);
+    expect(toggles[1].classList.contains("is-enabled")).toBe(false);
+    const appearance = root.querySelector("select") as HTMLSelectElement;
+    expect(Array.from(appearance.options).map((option) => option.value)).toEqual(["notion", "callout"]);
+    expect(appearance.value).toBe("notion");
   });
 
-  test("flipping Clean editing saves and re-runs the editors; Plain Notion look updates the body class at once", async () => {
+  test("flipping Clean editing saves and re-runs the editors; Callout appearance updates the body class at once", async () => {
     const f = fake();
     const root = document.createElement("div");
     renderNotionWritingSettings(root, f.plugin);
@@ -436,7 +473,9 @@ describe("v1.8.0 notion writing — settings section", () => {
     expect(f.calls.save).toBe(1);
 
     document.body.classList.add(NOTION_LOOK_CLASS);
-    toggles[1].click();
+    const appearance = root.querySelector("select") as HTMLSelectElement;
+    appearance.value = "callout";
+    appearance.dispatchEvent(new Event("change"));
     await flush();
     expect(f.plugin.settings.notionLook).toBe(false);
     expect(document.body.classList.contains(NOTION_LOOK_CLASS)).toBe(false);
@@ -463,6 +502,16 @@ describe("v1.8.0 notion writing — stylesheet", () => {
     for (const c of ["red", "yellow", "green", "blue", "purple", "orange", "gray", "plain"]) {
       expect(css).toContain(`.ntt-clean-t-recall-${c}`);
     }
+  });
+
+  test("native callouts restore the icon, tint and chevron, and are excluded from every Notion callout rule", () => {
+    const notionCalloutRules = css.match(/body\.ntt-notion-look[^{]+\{/g) ?? [];
+    for (const rule of notionCalloutRules.filter((rule) => rule.includes(".callout"))) {
+      expect(rule).toContain(":not(.ntt-native-callout)");
+    }
+    expect(css).toMatch(/\.ntt-native-callout[\s\S]{0,500}background-color:\s*rgba\(var\(--callout-color\)/);
+    expect(css).toMatch(/\.ntt-native-callout[\s\S]{0,1400}\.callout-icon[\s\S]{0,100}display:\s*flex\s*!important/);
+    expect(css).toMatch(/\.ntt-native-callout[\s\S]{0,2200}\.callout-fold svg[\s\S]{0,100}display:\s*block\s*!important/);
   });
 
   test("plain Notion look is scoped to the body class and to collapsible callouts only", () => {

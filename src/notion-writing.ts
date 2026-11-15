@@ -29,6 +29,8 @@ import { cleanOwnsEnter, convertPastedText, detailsBlockCount, flipFoldMarker, t
 import { convertDetailsToCallouts, newTogglePlan, nextToggleNumber } from "./editor-blocks";
 import { AT_TOP_LEVEL, NO_TOGGLE_ABOVE, installIndentBridge, type BridgeEditor, type CoreCommand } from "./indent-bridge";
 import { INDENT_COMMAND_ID, OUTDENT_COMMAND_ID } from "./naming";
+import { CalloutFormatModal } from "./look-filter-modal";
+import { calloutLookSummary, paintCalloutLooks } from "./look-filter";
 
 /* ---------- settings ---------- */
 
@@ -37,6 +39,8 @@ export interface NotionWritingSettings {
   cleanEditing: boolean;
   /** v1.8.0: plain Notion look for rendered toggles (arrow + title, no coloured box). */
   notionLook: boolean;
+  /** v1.9.23: these callout types keep Obsidian's native look while Notion look is on. */
+  calloutLookTypes: string[];
   /** v1.8.0: typing `>` then a space on an empty line starts a toggle. */
   notionShortcut: boolean;
   /** v1.8.0: pasted `<details>` blocks become toggles automatically. */
@@ -54,6 +58,7 @@ export interface NotionWritingSettings {
 export const DEFAULT_NOTION_WRITING: NotionWritingSettings = {
   cleanEditing: true,
   notionLook: true,
+  calloutLookTypes: [],
   notionShortcut: true,
   convertDetailsOnPaste: true,
   detailsNudge: true,
@@ -75,6 +80,23 @@ function calloutMode(plugin: NotionTogglePlugin): boolean {
 /** Apply / remove the plain Notion look. Called on load and whenever the setting flips. */
 export function applyNotionLook(plugin: NotionTogglePlugin): void {
   document.body.classList.toggle(NOTION_LOOK_CLASS, plugin.settings.notionLook);
+}
+
+/** Repaint open Reading views and Live Preview immediately after a look change. */
+export function refreshNotionLook(plugin: NotionTogglePlugin): void {
+  applyNotionLook(plugin);
+  plugin.app.workspace.updateOptions();
+  plugin.app.workspace.iterateAllLeaves?.((leaf) => {
+    if (!(leaf.view instanceof MarkdownView)) return;
+    const preview = (leaf.view as MarkdownView & {
+      previewMode?: {
+        rerender?: (full?: boolean) => void;
+        renderer?: { rerender?: (full?: boolean) => void };
+      };
+    }).previewMode;
+    if (preview?.rerender) preview.rerender(true);
+    else preview?.renderer?.rerender?.(true);
+  });
 }
 
 /**
@@ -179,6 +201,35 @@ export function uninstallNotionWriting(): void {
 
 /** Register everything. Called once from `onload`; cleanup rides on the plugin lifecycle. */
 export function installNotionWriting(plugin: NotionTogglePlugin): void {
+  // Appearance is per callout type, not a destructive Markdown conversion.
+  plugin.registerMarkdownPostProcessor((el) => {
+    paintCalloutLooks(el, plugin.settings);
+  });
+
+  plugin.addCommand({
+    id: "toggle-appearance",
+    icon: "panel-top",
+    name: "Appearance: Notion toggles ↔ native callouts",
+    callback: async () => {
+      plugin.settings.notionLook = !plugin.settings.notionLook;
+      refreshNotionLook(plugin);
+      await plugin.saveSettings();
+      new Notice(plugin.settings.notionLook ? "Notion toggle look ON." : "Native callout look ON — every type.");
+    },
+  });
+  plugin.addCommand({
+    id: "callout-appearance-filter",
+    icon: "list-filter",
+    name: "Appearance: choose native callout types",
+    callback: () => {
+      new CalloutFormatModal(plugin.app, plugin.settings.calloutLookTypes, async (types) => {
+        plugin.settings.calloutLookTypes = types;
+        refreshNotionLook(plugin);
+        await plugin.saveSettings();
+      }).open();
+    },
+  });
+
   plugin.registerEditorExtension(
     cleanTogglesExtension({
       livePreviewField: editorLivePreviewField,
@@ -299,14 +350,31 @@ export function renderNotionWritingSettings(containerEl: HTMLElement, plugin: No
       });
     });
 
+  const filterSetting = new Setting(containerEl)
+    .setName("Callout format filter")
+    .setDesc(calloutLookSummary(plugin.settings))
+    .addButton((button) => {
+      button.setButtonText("Choose types").onClick(() => {
+        new CalloutFormatModal(plugin.app, plugin.settings.calloutLookTypes, async (types) => {
+          plugin.settings.calloutLookTypes = types;
+          filterSetting.setDesc(calloutLookSummary(plugin.settings));
+          refreshNotionLook(plugin);
+          await save();
+        }).open();
+      });
+    });
+
   new Setting(containerEl)
-    .setName("Plain Notion look")
-    .setDesc("Rendered toggles show just an arrow and the title — no coloured box or icon. Colour toggles keep a coloured arrow.")
-    .addToggle((toggle) => {
-      toggle.setValue(plugin.settings.notionLook);
-      toggle.onChange(async (value) => {
-        plugin.settings.notionLook = value;
-        applyNotionLook(plugin);
+    .setName("Toggle appearance")
+    .setDesc("Notion: arrow + title. Native callout: Obsidian's icon, colour box and chevron. Changes the look only, never your Markdown.")
+    .addDropdown((dropdown) => {
+      dropdown.addOption("notion", "Notion toggles");
+      dropdown.addOption("callout", "Native callouts");
+      dropdown.setValue(plugin.settings.notionLook ? "notion" : "callout");
+      dropdown.onChange(async (value) => {
+        plugin.settings.notionLook = value === "notion";
+        filterSetting.setDesc(calloutLookSummary(plugin.settings));
+        refreshNotionLook(plugin);
         await save();
       });
     });
