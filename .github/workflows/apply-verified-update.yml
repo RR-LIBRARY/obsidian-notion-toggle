@@ -33,7 +33,6 @@ jobs:
           git apply --check /tmp/release.patch
           git apply /tmp/source.patch
           git apply /tmp/release.patch
-          git rm .github/workflows/apply-verified-update.yml
       - run: bun install
       - run: bun test
       - run: bun run build
