@@ -9,6 +9,7 @@ import { cleanTogglesExtension } from "../src/clean-toggles-view";
 import { cleanOwnsEnter } from "../src/clean-toggles";
 import { planEnter } from "../src/editor-blocks";
 import { convertNotionPaste, onOwnLine } from "../src/notion-paste";
+import { paintCalloutLooks } from "../src/look-filter";
 
 const params = new URLSearchParams(location.search);
 const chip = params.get("chip") === "1";
@@ -99,6 +100,7 @@ const view = new EditorView({
 
 (window as unknown as { wb: unknown }).wb = {
   view,
+  paintLooks: (notionLook: boolean) => paintCalloutLooks(document.body, { notionLook }),
   text: () => view.state.doc.toString(),
   head: () => view.state.selection.main.head,
   sel: () => ({ from: view.state.selection.main.from, to: view.state.selection.main.to }),
