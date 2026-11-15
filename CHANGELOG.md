@@ -1,4 +1,10 @@
-## 1.9.24 (prepared; not published)
+## 1.9.25
+- Fixed **Callout format filter → All Notion** after **Native callouts** was selected: it now re-enables Notion appearance, updates every open view immediately and saves the choice. Previously it only emptied the type list, so the look could stay unchanged.
+- **All callouts** switches every type back to native callouts; individual type switches use mixed Notion/native mode. The Settings appearance dropdown and filter summary stay in sync.
+- Number-specific note appearance rules keep their documented priority and are not silently erased by the type filter.
+- Verified Notion and native toggle opening/closing plus both quick-selection directions at phone and desktop browser sizes; real Obsidian device verification remains separate.
+
+## 1.9.24
 - Voice: prevent overlapping mic startup/finish, release mic resources after audio-engine failure, rescue empty/malformed service replies instead of silently losing audio. Real audio service check passed; user's unspecified phone issue remains unverified.
 - Uniform Notion/native appearance for every custom callout and HTML details, nested blocks and late rendering.
 - Per-note appearance selection by numbers/ranges (Q6–Q11, 13), source-derived numbering rather than viewport position.

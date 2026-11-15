@@ -1,4 +1,4 @@
-# Notion Toggle — complete command guide (1.9.24 prepared)
+# Notion Toggle — complete command guide (1.9.25)
 
 ## कैसे इस्तेमाल करें
 - Desktop: **Ctrl/Cmd+P** → Command palette → **Notion Toggle** + नीचे वाला command नाम खोजें।
@@ -77,7 +77,7 @@
 | Appearance: choose toggle numbers (this note) | `toggle-number-appearance` | Number/range और Notion/native चुनें; Apply या Reset this note. |
 | Review: grade and filter red / yellow / green | `review-color-filter` | Numbers grade करें और इस note के visible review colours चुनें; ऊपर पूरा flow देखें. |
 | Appearance: Notion toggles ↔ native callouts | `toggle-appearance` | पूरे plugin में Notion/native appearance switch; type/number exceptions clear. |
-| Appearance: choose native callout types | `callout-appearance-filter` | Notion ON होने पर कौन-से callout types native रहें, चुनें. |
+| Appearance: choose native callout types | `callout-appearance-filter` | कौन-से callout types native रहें, चुनें. **All Notion** Native mode के बाद भी Notion appearance वापस ON करता है; **All callouts** सभी types native करता है. Number-specific note rules की priority बनी रहती है. |
 | Toggle: open by default ↔ closed by default (this toggle) | `toggle-default-state` | Editor: Toggle: open by default ↔ closed by default (this toggle). |
 | Voice mode: start / finish | `voice-mode-toggle` | Note खोलें, cursor रखें, start बोलें; दोबारा command से finish/write करें. Service setup जरूरी. |
 | Voice mode: discard recording | `voice-mode-cancel` | Active recording discard करें; note में insert नहीं होगी. |

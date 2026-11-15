@@ -107,6 +107,18 @@ export function refreshNotionLook(plugin: NotionTogglePlugin): void {
   });
 }
 
+/** The type filter is a mixed-Notion mode: unchecked types must become Notion
+ * even when the user previously chose Native callouts for the whole vault. */
+function openCalloutFormat(plugin: NotionTogglePlugin, onChanged?: () => void): void {
+  new CalloutFormatModal(plugin.app, plugin.settings.calloutLookTypes, async (types) => {
+    plugin.settings.notionLook = true;
+    plugin.settings.calloutLookTypes = types;
+    onChanged?.();
+    refreshNotionLook(plugin);
+    await plugin.saveSettings();
+  }).open();
+}
+
 /**
  * `>` + space on an empty line: swap the lone `>` for a fresh toggle skeleton and
  * park the caret where the title goes. Returns false when the line is not a lone `>`.
@@ -238,13 +250,7 @@ export function installNotionWriting(plugin: NotionTogglePlugin): void {
     id: "callout-appearance-filter",
     icon: "list-filter",
     name: "Appearance: choose native callout types",
-    callback: () => {
-      new CalloutFormatModal(plugin.app, plugin.settings.calloutLookTypes, async (types) => {
-        plugin.settings.calloutLookTypes = types;
-        refreshNotionLook(plugin);
-        await plugin.saveSettings();
-      }).open();
-    },
+    callback: () => openCalloutFormat(plugin),
   });
 
   plugin.registerEditorExtension(
@@ -410,17 +416,16 @@ export function renderNotionWritingSettings(containerEl: HTMLElement, plugin: No
       });
     });
 
+  let syncAppearance: (() => void) | undefined;
   const filterSetting = new Setting(containerEl)
     .setName("Callout format filter")
     .setDesc(calloutLookSummary(plugin.settings))
     .addButton((button) => {
       button.setButtonText("Choose types").onClick(() => {
-        new CalloutFormatModal(plugin.app, plugin.settings.calloutLookTypes, async (types) => {
-          plugin.settings.calloutLookTypes = types;
+        openCalloutFormat(plugin, () => {
           filterSetting.setDesc(calloutLookSummary(plugin.settings));
-          refreshNotionLook(plugin);
-          await save();
-        }).open();
+          syncAppearance?.();
+        });
       });
     });
 
@@ -433,7 +438,8 @@ export function renderNotionWritingSettings(containerEl: HTMLElement, plugin: No
     .addDropdown((dropdown) => {
       dropdown.addOption("notion", "Notion toggles");
       dropdown.addOption("callout", "Native callouts");
-      dropdown.setValue(plugin.settings.notionLook ? "notion" : "callout");
+      syncAppearance = () => dropdown.setValue(plugin.settings.notionLook ? "notion" : "callout");
+      syncAppearance();
       dropdown.onChange(async (value) => {
         plugin.settings.notionLook = value === "notion";
         plugin.settings.calloutLookTypes = []; plugin.settings.toggleLookRules = {};
