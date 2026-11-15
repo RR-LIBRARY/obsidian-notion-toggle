@@ -43,7 +43,16 @@ export interface VoiceSettings {
   voiceTermMaxNotes: number;
 }
 
-export const DEFAULT_VOICE_ENDPOINT = "https://notion-toggle-voice.lovable.app/api/public/transcribe";
+export const DEFAULT_VOICE_ENDPOINT = "https://project--c35eb88f-50bf-4da0-b80f-c79f43c5b539.lovable.app/api/public/transcribe";
+/** v1.9.27 — the old voice server stopped working ("LOVABLE_API_KEY is not registered"). */
+export const OLD_VOICE_ENDPOINTS = ["https://notion-toggle-voice.lovable.app/api/public/transcribe"];
+
+/** v1.9.27 — move saved settings off the retired voice server; a custom address is left alone. */
+export function upgradeVoiceEndpoint(current: unknown): string {
+  const v = typeof current === "string" ? current.trim().replace(/\/+$/, "") : "";
+  if (!v || OLD_VOICE_ENDPOINTS.includes(v)) return DEFAULT_VOICE_ENDPOINT;
+  return v;
+}
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   voiceEndpoint: DEFAULT_VOICE_ENDPOINT,

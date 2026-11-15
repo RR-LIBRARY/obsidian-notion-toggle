@@ -4,7 +4,7 @@
  */
 import { FuzzySuggestModal, MarkdownView, Modal, Notice, TFile, requestUrl, setIcon, type Editor, type Plugin } from "obsidian";
 import { VoiceBar } from "./bar";
-import { DEFAULT_VOICE_SETTINGS, VoiceError, autoLink, autoMaxNotes, clampTermOpts, linkPhrases, linkTerms, shinglesOf, termsOf, type PhraseHit, buildContext, friendlyError, transcribe, transcribeWithRetry, wavSeconds, withTimeout, type VoiceSettings, type VoiceTransport } from "./client";
+import { DEFAULT_VOICE_SETTINGS, VoiceError, autoLink, autoMaxNotes, clampTermOpts, linkPhrases, linkTerms, shinglesOf, termsOf, type PhraseHit, buildContext, friendlyError, transcribe, transcribeWithRetry, wavSeconds, withTimeout, upgradeVoiceEndpoint, type VoiceSettings, type VoiceTransport } from "./client";
 import { VoiceRecorder } from "./recorder";
 import { CursorAnchor } from "./cursor";
 import { TARGET_RATE, downsample, encodeWav, hasSpeech, joinPiece, normalize, splitLong } from "./audio";
@@ -24,6 +24,7 @@ export const voiceTransport: VoiceTransport = withTimeout(async (req) => {
 export function withVoiceDefaults(settings: object): VoiceSettings {
   const s = settings as Record<string, unknown>;
   for (const [k, v] of Object.entries(DEFAULT_VOICE_SETTINGS)) if (s[k] === undefined || s[k] === null) s[k] = Array.isArray(v) ? [...v] : v;
+  s.voiceEndpoint = upgradeVoiceEndpoint(s.voiceEndpoint);
   return settings as VoiceSettings;
 }
 
