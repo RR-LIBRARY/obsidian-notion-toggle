@@ -16,7 +16,7 @@ describe("floating mic on/off (1.9.21)", () => {
     const plugin = {
       app: { workspace: { getActiveViewOfType: () => ({}), on: () => ({}), onLayoutReady: (f: () => void) => f(), iterateAllLeaves: () => {} },
              vault: { getFiles: () => [], getMarkdownFiles: () => [], on: () => ({}) } },
-      settings, addCommand: (c: { id: string; callback?: () => unknown }) => { if (c.callback) cmds[c.id] = c.callback; },
+      scrollRunning: false, settings, addCommand: (c: { id: string; callback?: () => unknown }) => { if (c.callback) cmds[c.id] = c.callback; },
       addRibbonIcon: () => ({}), registerEvent: () => {}, register: () => {}, saveSettings: async () => {},
     };
     installVoice(plugin as never);
@@ -26,6 +26,11 @@ describe("floating mic on/off (1.9.21)", () => {
     expect(fab.classList.contains("is-disabled")).toBe(true);
     settings.voiceFab = true; refreshVoiceFab();
     expect(fab.classList.contains("is-disabled")).toBe(false);
+    plugin.scrollRunning = true; refreshVoiceFab();
+    expect(fab.classList.contains("is-autoscrolling")).toBe(true);
+    expect(settings.voiceFab).toBe(true);
+    plugin.scrollRunning = false; refreshVoiceFab();
+    expect(fab.classList.contains("is-autoscrolling")).toBe(false);
     await cmds["voice-mode-fab"]();
     expect(settings.voiceFab).toBe(false);
     expect(fab.classList.contains("is-disabled")).toBe(true);

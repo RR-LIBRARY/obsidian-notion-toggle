@@ -1,2 +1,6 @@
 e2e/out/
+e2e/review/*.png
+e2e/review/workbench.js
+e2e/review/styles.css
 node_modules/
+dist/

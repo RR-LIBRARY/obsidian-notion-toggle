@@ -162,7 +162,10 @@ export async function transcribe(transport: VoiceTransport, s: VoiceSettings, wa
     /* non-JSON */
   }
   if (res.status < 200 || res.status >= 300) throw new VoiceError(data.error || `Transcription failed (${res.status})`, res.status);
-  return cleanPiece(String(data.text ?? ""));
+  if (typeof data.text !== "string") throw new VoiceError("Voice service returned no transcript. Audio will be saved; try again.", 502);
+  const transcript = cleanPiece(data.text);
+  if (!transcript) throw new VoiceError("No speech text returned. Audio will be saved for retry.", 422);
+  return transcript;
 }
 
 /** Up to 3 tries with backoff for network / 429 / 5xx; other errors stop at once. */
@@ -183,7 +186,7 @@ export async function transcribeWithRetry(
       if (i < 2) await sleep(1500 * 2 ** i);
     }
   }
-  throw last!;
+  throw last ?? new VoiceError("Transcription did not complete.", 502);
 }
 
 /**

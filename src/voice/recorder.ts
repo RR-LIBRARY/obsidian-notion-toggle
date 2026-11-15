@@ -61,6 +61,7 @@ export class VoiceRecorder {
     this.stream = await md.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
     });
+    try {
     const Ctx: AnyAudioContext = (window.AudioContext || (window as unknown as { webkitAudioContext: AnyAudioContext }).webkitAudioContext);
     this.ctx = new Ctx();
     await this.ctx.resume();
@@ -81,6 +82,10 @@ export class VoiceRecorder {
     this.source.connect(this.node);
     this.node.connect(this.ctx.destination);
     this.startedAt = Date.now();
+    } catch (error) {
+      await this.stop(false);
+      throw error;
+    }
   }
 
   setPaused(p: boolean): void {

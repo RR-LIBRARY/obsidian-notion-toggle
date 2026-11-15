@@ -260,9 +260,17 @@ async def main():
         # 23 v1.8.10 rendered callout arrow: ▶ closed, ▼ open, even when Obsidian rotates the fold itself
         html = '<div class="callout is-collapsible is-collapsed" data-callout="question"><div class="callout-title"><div class="callout-fold is-collapsed" style="transform:rotate(-90deg)"><svg></svg></div><div class="callout-title-inner">Q</div></div></div><div class="callout is-collapsible" data-callout="question"><div class="callout-title"><div class="callout-fold"><svg></svg></div><div class="callout-title-inner">Q</div></div></div>'
         await page.evaluate("h => document.body.insertAdjacentHTML('beforeend', h)", html)
+        # Production now assigns appearance per element, not through a global body class.
+        await page.evaluate("wb.paintLooks(true)")
         rots = await page.evaluate("[...document.querySelectorAll('.callout-fold')].map(f => [getComputedStyle(f).transform, getComputedStyle(f, '::before').transform])")
         check("closed callout arrow points right", rots[0][0] == "none" and rots[0][1] in ("none", "matrix(1, 0, 0, 1, 0, 0)"), str(rots))
-        check("open callout arrow points down", rots[1][0] == "none" and rots[1][1].startswith("matrix(0") or "6.12" in rots[1][1], str(rots))
+        check("open callout arrow points down", rots[1][0] == "none" and (rots[1][1].startswith("matrix(0") or "6.12" in rots[1][1]), str(rots))
+        await page.evaluate("wb.paintLooks(false)")
+        # Allow the native theme's fold transition to finish before measuring.
+        await page.wait_for_timeout(350)
+        native = await page.evaluate("[...document.querySelectorAll('.callout-fold')].map(f => [getComputedStyle(f).transform, getComputedStyle(f, '::before').content])")
+        check("native closed arrow retains Obsidian rotation", native[0][0] == "matrix(0, -1, 1, 0, 0, 0)", str(native))
+        check("native arrows have no Notion triangle", all(x[1] in ('none', 'normal', '""') for x in native), str(native))
 
         # 24 v1.8.11 audit: Shift+Tab / Tab on a nested list item inside a toggle is a list outdent / indent,
         #    not a block move — the item must stay inside the toggle.

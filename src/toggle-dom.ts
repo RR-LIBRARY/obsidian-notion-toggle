@@ -97,7 +97,7 @@ export function foldableToggleEls(root: ParentNode): HTMLElement[] {
 export function toggleTypeOf(el: HTMLElement): string {
   return (
     el.getAttribute("data-callout") ??
-    (el.className || (el.tagName.toLowerCase() === "details" ? "details" : ""))
+    (el.className.split(/\s+/).filter(c=>c && !c.startsWith("ntt-")).join(" ") || (el.tagName.toLowerCase() === "details" ? "details" : ""))
   );
 }
 

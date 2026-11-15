@@ -184,6 +184,8 @@ describe("v1.8.0 notion writing — install", () => {
       cleanEditing: true,
       notionLook: true,
       calloutLookTypes: [],
+      toggleLookRules: {},
+      reviewColorFilters: {},
       notionShortcut: true,
       convertDetailsOnPaste: true,
       detailsNudge: true,
@@ -502,24 +504,6 @@ describe("v1.8.0 notion writing — stylesheet", () => {
     for (const c of ["red", "yellow", "green", "blue", "purple", "orange", "gray", "plain"]) {
       expect(css).toContain(`.ntt-clean-t-recall-${c}`);
     }
-  });
-
-  test("native callouts restore the icon, tint and chevron, and are excluded from every Notion callout rule", () => {
-    const notionCalloutRules = css.match(/body\.ntt-notion-look[^{]+\{/g) ?? [];
-    for (const rule of notionCalloutRules.filter((rule) => rule.includes(".callout"))) {
-      expect(rule).toContain(":not(.ntt-native-callout)");
-    }
-    expect(css).toMatch(/\.ntt-native-callout[\s\S]{0,500}background-color:\s*rgba\(var\(--callout-color\)/);
-    expect(css).toMatch(/\.ntt-native-callout[\s\S]{0,1400}\.callout-icon[\s\S]{0,100}display:\s*flex\s*!important/);
-    expect(css).toMatch(/\.ntt-native-callout[\s\S]{0,2200}\.callout-fold svg[\s\S]{0,100}display:\s*block\s*!important/);
-  });
-
-  test("plain Notion look is scoped to the body class and to collapsible callouts only", () => {
-    const rules = css.match(/body\.ntt-notion-look[^{]+\{/g) ?? [];
-    expect(rules.length).toBeGreaterThan(5);
-    // rendered-callout rules stay on collapsible callouts; v1.8.4 editing rules stay on clean-editing classes
-    for (const r of rules) expect(r.includes(".is-collapsible") || r.includes(".ntt-clean-")).toBe(true);
-    expect(css).toMatch(/body\.ntt-notion-look[\s\S]{0,600}\.callout-icon[\s\S]{0,200}display:\s*none/);
   });
 
   test("touch targets and reduced motion are handled", () => {

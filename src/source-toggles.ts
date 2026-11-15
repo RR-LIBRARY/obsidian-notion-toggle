@@ -44,8 +44,9 @@ export function scanSourceToggles(text: string | null | undefined): SourceToggle
     kinds.push(kindOf(m[1]));
     if (m[2] === "-" || m[2] === "+") foldable++;
   }
-  const details = src.match(DETAILS_RE)?.length ?? 0;
-  for (let i = 0; i < details; i++) kinds.push("other");
+  const tags=Array.from(src.matchAll(/<details\b[^>]*>/gi));
+  const details=tags.length;
+  for(const tag of tags) kinds.push(kindOf(tag[0].match(/data-callout=["']([^"']+)["']/i)?.[1] ?? 'other'));
   return { kinds, total: kinds.length, foldable: foldable + details };
 }
 

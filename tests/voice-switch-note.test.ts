@@ -6,6 +6,8 @@ if (mine) GlobalRegistrator.register();
 afterAll(() => { if (mine) GlobalRegistrator.unregister(); });
 import { MarkdownView, TFile } from "obsidian";
 import { requestUrlState } from "./setup";
+import { installObsidianDom } from "./research-dom";
+installObsidianDom();
 
 let piece: (w: ArrayBuffer | null) => void = () => {};
 mock.module("../src/voice/recorder", () => ({

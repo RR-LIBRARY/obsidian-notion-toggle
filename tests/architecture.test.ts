@@ -92,6 +92,7 @@ const OBSIDIAN_SHELLS = new Set([
   "src/notion-writing.ts",
   // v1.9.23 — per-type Notion / native callout appearance picker.
   "src/look-filter-modal.ts",
+  "src/review-format-modal.ts",
   // v1.8.23 — command + settings shells for the AI outline service.
   "src/outline-command.ts",
   "src/outline-settings.ts",
