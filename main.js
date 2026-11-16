@@ -5320,6 +5320,28 @@ function isFullyRendered(domCount, sourceTotal) {
     return true;
   return Number(domCount) >= sourceTotal;
 }
+var TOP_CALLOUT_RE = /^[ \t]*>[ \t]*\[!([^\]\n]+)\][+-]?[ \t]*(.*)$/gm;
+var qCache = null;
+function plainTitle2(md) {
+  return md.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`~=]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+function sourceQuestionNumbers(text) {
+  const raw = String(text != null ? text : "");
+  if ((qCache == null ? void 0 : qCache.text) === raw)
+    return qCache.map;
+  const map = /* @__PURE__ */ new Map();
+  let n = 0;
+  for (const m of withoutFences(raw).matchAll(TOP_CALLOUT_RE)) {
+    n++;
+    const kind = m[1].trim().toLowerCase();
+    const title = plainTitle2(m[2]) || kind;
+    const key = `${kind}\0${title}`;
+    if (!map.has(key))
+      map.set(key, n);
+  }
+  qCache = { text: raw, map };
+  return map;
+}
 
 // src/answer-state.ts
 function createAnswerWantState() {
@@ -6603,6 +6625,34 @@ function sessionStops(stops, s) {
     return (_a2 = t.question) != null ? _a2 : t.ordinal;
   };
   return stops.filter((t) => s.scrollReverse && start > 1 ? num(t) <= start : num(t) >= start);
+}
+function screensFromStart(tops, keptTops, s, screenPx) {
+  var _a;
+  if (s.scrollMode === "route" || s.scrollMode === "shuffle" || clampStartNumber((_a = s.scrollStartNumber) != null ? _a : 1) <= 1 || !keptTops.length)
+    return tops;
+  if (s.scrollReverse) {
+    const last = Math.max(...keptTops);
+    return tops.filter((t) => t <= last);
+  }
+  const first = Math.min(...keptTops);
+  return [.../* @__PURE__ */ new Set([first, ...tops.filter((t) => t > first)])].sort((a, b) => a - b).filter((t) => t + screenPx > first || t === first);
+}
+function seekStartQuestion(container, seen, s, tries) {
+  var _a, _b, _c;
+  const start = clampStartNumber((_a = s.scrollStartNumber) != null ? _a : 1);
+  if (start <= 1 || s.scrollReverse || s.scrollMode === "route" || s.scrollMode === "shuffle" || !seen.length || tries >= 40)
+    return false;
+  const last = seen.reduce((a, b) => {
+    var _a2, _b2, _c2, _d;
+    return ((_b2 = (_a2 = b.question) != null ? _a2 : b.ordinal) != null ? _b2 : 0) > ((_d = (_c2 = a.question) != null ? _c2 : a.ordinal) != null ? _d : 0) ? b : a;
+  });
+  if (((_c = (_b = last.question) != null ? _b : last.ordinal) != null ? _c : 0) >= start)
+    return false;
+  const max = container.scrollHeight - container.clientHeight;
+  if (container.scrollTop >= max - 1)
+    return false;
+  container.scrollTop = Math.min(max, Math.max(container.scrollTop + container.clientHeight, last.top));
+  return true;
 }
 function resetRunGate(host) {
   var _a;
@@ -15565,12 +15615,14 @@ ${row}`, { line: cursor.line, ch: line.length });
       (el2) => filter.length === 0 ? true : matchesFilter(kindOf(toggleTypeOf(el2)), filter)
     );
     const base = container.getBoundingClientRect().top - container.scrollTop;
+    const srcQ = sourceQuestionNumbers(this.noteSource());
     return scan.map((s, index) => {
+      var _a;
       const rect = s.el.getBoundingClientRect();
       return {
         index,
         ordinal: s.ordinal,
-        question: s.question,
+        question: (_a = srcQ.get(s.identity)) != null ? _a : s.question,
         identity: s.identity,
         top: Math.max(0, Math.round(rect.top - base)),
         height: Math.round(rect.height),
@@ -15820,7 +15872,8 @@ ${row}`, { line: cursor.line, ch: line.length });
     var _a;
     const filtered = ((_a = this.settings.scrollFilter) != null ? _a : []).length > 0;
     const maxScroll = container.scrollHeight - container.clientHeight;
-    return plannedScreenTops(this.screenPlanFor(container), filtered, keptTops, this.renderedFully(), maxScroll);
+    const plan = this.screenPlanFor(container);
+    return screensFromStart(plannedScreenTops(plan, filtered, keptTops, this.renderedFully(), maxScroll), keptTops, this.settings, plan.screenPx).map((t) => Math.min(t, Math.max(0, maxScroll)));
   }
   /**
    * v1.1.1 — build the plan: colour filter first, then the pause-at mode
@@ -16016,9 +16069,12 @@ ${deckSummary(
     const plan = this.buildScrollPlan(container);
     document.body.classList.remove("ntt-review-measuring");
     if (plan.length === 0) {
-      const anyToggle = this.collectStops(container).length > 0;
       const inSource = this.sourceMatchCount(this.settings.scrollFilter);
       const stillRendering = inSource > 0 && !this.renderedFully();
+      const seen = this.collectStops(container);
+      const anyToggle = seen.length > 0;
+      if (seekStartQuestion(container, seen, this.settings, this.scrollRenderRetries))
+        return this.retryStart(300, true);
       if ((stillRendering || !anyToggle) && this.sourceHasToggles() && this.scrollRenderRetries < 4) {
         return this.retryStart(350, true);
       }

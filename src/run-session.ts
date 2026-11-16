@@ -13,6 +13,29 @@ export function sessionStops<T extends { ordinal: number; question?: number }>(s
   const num = (t: T) => t.question ?? t.ordinal;
   return stops.filter((t) => s.scrollReverse && start > 1 ? num(t) <= start : num(t) >= start);
 }
+/** "Advance by: screens": skip whole screens before the start question (after it, in reverse). */
+export function screensFromStart(tops: number[], keptTops: number[], s: Pick<AutoScrollSettings, "scrollStartNumber" | "scrollMode" | "scrollReverse">, screenPx: number): number[] {
+  if (s.scrollMode === "route" || s.scrollMode === "shuffle" || clampStartNumber(s.scrollStartNumber ?? 1) <= 1 || !keptTops.length) return tops;
+  if (s.scrollReverse) { const last = Math.max(...keptTops); return tops.filter((t) => t <= last); }
+  const first = Math.min(...keptTops);
+  // Land on the first question itself; drop every screen that ends before it.
+  return [...new Set([first, ...tops.filter((t) => t > first)])].sort((a, b) => a - b).filter((t) => t + screenPx > first || t === first);
+}
+/**
+ * Obsidian only draws the part of a long note near the screen. When the typed start
+ * question is further down, scroll past the last drawn question so it gets drawn, then
+ * plan again. Returns true while it should keep seeking.
+ */
+export function seekStartQuestion(container: HTMLElement, seen: { top: number; question?: number; ordinal?: number }[], s: Pick<AutoScrollSettings, "scrollStartNumber" | "scrollMode" | "scrollReverse">, tries: number): boolean {
+  const start = clampStartNumber(s.scrollStartNumber ?? 1);
+  if (start <= 1 || s.scrollReverse || s.scrollMode === "route" || s.scrollMode === "shuffle" || !seen.length || tries >= 40) return false;
+  const last = seen.reduce((a, b) => ((b.question ?? b.ordinal ?? 0) > (a.question ?? a.ordinal ?? 0) ? b : a));
+  if ((last.question ?? last.ordinal ?? 0) >= start) return false;
+  const max = container.scrollHeight - container.clientHeight;
+  if (container.scrollTop >= max - 1) return false;
+  container.scrollTop = Math.min(max, Math.max(container.scrollTop + container.clientHeight, last.top));
+  return true;
+}
 interface GateHost {
   thinkGate: ThinkGate;
   scrollOpenEl: HTMLElement | null;
