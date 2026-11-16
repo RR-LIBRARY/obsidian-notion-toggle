@@ -9,6 +9,7 @@
  * window before committing to it), plus reduced-motion and timing-debug
  * switches, and a note about the per-note frontmatter override.
  */
+import { clampStartNumber } from "./run-session";
 import { Setting } from "obsidian";
 import { addSecondsPicker } from "./modals";
 import { formatDwell } from "./scrollmode";
@@ -18,6 +19,7 @@ export interface ThinkSettingsHost {
   settings: {
     scrollThinkEnabled: boolean;
     scrollThinkSeconds: number;
+    scrollStartNumber: number;
     scrollThinkIcon: string;
     scrollFocusChrome: boolean;
     scrollReducedMotion: boolean;
@@ -77,6 +79,15 @@ export function renderThinkSettings(containerEl: HTMLElement, host: ThinkSetting
         await host.saveSettings();
       })
     );
+
+  new Setting(containerEl)
+    .setName("Start from question number")
+    .setDesc("Default 1: questions run in note order. With a colour filter, starts at the first matching question at or after this number. Route and shuffle keep their chosen order.")
+    .addText((t) => t.setValue(String(s.scrollStartNumber ?? 1)).onChange(async (v) => {
+      if (!/^\d+$/.test(v.trim())) return;
+      s.scrollStartNumber = clampStartNumber(Number(v));
+      await host.saveSettings();
+    }));
 
   const row = new Setting(containerEl)
     .setName("Think seconds")

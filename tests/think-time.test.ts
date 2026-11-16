@@ -83,6 +83,8 @@ function fakeToggle(title: string) {
   const badges: { className: string; textContent: string; isConnected: boolean }[] = [];
   const row = {
     textContent: title,
+    cloneNode: () => ({ textContent: title, querySelectorAll: () => [] }),
+    click: () => {},
     listeners: [] as ((ev: unknown) => void)[],
     appendChild(node: { className: string; textContent: string; isConnected: boolean }) {
       node.isConnected = true;
@@ -146,7 +148,7 @@ describe("ThinkGate — question first, answer later", () => {
     const gate = new ThinkGate();
     const el = fakeToggle("Q3. Incomplete dominance?");
     gate.begin(el, s, 0);
-    el.row.listeners.forEach((fn) => fn({}));
+    el.row.listeners.forEach((fn) => fn({ preventDefault() {}, stopImmediatePropagation() {} }));
     expect(gate.thinking).toBe(false);
     expect(el.classList.contains(THINK_SHOWN_CLASS)).toBe(true);
   });

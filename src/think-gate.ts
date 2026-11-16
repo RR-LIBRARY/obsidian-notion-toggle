@@ -13,6 +13,8 @@
  * Pure module: DOM only, no Obsidian imports.
  */
 
+import { setToggleOpen, toggleTitleOf } from "./toggle-dom";
+
 /** Body class while a run with a think gate is active (drives the CSS). */
 export const THINK_RUN_CLASS = "ntt-think-run";
 /** Body class that hides Obsidian's chrome for a distraction-free run. */
@@ -125,8 +127,7 @@ export function titleRowOf(el: HTMLElement): HTMLElement | null {
 
 /** Visible title text, used for the per-toggle "🤔20s" override. */
 export function titleTextOf(el: HTMLElement): string {
-  const row = titleRowOf(el);
-  return (row?.textContent ?? "").trim();
+  return toggleTitleOf(el).trim();
 }
 
 /**
@@ -191,6 +192,7 @@ export class ThinkGate {
       setThinkHidden(el, false);
       return 0;
     }
+    setToggleOpen(el, false);
     this.el = el;
     this.icon = (s.scrollThinkIcon ?? "🤔").trim() || "🤔";
     this.until = now + ms;
@@ -202,12 +204,17 @@ export class ThinkGate {
     // used to reveal *and* navigate on the same tap.
     this.onTap = (ev: Event) => {
       if (isInteractiveTarget(ev.target)) return;
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
       this.revealNow();
     };
     row.addEventListener("click", this.onTap, { capture: true });
 
     return ms;
   }
+
+  /** Preserve the countdown across a held or explicit pause. */
+  shift(ms: number): void { if (this.until > 0) this.until += Math.max(0, ms); }
 
   /** Advance the gate. Returns true on the frame the answer is released. */
   tick(now: number): boolean {
@@ -229,6 +236,7 @@ export class ThinkGate {
     this.detach();
     this.until = 0;
     this.el = null;
+    setToggleOpen(el, true);
   }
 
   /** Stop gating without deciding anything: the answer becomes visible. */

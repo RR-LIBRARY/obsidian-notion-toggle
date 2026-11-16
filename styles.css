@@ -2081,7 +2081,7 @@ body:not(:has(.ntt-fab-wrap)) .ntt-voice-fab { bottom: calc(env(safe-area-inset-
 }
 
 /* Positive per-block classes keep nested appearance choices independent. */
-body:not(.ntt-review-measuring):not(.ntt-review-scrolling):not(.ntt-quiz-active) .ntt-review-filtered-out { display:none !important; }
+body:not(.ntt-review-session):not(.ntt-review-measuring):not(.ntt-review-scrolling):not(.ntt-quiz-active) .ntt-review-filtered-out { display:none !important; }
 .ntt-review-modal input, .ntt-review-modal select { max-width:100%; }
 .ntt-review-modal button { min-height:40px; }
 .is-mobile .ntt-review-modal .setting-item { flex-wrap:wrap; }

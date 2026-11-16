@@ -4077,6 +4077,7 @@ var DEFAULT_AUTOSCROLL = {
   scrollRestoreMode: true,
   scrollThinkEnabled: true,
   scrollThinkSeconds: 5,
+  scrollStartNumber: 1,
   scrollThinkIcon: "\u{1F914}",
   scrollFocusChrome: true,
   scrollReducedMotion: false,
@@ -5962,11 +5963,16 @@ function setToggleOpen2(el2, open) {
     el2.classList.toggle("is-collapsed", !open);
 }
 function toggleTitleOf(el2) {
-  var _a, _b, _c, _d, _e, _f;
+  var _a, _b, _c, _d;
   if (el2.tagName.toLowerCase() === "details") {
-    return (_b = (_a = el2.querySelector("summary")) == null ? void 0 : _a.textContent) != null ? _b : "";
+    const copy2 = (_a = el2.querySelector("summary")) == null ? void 0 : _a.cloneNode(true);
+    copy2 == null ? void 0 : copy2.querySelectorAll(".ntt-think-badge").forEach((badge) => badge.remove());
+    return (_b = copy2 == null ? void 0 : copy2.textContent) != null ? _b : "";
   }
-  return (_f = (_e = (_c = el2.querySelector(".callout-title-inner")) == null ? void 0 : _c.textContent) != null ? _e : (_d = el2.querySelector(".callout-title")) == null ? void 0 : _d.textContent) != null ? _f : "";
+  const row = (_c = el2.querySelector(".callout-title-inner")) != null ? _c : el2.querySelector(".callout-title");
+  const copy = row == null ? void 0 : row.cloneNode(true);
+  copy == null ? void 0 : copy.querySelectorAll(".ntt-think-badge").forEach((badge) => badge.remove());
+  return (_d = copy == null ? void 0 : copy.textContent) != null ? _d : "";
 }
 
 // src/quiz-ui.ts
@@ -6396,9 +6402,7 @@ function titleRowOf(el2) {
   return el2.querySelector(".callout-title");
 }
 function titleTextOf(el2) {
-  var _a;
-  const row = titleRowOf(el2);
-  return ((_a = row == null ? void 0 : row.textContent) != null ? _a : "").trim();
+  return toggleTitleOf(el2).trim();
 }
 function isInteractiveTarget(target) {
   const el2 = target;
@@ -6448,6 +6452,7 @@ var ThinkGate = class {
       setThinkHidden(el2, false);
       return 0;
     }
+    setToggleOpen2(el2, false);
     this.el = el2;
     this.icon = ((_a = s.scrollThinkIcon) != null ? _a : "\u{1F914}").trim() || "\u{1F914}";
     this.until = now + ms3;
@@ -6457,10 +6462,17 @@ var ThinkGate = class {
     this.onTap = (ev) => {
       if (isInteractiveTarget(ev.target))
         return;
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
       this.revealNow();
     };
     row.addEventListener("click", this.onTap, { capture: true });
     return ms3;
+  }
+  /** Preserve the countdown across a held or explicit pause. */
+  shift(ms3) {
+    if (this.until > 0)
+      this.until += Math.max(0, ms3);
   }
   /** Advance the gate. Returns true on the frame the answer is released. */
   tick(now) {
@@ -6483,6 +6495,7 @@ var ThinkGate = class {
     this.detach();
     this.until = 0;
     this.el = null;
+    setToggleOpen2(el2, true);
   }
   /** Stop gating without deciding anything: the answer becomes visible. */
   release() {
@@ -6556,6 +6569,47 @@ var ThinkGate = class {
     this.onTap = null;
   }
 };
+
+// src/run-session.ts
+function clampStartNumber(n) {
+  return Number.isFinite(n) ? Math.max(1, Math.floor(n)) : 1;
+}
+function sessionStops(stops, s) {
+  var _a;
+  if (s.scrollMode === "route" || s.scrollMode === "shuffle")
+    return stops;
+  const start = clampStartNumber((_a = s.scrollStartNumber) != null ? _a : 1);
+  return stops.filter((t) => s.scrollReverse && start > 1 ? t.ordinal <= start : t.ordinal >= start);
+}
+function resetRunGate(host) {
+  var _a;
+  host.thinkGate.clear();
+  if (host.scrollOpenEl) {
+    clearThinkMarks(host.scrollOpenEl);
+    if (((_a = host.answerWant) == null ? void 0 : _a.want) !== "open")
+      setToggleOpen2(host.scrollOpenEl, false);
+  }
+  host.scrollOpenEl = null;
+  host.scrollThinkMs = 0;
+  host.scrollActiveIdentity = null;
+}
+function finishRouteDwell(host, now) {
+  if (host.settings.scrollMode !== "route" && host.settings.scrollMode !== "shuffle" || host.settings.scrollLoopRoute || host.scrollRouteIdx < host.settings.scrollRoute.length || now < host.scrollDwellUntil)
+    return false;
+  host.stopAutoScroll(false);
+  return true;
+}
+function nextRouteIndex(route, at, pages, loop) {
+  for (let offset = 0; offset < route.length; offset++) {
+    const i = at + offset;
+    if (!loop && i >= route.length)
+      break;
+    const index = i % route.length;
+    if (pages.includes(route[index]))
+      return index;
+  }
+  return null;
+}
 
 // src/think-reveal.ts
 function openAtArrival(mayOpen, thinkMs) {
@@ -8799,6 +8853,15 @@ function renderThinkSettings(containerEl, host) {
       await host.saveSettings();
     })
   );
+  new import_obsidian11.Setting(containerEl).setName("Start from question number").setDesc("Default 1: questions run in note order. With a colour filter, starts at the first matching question at or after this number. Route and shuffle keep their chosen order.").addText((t) => {
+    var _a;
+    return t.setValue(String((_a = s.scrollStartNumber) != null ? _a : 1)).onChange(async (v) => {
+      if (!/^\d+$/.test(v.trim()))
+        return;
+      s.scrollStartNumber = clampStartNumber(Number(v));
+      await host.saveSettings();
+    });
+  });
   const row = new import_obsidian11.Setting(containerEl).setName("Think seconds").setDesc(
     `Currently ${formatDwell(clampThinkSeconds(s.scrollThinkSeconds))}. Per-toggle override: put \u{1F914}20s or ?30s in the question title. Per-note override: add "think: 20s" to the note's frontmatter. Tap the question to reveal early.`
   );
@@ -15465,6 +15528,7 @@ ${row}`, { line: cursor.line, ch: line.length });
   }
   /** Give lazy rendering back once the run is over. */
   endFullRender() {
+    document.body.classList.remove("ntt-review-session");
     restoreFullRender(this.scrollFullRender);
     this.scrollFullRender = null;
   }
@@ -15624,6 +15688,7 @@ ${row}`, { line: cursor.line, ch: line.length });
       return;
     this.scrollHoldPaused = false;
     const held = Math.max(0, performance.now() - this.scrollHoldAt);
+    this.thinkGate.shift(held);
     if (this.scrollDwellUntil)
       this.scrollDwellUntil += held;
     if (this.scrollHoldUntil)
@@ -15656,6 +15721,7 @@ ${row}`, { line: cursor.line, ch: line.length });
   }
   toggleAutoScroll() {
     if (this.scrollRunning) {
+      this.holdPauseStart();
       this.scrollRunning = false;
       refreshVoiceFab();
       document.body.classList.toggle("ntt-review-scrolling", this.scrollRunning);
@@ -15668,6 +15734,7 @@ ${row}`, { line: cursor.line, ch: line.length });
       this.startAutoScroll();
     else {
       this.scrollRunning = true;
+      this.holdPauseEnd();
       refreshVoiceFab();
       document.body.classList.toggle("ntt-review-scrolling", this.scrollRunning);
       this.scrollLastFrame = 0;
@@ -15738,6 +15805,7 @@ ${row}`, { line: cursor.line, ch: line.length });
   buildScrollPlan(container) {
     var _a;
     const kept = this.collectStops(container, this.settings.scrollFilter);
+    kept.splice(0, kept.length, ...sessionStops(kept, this.settings));
     this.scrollTotalItems = kept.length;
     this.scrollNoteTotal = noteToggleCount(container);
     this.scrollSourceTotal = scanSourceToggles(this.noteSource()).total;
@@ -15905,6 +15973,7 @@ ${deckSummary(
       return this.retryStart(180);
     if (this.beginFullRender())
       return this.retryStart(220);
+    document.body.classList.add("ntt-review-session");
     const container = this.findScrollContainer();
     if (!container) {
       if (shouldWaitForScrollable(!!this.findViewContainer(), this.sourceHasToggles(), this.scrollRenderRetries)) {
@@ -15945,6 +16014,8 @@ ${deckSummary(
     }
     this.scrollRenderRetries = 0;
     this.scrollPlan = plan;
+    if (plan[0] && this.settings.scrollMode === "all" && !this.settings.scrollReverse)
+      container.scrollTop = anchorScrollTop(container, plan[0].top, 0, this.settings.scrollStopAnchor);
     const routed = this.settings.scrollMode === "route" || this.settings.scrollMode === "shuffle";
     this.scrollAt = routed ? 0 : firstStopFrom(plan, container.scrollTop, this.settings.scrollReverse);
     this.scrollHoldUntil = 0;
@@ -16134,6 +16205,7 @@ ${deckSummary(
     const container = this.scrollContainer;
     if (!container)
       return;
+    resetRunGate(this);
     this.scrollPlan = this.buildScrollPlan(container);
     this.scrollAt = 0;
     this.scrollBoxes = [];
@@ -16146,6 +16218,7 @@ ${deckSummary(
     this.scrollDir = this.settings.scrollReverse ? -1 : 1;
     this.scrollDwellDir = this.scrollDir;
     this.scrollHoldUntil = 0;
+    this.closeFilteredStrays(container, null);
     this.renderScrollBar();
   }
   /** "3/12" — route legs in route/shuffle mode, dwell stops otherwise. */
@@ -16279,7 +16352,9 @@ ${deckSummary(
   measureScrollBoxes(container) {
     const t0 = nowMs();
     const kept = this.collectStops(container, this.settings.scrollFilter);
+    kept.splice(0, kept.length, ...sessionStops(kept, this.settings));
     const grew = kept.length > this.scrollTotalItems;
+    kept.splice(0, kept.length, ...sessionStops(kept, this.settings));
     this.scrollTotalItems = kept.length;
     this.scrollNoteTotal = noteToggleCount(container);
     this.scrollSourceTotal = scanSourceToggles(this.noteSource()).total;
@@ -16556,6 +16631,12 @@ ${deckSummary(
     this.scrollLastFrame = ts;
     const smooth = effectiveSmoothness(normaliseSmoothness(this.settings.scrollSmoothness), this.scrollFrameAvg);
     const perFrame = clampSpeed(this.settings.scrollSpeed) / 60 * rampFactor(ts - this.scrollReleasedAt, smooth);
+    const revealAt = this.thinkGate.revealAt;
+    if (this.thinkGate.tick(ts)) {
+      this.scrollDwellUntil = ts + Math.max(16, this.scrollDwellUntil - revealAt);
+      this.scrollBoxesAt = 0;
+      this.thinkTimeline.mark("reveal", this.scrollOpenOrdinal, ts);
+    }
     if (this.scrollDwellUntil && ts < this.scrollDwellUntil) {
       this.scrollPos = container.scrollTop;
       if (this.thinkGate.tick(ts)) {
@@ -16572,6 +16653,8 @@ ${deckSummary(
       return;
     }
     if (this.scrollDwellUntil && ts >= this.scrollDwellUntil) {
+      if (finishRouteDwell(this, ts))
+        return;
       this.scrollDwellUntil = 0;
       this.scrollReleasedAt = ts;
       this.closeScrollVisit();
@@ -16594,6 +16677,12 @@ ${deckSummary(
       let routeTarget = null;
       let routeStops = [];
       if (routeMode) {
+        const next = nextRouteIndex(cfg.route, this.scrollRouteIdx, this.scrollBoxes.map((b) => b.page), cfg.loopRoute);
+        if (next === null) {
+          this.stopAutoScroll(false);
+          return;
+        }
+        this.scrollRouteIdx = next;
         const wanted = cfg.route[this.scrollRouteIdx % cfg.route.length];
         const hit = this.scrollBoxes.find((b) => b.page === wanted);
         if (hit) {
@@ -16629,13 +16718,7 @@ ${deckSummary(
           this.scrollRouteStop = 0;
           const last = this.scrollRouteIdx >= cfg.route.length - 1;
           if (last && !cfg.loopRoute) {
-            new import_obsidian25.Notice(
-              this.settings.scrollMode === "shuffle" ? "Shuffle finished \u2014 every scheduled toggle revised." : "Route finished \u2014 every waypoint visited."
-            );
-            this.scrollRunning = false;
-            refreshVoiceFab();
-            document.body.classList.toggle("ntt-review-scrolling", this.scrollRunning);
-            this.renderScrollBar();
+            this.scrollRouteIdx = cfg.route.length;
             this.endScrollFrame(ts);
             return;
           }
@@ -16734,7 +16817,6 @@ ${deckSummary(
       this.paintScrollDebug({}, ts);
     this.scheduleScrollFrame();
   }
-  /* ==================== v1.1.0: quiz mode ==================== */
   /** Visible title text of a toggle, used for the per-question "⏱30" marker. */
   quizTitleOf(el2) {
     return toggleTitleOf(el2);
