@@ -5358,6 +5358,13 @@ async function runAnswerSweep(o) {
   }
   return { changed, rendered: o.foldableEls(o.container).length, total: o.sourceFoldable };
 }
+function runAnswerRule(held, autoOpen, autoClose) {
+  return {
+    open: autoOpen && held !== "closed",
+    close: autoClose && held !== "open",
+    think: autoOpen && held === null
+  };
+}
 
 // src/reader/fsrsScheduler.ts
 var FSRS_W = [
@@ -15434,7 +15441,11 @@ ${row}`, { line: cursor.line, ch: line.length });
   }
   /** v1.7.3 — may an Open all / Close all outlive the tap? Not while a run or quiz owns the toggles. */
   answerWantCanStick() {
-    return !this.scrollRunning && !this.quizState;
+    return !this.quizState;
+  }
+  // v1.9.29 — a run follows it (runAnswerRule)
+  runAnswers() {
+    return runAnswerRule(this.quizState ? null : wantedAnswerState(this.answerWant, this.activeNotePath()), this.settings.scrollAutoOpen, this.settings.scrollAutoClose);
   }
   /**
    * v1.7.2 — give every foldable toggle inside `root` the state the reader
@@ -15539,7 +15550,6 @@ ${row}`, { line: cursor.line, ch: line.length });
       this.scrollRunning = true;
       refreshVoiceFab();
       document.body.classList.toggle("ntt-review-scrolling", this.scrollRunning);
-      this.clearAnswerWant();
       this.scrollLastFrame = 0;
       this.scheduleScrollFrame();
       this.renderScrollBar();
@@ -15822,7 +15832,6 @@ ${deckSummary(
     this.scrollRunning = true;
     refreshVoiceFab();
     document.body.classList.toggle("ntt-review-scrolling", this.scrollRunning);
-    this.clearAnswerWant();
     this.scrollLastFrame = 0;
     this.scrollPos = seedStartOffset(
       container.scrollTop,
@@ -15935,7 +15944,7 @@ ${deckSummary(
       clearThinkMarks(this.scrollOpenEl);
     document.body.classList.remove(THINK_RUN_CLASS, FOCUS_RUN_CLASS, REDUCED_MOTION_CLASS);
     this.drawerGuard.stop();
-    if (this.scrollOpenEl && this.settings.scrollAutoClose) {
+    if (this.scrollOpenEl && this.runAnswers().close) {
       this.setToggleOpen(this.scrollOpenEl, false);
     }
     this.scrollOpenEl = null;
@@ -16229,7 +16238,7 @@ ${deckSummary(
    */
   closeFilteredStrays(container, keep) {
     const filter = this.settings.scrollFilter;
-    if (!container || filter.length === 0)
+    if (!container || filter.length === 0 || !this.runAnswers().close)
       return 0;
     const scan = this.collectStops(container).filter((s) => !!s.el).map((s) => ({ el: s.el, color: s.color, open: this.isToggleOpen(s.el) }));
     const strays = strayOpenToggles(scan, filter, keep != null ? keep : this.scrollOpenEl);
@@ -16255,7 +16264,7 @@ ${deckSummary(
    */
   closeOpenToggleIfLeaving(container) {
     const el2 = this.scrollOpenEl;
-    if (!el2 || !this.settings.scrollAutoClose)
+    if (!el2 || !this.runAnswers().close)
       return;
     const cfg = this.dwellCfg();
     let stillReading = this.scrollRouteStop > 0;
@@ -16289,7 +16298,7 @@ ${deckSummary(
     if (!el2 || isRefusedPark(res.reason)) {
       this.scrollLastEvent = parkSkipLabel(res, ordinal);
       this.scrollBoxesAt = 0;
-      if (this.scrollOpenEl && this.settings.scrollAutoClose) {
+      if (this.scrollOpenEl && this.runAnswers().close) {
         this.thinkGate.clear();
         this.thinkTimeline.mark("close", this.scrollOpenOrdinal, now);
         this.setToggleOpen(this.scrollOpenEl, false);
@@ -16304,19 +16313,19 @@ ${deckSummary(
       this.scrollThinkMs = 0;
       return true;
     }
-    if (this.scrollOpenEl && this.scrollOpenEl !== el2 && this.settings.scrollAutoClose) {
+    if (this.scrollOpenEl && this.scrollOpenEl !== el2 && this.runAnswers().close) {
       this.thinkGate.clear();
       this.thinkTimeline.mark("close", this.scrollOpenOrdinal, now);
       this.setToggleOpen(this.scrollOpenEl, false);
     }
-    if (this.settings.scrollAutoOpen) {
+    if (this.runAnswers().open) {
       this.setToggleOpen(el2, true);
       this.thinkTimeline.mark("open", ordinal, now);
     }
     this.scrollOpenEl = el2;
     this.scrollOpenOrdinal = ordinal;
     this.closeFilteredStrays(this.scrollContainer, el2);
-    this.scrollThinkMs = this.settings.scrollAutoOpen ? this.thinkGate.begin(el2, this.thinkSettingsForNote(), now) : 0;
+    this.scrollThinkMs = this.runAnswers().think ? this.thinkGate.begin(el2, this.thinkSettingsForNote(), now) : 0;
     if (this.scrollThinkMs > 0) {
       this.thinkTimeline.mark("countdown", ordinal, now, `${Math.round(this.scrollThinkMs / 1e3)}s`);
     }
@@ -16565,7 +16574,7 @@ ${deckSummary(
           this.scrollPos = this.scrollDir < 0 ? max : 0;
           container.scrollTop = Math.floor(this.scrollPos);
           this.thinkGate.clear();
-          if (this.scrollOpenEl && this.settings.scrollAutoClose) {
+          if (this.scrollOpenEl && this.runAnswers().close) {
             this.setToggleOpen(this.scrollOpenEl, false);
             this.scrollOpenEl = null;
           }
