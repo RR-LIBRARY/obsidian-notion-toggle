@@ -210,6 +210,7 @@ import {
 } from "./src/quiz-visibility";
 import { healQuizEls, needsHeal, revealLanded } from "./src/quiz-heal";
 import { FOCUS_RUN_CLASS, REDUCED_MOTION_CLASS, THINK_RUN_CLASS, ThinkGate, clearThinkMarks, thinkMsFor, titleTextOf } from "./src/think-gate";
+import { sessionStops, resetRunGate, finishRouteDwell, nextRouteIndex } from "./src/run-session";
 import { answerReadMs, answerTextOf, openAtArrival } from "./src/think-reveal";
 import { effectiveSmoothness, nextFrameAvg, normaliseSmoothness, rampFactor, scrollWriteValue } from "./src/smooth-scroll";
 import { DrawerGuard } from "./src/drawer-guard";
@@ -1920,7 +1921,7 @@ export default class NotionTogglePlugin extends Plugin {
   }
   /** Give lazy rendering back once the run is over. */
   private endFullRender(): void {
-    restoreFullRender(this.scrollFullRender);
+    document.body.classList.remove("ntt-review-session"); restoreFullRender(this.scrollFullRender);
     this.scrollFullRender = null;
   }
   /** Every rendered toggle in the active note, with its offset and colour. */
@@ -2072,6 +2073,7 @@ export default class NotionTogglePlugin extends Plugin {
     // Shift the absolute dwell deadlines by the held time so a pause never
     // silently eats a toggle's reading time.
     const held = Math.max(0, performance.now() - this.scrollHoldAt);
+    this.thinkGate.shift(held);
     if (this.scrollDwellUntil) this.scrollDwellUntil += held;
     if (this.scrollHoldUntil) this.scrollHoldUntil += held;
     if (this.scrollOpenedAt) this.scrollOpenedAt += held;
@@ -2099,7 +2101,7 @@ export default class NotionTogglePlugin extends Plugin {
   }
   toggleAutoScroll() {
     if (this.scrollRunning) {
-      this.scrollRunning = false; refreshVoiceFab(); document.body.classList.toggle('ntt-review-scrolling', this.scrollRunning);
+      this.holdPauseStart(); this.scrollRunning = false; refreshVoiceFab(); document.body.classList.toggle('ntt-review-scrolling', this.scrollRunning);
       this.renderScrollBar();
       this.syncScrollFab();
       new Notice(`Autoscroll paused — ${hotkeyLabel("smart-autoscroll")} se resume.`);
@@ -2107,7 +2109,7 @@ export default class NotionTogglePlugin extends Plugin {
     }
     if (this.scrollPlan.length === 0) this.startAutoScroll();
     else {
-      this.scrollRunning = true; refreshVoiceFab(); document.body.classList.toggle('ntt-review-scrolling', this.scrollRunning);
+      this.scrollRunning = true; this.holdPauseEnd(); refreshVoiceFab(); document.body.classList.toggle('ntt-review-scrolling', this.scrollRunning);
       this.scrollLastFrame = 0;
       this.scheduleScrollFrame();
       this.renderScrollBar();
@@ -2174,6 +2176,7 @@ export default class NotionTogglePlugin extends Plugin {
       ordinal: number;
       identity: string;
     })[];
+    kept.splice(0, kept.length, ...sessionStops(kept, this.settings));
     this.scrollTotalItems = kept.length;
     this.scrollNoteTotal = noteToggleCount(container);
     this.scrollSourceTotal = scanSourceToggles(this.noteSource()).total;
@@ -2327,7 +2330,7 @@ export default class NotionTogglePlugin extends Plugin {
     // v1.5.4 — and the *whole* note must be rendered, not just the screenful
     // Obsidian keeps alive: otherwise the plan is built from a partial DOM.
     if (this.beginFullRender()) return this.retryStart(220);
-    const container = this.findScrollContainer();
+    document.body.classList.add("ntt-review-session"); const container = this.findScrollContainer();
     if (!container) {
       if (shouldWaitForScrollable(!!this.findViewContainer(), this.sourceHasToggles(), this.scrollRenderRetries)) {
         return this.retryStart(350, true);
@@ -2372,6 +2375,7 @@ export default class NotionTogglePlugin extends Plugin {
     }
     this.scrollRenderRetries = 0;
     this.scrollPlan = plan;
+    if (plan[0] && this.settings.scrollMode === "all" && !this.settings.scrollReverse) container.scrollTop = anchorScrollTop(container, plan[0].top, 0, this.settings.scrollStopAnchor);
     const routed = this.settings.scrollMode === "route" || this.settings.scrollMode === "shuffle";
     this.scrollAt = routed
       ? 0
@@ -2553,6 +2557,7 @@ export default class NotionTogglePlugin extends Plugin {
   refreshScrollPlan() {
     const container = this.scrollContainer;
     if (!container) return;
+    resetRunGate(this);
     this.scrollPlan = this.buildScrollPlan(container);
     this.scrollAt = 0;
     this.scrollBoxes = [];
@@ -2565,6 +2570,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollDir = this.settings.scrollReverse ? -1 : 1;
     this.scrollDwellDir = this.scrollDir;
     this.scrollHoldUntil = 0;
+    this.closeFilteredStrays(container, null);
     this.renderScrollBar();
   }
   /** "3/12" — route legs in route/shuffle mode, dwell stops otherwise. */
@@ -2697,7 +2703,9 @@ export default class NotionTogglePlugin extends Plugin {
       ordinal: number;
       identity: string;
     })[];
+    kept.splice(0, kept.length, ...sessionStops(kept, this.settings));
     const grew = kept.length > this.scrollTotalItems;
+    kept.splice(0, kept.length, ...sessionStops(kept, this.settings));
     this.scrollTotalItems = kept.length;
     this.scrollNoteTotal = noteToggleCount(container);
     this.scrollSourceTotal = scanSourceToggles(this.noteSource()).total;
@@ -2978,6 +2986,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollFrameAvg = nextFrameAvg(this.scrollFrameAvg, ts - this.scrollLastFrame); this.scrollLastFrame = ts;
     const smooth = effectiveSmoothness(normaliseSmoothness(this.settings.scrollSmoothness), this.scrollFrameAvg);
     const perFrame = (clampSpeed(this.settings.scrollSpeed) / 60) * rampFactor(ts - this.scrollReleasedAt, smooth);
+    const revealAt = this.thinkGate.revealAt; if (this.thinkGate.tick(ts)) { this.scrollDwellUntil = ts + Math.max(16, this.scrollDwellUntil - revealAt); this.scrollBoxesAt = 0; this.thinkTimeline.mark("reveal", this.scrollOpenOrdinal, ts); }
     // Parked on a stop: hold this frame, then grade + release.
     if (this.scrollDwellUntil && ts < this.scrollDwellUntil) {
       this.scrollPos = container.scrollTop;
@@ -2994,6 +3003,7 @@ export default class NotionTogglePlugin extends Plugin {
       return;
     }
     if (this.scrollDwellUntil && ts >= this.scrollDwellUntil) {
+      if (finishRouteDwell(this, ts)) return;
       this.scrollDwellUntil = 0; this.scrollReleasedAt = ts;
       this.closeScrollVisit();
       this.thinkGate.clear();
@@ -3020,6 +3030,7 @@ export default class NotionTogglePlugin extends Plugin {
       let routeTarget: number | null = null;
       let routeStops: number[] = [];
       if (routeMode) {
+        const next = nextRouteIndex(cfg.route, this.scrollRouteIdx, this.scrollBoxes.map((b) => b.page), cfg.loopRoute); if (next === null) { this.stopAutoScroll(false); return; } this.scrollRouteIdx = next;
         const wanted = cfg.route[this.scrollRouteIdx % cfg.route.length];
         const hit = this.scrollBoxes.find((b) => b.page === wanted);
         if (hit) {
@@ -3059,17 +3070,7 @@ export default class NotionTogglePlugin extends Plugin {
           }
           this.scrollRouteStop = 0;
           const last = this.scrollRouteIdx >= cfg.route.length - 1;
-          if (last && !cfg.loopRoute) {
-            new Notice(
-              this.settings.scrollMode === "shuffle"
-                ? "Shuffle finished — every scheduled toggle revised."
-                : "Route finished — every waypoint visited."
-            );
-            this.scrollRunning = false; refreshVoiceFab(); document.body.classList.toggle('ntt-review-scrolling', this.scrollRunning);
-            this.renderScrollBar();
-            this.endScrollFrame(ts);
-            return;
-          }
+          if (last && !cfg.loopRoute) { this.scrollRouteIdx = cfg.route.length; this.endScrollFrame(ts); return; }
           this.scrollRouteIdx = last ? 0 : this.scrollRouteIdx + 1;
           this.renderScrollBar();
           this.endScrollFrame(ts);
@@ -3183,7 +3184,6 @@ export default class NotionTogglePlugin extends Plugin {
     if (this.scrollDebugOverlay) this.paintScrollDebug({}, ts);
     this.scheduleScrollFrame();
   }
-  /* ==================== v1.1.0: quiz mode ==================== */
   /** Visible title text of a toggle, used for the per-question "⏱30" marker. */
   private quizTitleOf(el: HTMLElement): string {
     return toggleTitleOf(el);

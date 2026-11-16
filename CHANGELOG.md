@@ -1,3 +1,8 @@
+## 1.9.31
+- Think mode: real fold closes before every countdown, timer and tap both open the answer; pauses preserve think time, and the final route question receives its full countdown/read hold.
+- Start from question number in settings and the quick sheet (default 1, sequential). Colour filters preserve original note numbers; route/shuffle keep their explicit order.
+- Live filter changes clear the old countdown and answer before rebuilding. Countdown badges no longer change question identity.
+
 ## 1.9.30
 - Think mode: during the 🤔 countdown the arrow now stays closed (▶). When the timer hits 0 the toggle really opens (▼) and the answer shows. A tap on the question during the countdown still reveals it at once.
 - New **Answer read time** (sheet): after the reveal, a long answer stays open long enough to read it (words ÷ 2/3/5 words per second, at most 30 s, on top of the normal pause). Default Normal (3 words/s); Off restores the old timing.

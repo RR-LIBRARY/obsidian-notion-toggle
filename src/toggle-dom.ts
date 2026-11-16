@@ -129,13 +129,14 @@ export function setToggleOpen(el: HTMLElement, open: boolean): void {
 /** Visible title text of a toggle (used for the per-question "⏱30" marker). */
 export function toggleTitleOf(el: HTMLElement): string {
   if (el.tagName.toLowerCase() === "details") {
-    return el.querySelector("summary")?.textContent ?? "";
+    const copy = el.querySelector("summary")?.cloneNode(true) as HTMLElement | undefined;
+    copy?.querySelectorAll(".ntt-think-badge").forEach((badge) => badge.remove());
+    return copy?.textContent ?? "";
   }
-  return (
-    el.querySelector(".callout-title-inner")?.textContent ??
-    el.querySelector(".callout-title")?.textContent ??
-    ""
-  );
+  const row = el.querySelector(".callout-title-inner") ?? el.querySelector(".callout-title");
+  const copy = row?.cloneNode(true) as HTMLElement | undefined;
+  copy?.querySelectorAll(".ntt-think-badge").forEach((badge) => badge.remove());
+  return copy?.textContent ?? "";
 }
 
 /**
