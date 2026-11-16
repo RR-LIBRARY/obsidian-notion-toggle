@@ -6,10 +6,12 @@ import { setToggleOpen } from "./toggle-dom";
 export function clampStartNumber(n: number): number {
   return Number.isFinite(n) ? Math.max(1, Math.floor(n)) : 1;
 }
-export function sessionStops<T extends { ordinal: number }>(stops: T[], s: Pick<AutoScrollSettings, "scrollStartNumber" | "scrollMode" | "scrollReverse">): T[] {
+export function sessionStops<T extends { ordinal: number; question?: number }>(stops: T[], s: Pick<AutoScrollSettings, "scrollStartNumber" | "scrollMode" | "scrollReverse">): T[] {
   if (s.scrollMode === "route" || s.scrollMode === "shuffle") return stops;
   const start = clampStartNumber(s.scrollStartNumber ?? 1);
-  return stops.filter((t) => s.scrollReverse && start > 1 ? t.ordinal <= start : t.ordinal >= start);
+  // Typed number = question number (nested Answer toggles are not counted).
+  const num = (t: T) => t.question ?? t.ordinal;
+  return stops.filter((t) => s.scrollReverse && start > 1 ? num(t) <= start : num(t) >= start);
 }
 interface GateHost {
   thinkGate: ThinkGate;

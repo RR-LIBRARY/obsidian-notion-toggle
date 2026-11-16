@@ -5921,14 +5921,33 @@ function scanToggleEls(root, keep) {
   const all = Array.from(root.querySelectorAll(TOGGLE_SELECTOR));
   const numberOf = /* @__PURE__ */ new Map();
   all.forEach((el2, i) => numberOf.set(el2, i + 1));
+  const questionOf = questionNumbers(all);
   return collectToggleElsFiltered(root, keep).map((el2) => {
-    var _a;
+    var _a, _b, _c;
     return {
       el: el2,
       ordinal: (_a = numberOf.get(el2)) != null ? _a : 0,
+      question: (_c = (_b = questionOf.get(el2)) != null ? _b : numberOf.get(el2)) != null ? _c : 0,
       identity: toggleIdentity(el2)
     };
   });
+}
+function questionNumbers(all) {
+  var _a;
+  const set = new Set(all);
+  const out = /* @__PURE__ */ new Map();
+  let n = 0;
+  for (const el2 of all) {
+    let top = null;
+    for (let p = el2.parentElement; p; p = p.parentElement)
+      if (set.has(p))
+        top = p;
+    if (!top)
+      out.set(el2, ++n);
+    else
+      out.set(el2, (_a = out.get(top)) != null ? _a : n);
+  }
+  return out;
 }
 function noteToggleCount(root) {
   return root.querySelectorAll(TOGGLE_SELECTOR).length;
@@ -6579,7 +6598,11 @@ function sessionStops(stops, s) {
   if (s.scrollMode === "route" || s.scrollMode === "shuffle")
     return stops;
   const start = clampStartNumber((_a = s.scrollStartNumber) != null ? _a : 1);
-  return stops.filter((t) => s.scrollReverse && start > 1 ? t.ordinal <= start : t.ordinal >= start);
+  const num = (t) => {
+    var _a2;
+    return (_a2 = t.question) != null ? _a2 : t.ordinal;
+  };
+  return stops.filter((t) => s.scrollReverse && start > 1 ? num(t) <= start : num(t) >= start);
 }
 function resetRunGate(host) {
   var _a;
@@ -15547,6 +15570,7 @@ ${row}`, { line: cursor.line, ch: line.length });
       return {
         index,
         ordinal: s.ordinal,
+        question: s.question,
         identity: s.identity,
         top: Math.max(0, Math.round(rect.top - base)),
         height: Math.round(rect.height),
