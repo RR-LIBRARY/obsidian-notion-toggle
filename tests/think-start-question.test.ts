@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+if (!globalThis.document) GlobalRegistrator.register();
 import { sessionStops } from "../src/run-session";
 import { questionNumbers } from "../src/toggle-dom";
 
