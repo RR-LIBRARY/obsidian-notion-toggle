@@ -1941,13 +1941,13 @@ export default class NotionTogglePlugin extends Plugin {
       const rect = s.el.getBoundingClientRect();
       return {
         index,
-        ordinal: s.ordinal,
+        ordinal: s.ordinal, question: s.question,
         identity: s.identity,
         top: Math.max(0, Math.round(rect.top - base)),
         height: Math.round(rect.height),
         color: kindOf(toggleTypeOf(s.el)),
         el: s.el,
-      } as ToggleStop & { el: HTMLElement; height: number; ordinal: number };
+      } as ToggleStop & { el: HTMLElement; height: number; ordinal: number; question: number };
     });
   }
   /**

@@ -39,6 +39,8 @@ export interface ToggleScan {
   el: HTMLElement;
   /** 1-based note-wide toggle number. */
   ordinal: number;
+  /** 1-based question number: counts only top-level toggles (nested Answers share their question's number). */
+  question: number;
   /** Stable across Reading View section replacement and partial DOM windows. */
   identity: string;
 }
@@ -59,11 +61,27 @@ export function scanToggleEls(root: ParentNode, keep: (el: HTMLElement) => boole
   const all = Array.from(root.querySelectorAll(TOGGLE_SELECTOR)) as HTMLElement[];
   const numberOf = new Map<HTMLElement, number>();
   all.forEach((el, i) => numberOf.set(el, i + 1));
+  const questionOf = questionNumbers(all);
   return collectToggleElsFiltered(root, keep).map((el) => ({
     el,
     ordinal: numberOf.get(el) ?? 0,
+    question: questionOf.get(el) ?? numberOf.get(el) ?? 0,
     identity: toggleIdentity(el),
   }));
+}
+
+/** Question numbers: top-level toggles count 1, 2, 3…; a nested toggle gets its outermost parent's number. */
+export function questionNumbers(all: HTMLElement[]): Map<HTMLElement, number> {
+  const set = new Set(all);
+  const out = new Map<HTMLElement, number>();
+  let n = 0;
+  for (const el of all) {
+    let top: HTMLElement | null = null;
+    for (let p = el.parentElement; p; p = p.parentElement) if (set.has(p)) top = p;
+    if (!top) out.set(el, ++n);
+    else out.set(el, out.get(top) ?? n);
+  }
+  return out;
 }
 
 /** How many toggles the note has in total (nested ones included). */
