@@ -25,6 +25,7 @@ import type { EditorView } from "@codemirror/view";
 import type NotionTogglePlugin from "../main";
 import { cleanTogglesExtension, releaseCleanToggles, runBlockMove, type MoveHow } from "./clean-toggles-view";
 import { convertNotionPaste, onOwnLine } from "./notion-paste";
+import { FeatureGuideModal } from "./feature-guide";
 import { cleanOwnsEnter, convertPastedText, detailsBlockCount, flipFoldMarker, type DocLike } from "./clean-toggles";
 import { convertDetailsToCallouts, newTogglePlan, nextToggleNumber } from "./editor-blocks";
 import { AT_TOP_LEVEL, NO_TOGGLE_ABOVE, installIndentBridge, type BridgeEditor, type CoreCommand } from "./indent-bridge";
@@ -221,6 +222,7 @@ export function uninstallNotionWriting(): void {
 
 /** Register everything. Called once from `onload`; cleanup rides on the plugin lifecycle. */
 export function installNotionWriting(plugin: NotionTogglePlugin): void {
+  plugin.addCommand({ id: "feature-guide", name: "Feature guide (what this plugin can do)", icon: "book-open", callback: () => new FeatureGuideModal(plugin.app).open() });
   plugin.registerMarkdownPostProcessor((el, ctx) => {
     const root = el.closest<HTMLElement>('.markdown-preview-view, .markdown-source-view') ?? el;
     root.dataset.nttLookPath = ctx?.sourcePath ?? "";

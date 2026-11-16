@@ -1,3 +1,11 @@
+## 1.9.30
+- Think mode: during the 🤔 countdown the arrow now stays closed (▶). When the timer hits 0 the toggle really opens (▼) and the answer shows. A tap on the question during the countdown still reveals it at once.
+- New **Answer read time** (sheet): after the reveal, a long answer stays open long enough to read it (words ÷ 2/3/5 words per second, at most 30 s, on top of the normal pause). Default Normal (3 words/s); Off restores the old timing.
+- New **Smoothness** (sheet): Standard / Smooth / Ultra. Smooth and Ultra write sub-pixel scroll positions (no 1-px judder on high-density phones) and ease back to speed after each stop; a slow phone falls back to Standard automatically.
+- New command **Feature guide (what this plugin can do)**: every feature family in plain words.
+- Plainer command names in the phone command list (e.g. "Grade: mark & filter red / yellow / green", "Look: …", "Answers: open all"). Command IDs unchanged, so hotkeys keep working.
+- New checks: tests/think-reveal-smooth.test.ts.
+
 ## 1.9.29
 - Fixed "Answers — open / close all" in the autoscroll sheet: autoscroll no longer undoes it. After **Open all**, a running (or resumed) autoscroll keeps every answer open — it never closes one behind you and skips the think countdown. After **Close all**, it never opens one. Tapping a single answer by hand, switching note, or starting a quiz hands control back to the normal open/close switches.
 - Checked in real Obsidian 1.13.7 (reading view, editing view, phone layout, and during a paused/resumed autoscroll run).

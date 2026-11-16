@@ -63,8 +63,26 @@ export function isResearchCommand(id: string): boolean {
  * minimal = true  -> primary names as-is, research names as-is, everything else "Advanced: …"
  * minimal = false -> original legacy names (nothing renamed)
  */
+/**
+ * v1.9.30 — plain names for commands readers kept tripping over in the phone's
+ * command list ("Advanced: Review: grade and filter red / yellow / green").
+ * Only the label changes; the ID (hotkeys, toolbar entries) stays.
+ */
+export const FRIENDLY_NAMES: Record<string, string> = {
+  "review-color-filter": "Grade: mark & filter red / yellow / green",
+  "callout-appearance-filter": "Look: choose which callout types look native",
+  "toggle-appearance": "Look: Notion toggles ↔ native callouts",
+  "quiz-perf-report": "Quiz: performance report",
+  "toggle-number-appearance": "Look: toggle numbers (this note)",
+  "answers-open-all": "Answers: open all",
+  "answers-close-all": "Answers: close all",
+  "autoscroll-sheet": "Autoscroll: quick controls",
+  "feature-guide": "Feature guide (what this plugin can do)",
+};
+
 export function commandName(id: string, legacyName: string, minimal: boolean): string {
   if (isPrimary(id)) return PRIMARY_NAMES[id];
+  if (minimal && FRIENDLY_NAMES[id]) return FRIENDLY_NAMES[id];
   if (!minimal) return legacyName;
   if (isResearchCommand(id)) return legacyName;
   if (legacyName.startsWith("Advanced: ")) return legacyName;

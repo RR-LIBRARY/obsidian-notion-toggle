@@ -27,6 +27,8 @@ export const SHEET_ROWS = [
   "Open with auto-quiz (answers stay open)",
   "Direction",
   "Speed",
+  "Smoothness",
+  "Answer read time",
   "Pause for",
   "Pause at",
   "Colour filter",

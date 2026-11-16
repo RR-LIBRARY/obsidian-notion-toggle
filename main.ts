@@ -209,7 +209,9 @@ import {
   type ToggleSnapshot,
 } from "./src/quiz-visibility";
 import { healQuizEls, needsHeal, revealLanded } from "./src/quiz-heal";
-import { FOCUS_RUN_CLASS, REDUCED_MOTION_CLASS, THINK_RUN_CLASS, ThinkGate, clearThinkMarks } from "./src/think-gate";
+import { FOCUS_RUN_CLASS, REDUCED_MOTION_CLASS, THINK_RUN_CLASS, ThinkGate, clearThinkMarks, thinkMsFor, titleTextOf } from "./src/think-gate";
+import { answerReadMs, answerTextOf, openAtArrival } from "./src/think-reveal";
+import { effectiveSmoothness, nextFrameAvg, normaliseSmoothness, rampFactor, scrollWriteValue } from "./src/smooth-scroll";
 import { DrawerGuard } from "./src/drawer-guard";
 import { effectiveThinkSettings, noteThinkScope } from "./src/think-scope";
 import { ThinkTimeline } from "./src/think-timeline";
@@ -425,7 +427,7 @@ export default class NotionTogglePlugin extends Plugin {
   thinkTimeline = new ThinkTimeline();
   private scrollOpenOrdinal = 0;
   /** v1.5.9 — think ms granted to the current stop (added on top of the hold). */
-  scrollThinkMs = 0;
+  scrollThinkMs = 0; scrollFrameAvg = 0; scrollReleasedAt = 0; // v1.9.30 smooth glide
   scrollDwellKey: string | null = null;
   scrollDwellDir = 1;
   /** v1.4.2 — pixels travelled this run; an edge only ends a run that moved. */
@@ -2012,6 +2014,7 @@ export default class NotionTogglePlugin extends Plugin {
   }
   /** v1.7.3 — may an Open all / Close all outlive the tap? Not while a run or quiz owns the toggles. */
   private answerWantCanStick(): boolean { return !this.quizState; } // v1.9.29 — a run follows it (runAnswerRule)
+  private readMs(holdMs: number, parked: boolean) { return parked && this.scrollOpenEl ? answerReadMs(answerTextOf(this.scrollOpenEl), this.settings.scrollReadWps, holdMs, this.settings.scrollReadMaxSec) : 0; }
   private runAnswers() {
     return runAnswerRule(this.quizState ? null : wantedAnswerState(this.answerWant, this.activeNotePath()), this.settings.scrollAutoOpen, this.settings.scrollAutoClose);
   }
@@ -2867,7 +2870,7 @@ export default class NotionTogglePlugin extends Plugin {
       this.thinkTimeline.mark("close", this.scrollOpenOrdinal, now);
       this.setToggleOpen(this.scrollOpenEl, false);
     }
-    if (this.runAnswers().open) {
+    if (openAtArrival(this.runAnswers().open, this.runAnswers().think ? thinkMsFor(titleTextOf(el), this.thinkSettingsForNote()) : 0)) {
       this.setToggleOpen(el, true);
       this.thinkTimeline.mark("open", ordinal, now);
     }
@@ -2972,13 +2975,15 @@ export default class NotionTogglePlugin extends Plugin {
     if (!this.scrollLastFrame) this.scrollLastFrame = ts;
     // speed is px/s in settings; the reader's loop speaks px per 16.67ms frame.
     const dt = frameFactor(ts - this.scrollLastFrame);
-    this.scrollLastFrame = ts;
-    const perFrame = clampSpeed(this.settings.scrollSpeed) / 60;
+    this.scrollFrameAvg = nextFrameAvg(this.scrollFrameAvg, ts - this.scrollLastFrame); this.scrollLastFrame = ts;
+    const smooth = effectiveSmoothness(normaliseSmoothness(this.settings.scrollSmoothness), this.scrollFrameAvg);
+    const perFrame = (clampSpeed(this.settings.scrollSpeed) / 60) * rampFactor(ts - this.scrollReleasedAt, smooth);
     // Parked on a stop: hold this frame, then grade + release.
     if (this.scrollDwellUntil && ts < this.scrollDwellUntil) {
       this.scrollPos = container.scrollTop;
       // v1.5.9 — think window: question only, answer released when it ends.
       if (this.thinkGate.tick(ts)) {
+        if (this.scrollOpenEl && this.runAnswers().open) this.setToggleOpen(this.scrollOpenEl, true);
         this.scrollBoxesAt = 0;
         this.thinkTimeline.mark("reveal", this.scrollOpenOrdinal, ts);
       } else if (this.thinkGate.thinking) {
@@ -2989,7 +2994,7 @@ export default class NotionTogglePlugin extends Plugin {
       return;
     }
     if (this.scrollDwellUntil && ts >= this.scrollDwellUntil) {
-      this.scrollDwellUntil = 0;
+      this.scrollDwellUntil = 0; this.scrollReleasedAt = ts;
       this.closeScrollVisit();
       this.thinkGate.clear();
       this.closeOpenToggleIfLeaving(container);
@@ -3028,7 +3033,7 @@ export default class NotionTogglePlugin extends Plugin {
       const prevPos = this.scrollPos;
       this.scrollPos = advancePosition(this.scrollPos, perFrame, dt, this.scrollDir as 1 | -1, max);
       this.scrollMovedPx += Math.abs(this.scrollPos - prevPos);
-      const whole = Math.floor(this.scrollPos);
+      const whole = scrollWriteValue(this.scrollPos, smooth);
       container.scrollTop = whole;
       // v1.4.10 — the write must land; a wrapper silently ignores it.
       if (this.noteScrollProgress(Math.abs(container.scrollTop - whole) <= 2, ts, "scrollTop writes ignored")) return;
@@ -3045,8 +3050,7 @@ export default class NotionTogglePlugin extends Plugin {
           this.scrollLastEvent = `waypointReached toggle ${ordinal} @ ${Math.round(routeTarget)}`;
           const parked = this.parkOnToggle(ordinal, ts, this.scrollBoxes.find((box) => box.page === ordinal)?.identity, continuation);
           // v1.5.9 — think time is extra. v1.6.2 — a refused park never holds.
-          this.scrollDwellUntil = dwellPlan(ts, holdMs, this.scrollThinkMs, parked).dwellUntil;
-
+          this.scrollDwellUntil = dwellPlan(ts, holdMs + this.readMs(holdMs, parked), this.scrollThinkMs, parked).dwellUntil;
           // More screenfuls left on this toggle → stay on this waypoint.
           if (this.scrollRouteStop < routeStops.length - 1) {
             this.scrollRouteStop += 1;
@@ -3115,7 +3119,7 @@ export default class NotionTogglePlugin extends Plugin {
           // v1.5.9 — think time is extra. v1.6.2 — a stop that could not be
           // opened (filtered out, re-rendered, or gone) glides on immediately
           // instead of standing still for hold + think.
-          this.scrollDwellUntil = dwellPlan(ts, holdMs, this.scrollThinkMs, parked).dwellUntil;
+          this.scrollDwellUntil = dwellPlan(ts, holdMs + this.readMs(holdMs, parked), this.scrollThinkMs, parked).dwellUntil;
 
           this.renderScrollBar();
           this.endScrollFrame(ts);
@@ -3294,7 +3298,6 @@ export default class NotionTogglePlugin extends Plugin {
   }
   stopQuiz(notify: boolean) {
     this.clearAnswerWant();
-
     if (this.quizInterval !== null) {
       window.clearInterval(this.quizInterval);
       this.quizInterval = null;

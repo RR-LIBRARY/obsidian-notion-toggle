@@ -73,6 +73,8 @@ const srcFiles = readdirSync("src")
 /** Modules allowed to talk to Obsidian at all (UI shells and settings). */
 const OBSIDIAN_SHELLS = new Set([
   "src/modals.ts",
+  // v1.9.30 — feature guide modal.
+  "src/feature-guide.ts",
   // v1.8.18 — compact command menu is an Obsidian UI shell.
   "src/tools-menu.ts",
   "src/sheet-modal.ts",
