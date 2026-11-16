@@ -207,3 +207,31 @@ export async function runAnswerSweep(o: AnswerSweepOptions): Promise<AnswersCoun
   }
   return { changed, rendered: o.foldableEls(o.container).length, total: o.sourceFoldable };
 }
+
+/**
+ * v1.9.29 — what an autoscroll run may do to answers while the reader's own
+ * Open all / Close all is in force for the note.
+ *
+ * The reported bug: the reader long-pressed the autoscroll button, tapped
+ * "Open all", and the run then closed every answer behind them (and "Close
+ * all" was undone by the next stop opening its answer). The reader's command
+ * now wins: after Open all the run never closes an answer and skips the think
+ * countdown; after Close all it never opens one. With no command in force the
+ * run's own "open on arrive / close when leaving" switches apply unchanged.
+ */
+export interface RunAnswerRule {
+  /** May the run open the toggle it arrives at? */
+  open: boolean;
+  /** May the run close the toggle it leaves (or a filtered stray)? */
+  close: boolean;
+  /** May the run hold the answer back for the think countdown? */
+  think: boolean;
+}
+
+export function runAnswerRule(held: AnswerWant | null, autoOpen: boolean, autoClose: boolean): RunAnswerRule {
+  return {
+    open: autoOpen && held !== "closed",
+    close: autoClose && held !== "open",
+    think: autoOpen && held === null,
+  };
+}

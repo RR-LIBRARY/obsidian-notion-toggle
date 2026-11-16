@@ -151,77 +151,62 @@ describe("v1.7.3 — a real autoscroll run on a phone", () => {
     expect(document.body.classList.contains(REDUCED_MOTION_CLASS)).toBe(false);
   });
 
-  test("a sticky 'Open all' is dropped the moment a run starts, so the run owns the toggles", async () => {
+  test("v1.9.29: a sticky 'Open all' survives the run start and the run never closes an answer", async () => {
     const { plugin, note } = makePlugin();
     await plugin.setAllAnswersOpen(true);
     expect(openCount(note)).toBe(TOTAL);
-    expect(plugin.answerWant).toEqual({ file: PATH, want: "open" });
-
     plugin.startAutoScroll();
-    expect(plugin.answerWant.want).toBeNull();
-    // Nothing was closed by the start itself — the run closes as it goes.
-    expect(openCount(note)).toBe(TOTAL);
+    expect(plugin.answerWant).toEqual({ file: PATH, want: "open" });
+    // the run's own leave / stop paths are told not to close
+    expect((plugin as unknown as { runAnswers(): { open: boolean; close: boolean; think: boolean } }).runAnswers())
+      .toEqual({ open: true, close: false, think: false });
     plugin.stopAutoScroll(false);
+    expect(openCount(note)).toBe(TOTAL);
   });
 
-  test("during a run the render watcher never re-opens an answer the run closed (the think-badge insert)", async () => {
+  test("v1.9.29: 'Open all' tapped mid-run is remembered, and answers rendered later are born open", async () => {
     const { plugin, note } = makePlugin();
-    const container = note;
     cleanup.push(
       watchAnswerRenders(document.body, {
         active: () => !!plugin.answerWant.want,
         busy: () => false,
-        apply: () => void plugin.applyWantedAnswers(container),
+        apply: () => void plugin.applyWantedAnswers(note),
         schedule: (fn) => fn(),
       })
     );
-    await plugin.setAllAnswersOpen(true);
     plugin.startAutoScroll();
-
-    // The run closes the toggle it is leaving and shows a countdown badge on the next one.
-    const q1 = note.querySelector("#q1") as HTMLElement;
-    setToggleOpen(q1, false);
-    const badge = document.createElement("span");
-    badge.className = "ntt-think-badge";
-    (note.querySelector("#q2 .callout-title") as HTMLElement).appendChild(badge);
-    await wait(10);
-    expect(isToggleOpen(q1)).toBe(false);
-
-    // Even a want that sneaks back in while running is ignored by the apply path.
-    rememberAnswerWant(plugin.answerWant, PATH, "open");
-    expect(plugin.applyWantedAnswers(container)).toBe(0);
-    expect(isToggleOpen(q1)).toBe(false);
-    plugin.stopAutoScroll(false);
-  });
-
-  test("'Open all' tapped mid-run is a one-shot: it flips the toggles but is not remembered", async () => {
-    const { plugin, note } = makePlugin();
-    plugin.startAutoScroll();
-    expect(openCount(note)).toBe(0);
     await plugin.setAllAnswersOpen(true);
     expect(openCount(note)).toBe(TOTAL);
-    expect(plugin.answerWant.want).toBeNull();
-    expect(notices).toEqual([]); // quiet mode: a complete flip says nothing
-    plugin.settings.scrollQuiet = false;
-    await plugin.setAllAnswersOpen(false);
-    expect(openCount(note)).toBe(0);
-    expect(plugin.answerWant.want).toBeNull();
-    expect(notices.at(-1)).toBe(`Closed ${TOTAL} of ${TOTAL} answers.`);
+    expect(plugin.answerWant).toEqual({ file: PATH, want: "open" });
+    (note.firstElementChild as HTMLElement).insertAdjacentHTML("beforeend", calloutHtml(TOTAL + 1));
+    await wait(10);
+    expect(isToggleOpen(note.querySelector(`#q${TOTAL + 1}`) as HTMLElement)).toBe(true);
     plugin.stopAutoScroll(false);
   });
 
-  test("resuming a paused run drops a command given while paused", async () => {
+  test("v1.9.29: 'Close all' tapped while paused survives the resume and the run opens nothing", async () => {
     const { plugin, note } = makePlugin();
     plugin.startAutoScroll();
     plugin.toggleAutoScroll(); // pause
     expect(plugin.scrollRunning).toBe(false);
-    expect(plugin.scrollPlan.length).toBe(TOTAL);
     await plugin.setAllAnswersOpen(false);
-    expect(plugin.answerWant).toEqual({ file: PATH, want: "closed" });
     plugin.toggleAutoScroll(); // resume
     expect(plugin.scrollRunning).toBe(true);
-    expect(plugin.answerWant.want).toBeNull();
+    expect(plugin.answerWant).toEqual({ file: PATH, want: "closed" });
+    expect((plugin as unknown as { runAnswers(): { open: boolean; close: boolean; think: boolean } }).runAnswers())
+      .toEqual({ open: false, close: true, think: false });
     expect(openCount(note)).toBe(0);
+    plugin.stopAutoScroll(false);
+  });
+
+  test("v1.9.29: tapping one answer by hand hands control back to the run's own switches", async () => {
+    const { plugin, note } = makePlugin();
+    await plugin.setAllAnswersOpen(true);
+    plugin.clearAnswerWant(); // what the manual-tap listener does
+    plugin.startAutoScroll();
+    expect((plugin as unknown as { runAnswers(): { open: boolean; close: boolean; think: boolean } }).runAnswers())
+      .toEqual({ open: true, close: true, think: true });
+    expect(openCount(note)).toBe(TOTAL);
     plugin.stopAutoScroll(false);
   });
 
@@ -255,10 +240,10 @@ describe("v1.7.3 — a real autoscroll run on a phone", () => {
     sizer.insertAdjacentHTML("beforeend", calloutHtml(TOTAL + 1));
     await wait(10);
     expect(isToggleOpen(note.querySelector(`#q${TOTAL + 1}`) as HTMLElement)).toBe(true);
-    // a finished run leaves the reader's later commands alone
+    // v1.9.29 — a run in between keeps the reader's command
     plugin.startAutoScroll();
     plugin.stopAutoScroll(false);
-    expect(plugin.answerWant.want).toBeNull();
+    expect(plugin.answerWant).toEqual({ file: PATH, want: "open" });
     await plugin.setAllAnswersOpen(false);
     expect(plugin.answerWant).toEqual({ file: PATH, want: "closed" });
     sizer.insertAdjacentHTML("beforeend", calloutHtml(TOTAL + 2).replace("is-collapsed", ""));

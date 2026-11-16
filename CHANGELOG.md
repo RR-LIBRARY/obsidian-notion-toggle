@@ -1,3 +1,8 @@
+## 1.9.29
+- Fixed "Answers — open / close all" in the autoscroll sheet: autoscroll no longer undoes it. After **Open all**, a running (or resumed) autoscroll keeps every answer open — it never closes one behind you and skips the think countdown. After **Close all**, it never opens one. Tapping a single answer by hand, switching note, or starting a quiz hands control back to the normal open/close switches.
+- Checked in real Obsidian 1.13.7 (reading view, editing view, phone layout, and during a paused/resumed autoscroll run).
+- New checks: tests/run-answer-rule.test.ts; tests/autoscroll-focus-run.test.ts updated for the new rule.
+
 ## 1.9.28
 - Voice self-test now checks the voice server's own AI first and says plainly if it broke (for example after the Lovable project moved workspace), with the exact message to send to Lovable. Works even when the mic does not open.
 - If the server's AI key breaks, recordings show a clear message instead of a vague error, and the audio stays saved to be written later.

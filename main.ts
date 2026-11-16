@@ -149,6 +149,7 @@ import {
   forgetAnswerWant,
   rememberAnswerWant,
   runAnswerSweep,
+  runAnswerRule,
   wantedAnswerState,
   type AnswerWant,
 } from "./src/answer-state";
@@ -2010,8 +2011,9 @@ export default class NotionTogglePlugin extends Plugin {
     if (!this.settings.scrollQuiet || answersNoticeIsImportant(result)) new Notice(answersNotice(open, result));
   }
   /** v1.7.3 — may an Open all / Close all outlive the tap? Not while a run or quiz owns the toggles. */
-  private answerWantCanStick(): boolean {
-    return !this.scrollRunning && !this.quizState;
+  private answerWantCanStick(): boolean { return !this.quizState; } // v1.9.29 — a run follows it (runAnswerRule)
+  private runAnswers() {
+    return runAnswerRule(this.quizState ? null : wantedAnswerState(this.answerWant, this.activeNotePath()), this.settings.scrollAutoOpen, this.settings.scrollAutoClose);
   }
 
   /**
@@ -2103,8 +2105,6 @@ export default class NotionTogglePlugin extends Plugin {
     if (this.scrollPlan.length === 0) this.startAutoScroll();
     else {
       this.scrollRunning = true; refreshVoiceFab(); document.body.classList.toggle('ntt-review-scrolling', this.scrollRunning);
-      // v1.7.3 — an Open all / Close all tapped while paused was a one-off.
-      this.clearAnswerWant();
       this.scrollLastFrame = 0;
       this.scheduleScrollFrame();
       this.renderScrollBar();
@@ -2376,9 +2376,6 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollHoldUntil = 0;
     this.scrollOpenedAt = 0;
     this.scrollRunning = true; refreshVoiceFab(); document.body.classList.toggle('ntt-review-scrolling', this.scrollRunning);
-    // v1.7.3 — the run owns every toggle from here on: a sticky Open all /
-    // Close all would re-open (on the next DOM insert) whatever the run closes.
-    this.clearAnswerWant();
     this.scrollLastFrame = 0;
     // v1.4.2 — a reverse run started at the top (or a forward run at the very
     // bottom) used to clamp on frame one and report "finished" immediately.
@@ -2482,7 +2479,7 @@ export default class NotionTogglePlugin extends Plugin {
     if (this.scrollOpenEl) clearThinkMarks(this.scrollOpenEl);
     document.body.classList.remove(THINK_RUN_CLASS, FOCUS_RUN_CLASS, REDUCED_MOTION_CLASS);
     this.drawerGuard.stop();
-    if (this.scrollOpenEl && this.settings.scrollAutoClose) {
+    if (this.scrollOpenEl && this.runAnswers().close) {
       this.setToggleOpen(this.scrollOpenEl, false);
     }
     this.scrollOpenEl = null;
@@ -2783,7 +2780,7 @@ export default class NotionTogglePlugin extends Plugin {
    */
   private closeFilteredStrays(container: HTMLElement | null, keep?: HTMLElement | null) {
     const filter = this.settings.scrollFilter;
-    if (!container || filter.length === 0) return 0;
+    if (!container || filter.length === 0 || !this.runAnswers().close) return 0;
     const scan = (this.collectStops(container) as (ToggleStop & { el?: HTMLElement })[])
       .filter((s): s is ToggleStop & { el: HTMLElement } => !!s.el)
       .map((s) => ({ el: s.el, color: s.color, open: this.isToggleOpen(s.el) }));
@@ -2810,7 +2807,7 @@ export default class NotionTogglePlugin extends Plugin {
    */
   private closeOpenToggleIfLeaving(container: HTMLElement): void {
     const el = this.scrollOpenEl;
-    if (!el || !this.settings.scrollAutoClose) return;
+    if (!el || !this.runAnswers().close) return;
     const cfg = this.dwellCfg();
     let stillReading = this.scrollRouteStop > 0;
     if (!isRouteMode(cfg)) {
@@ -2850,7 +2847,7 @@ export default class NotionTogglePlugin extends Plugin {
     if (!el || isRefusedPark(res.reason)) {
       this.scrollLastEvent = parkSkipLabel(res, ordinal);
       this.scrollBoxesAt = 0; // re-measure: the plan is out of date.
-      if (this.scrollOpenEl && this.settings.scrollAutoClose) {
+      if (this.scrollOpenEl && this.runAnswers().close) {
         this.thinkGate.clear();
         this.thinkTimeline.mark("close", this.scrollOpenOrdinal, now);
         this.setToggleOpen(this.scrollOpenEl, false);
@@ -2865,12 +2862,12 @@ export default class NotionTogglePlugin extends Plugin {
       this.scrollThinkMs = 0;
       return true;
     }
-    if (this.scrollOpenEl && this.scrollOpenEl !== el && this.settings.scrollAutoClose) {
+    if (this.scrollOpenEl && this.scrollOpenEl !== el && this.runAnswers().close) {
       this.thinkGate.clear();
       this.thinkTimeline.mark("close", this.scrollOpenOrdinal, now);
       this.setToggleOpen(this.scrollOpenEl, false);
     }
-    if (this.settings.scrollAutoOpen) {
+    if (this.runAnswers().open) {
       this.setToggleOpen(el, true);
       this.thinkTimeline.mark("open", ordinal, now);
     }
@@ -2880,7 +2877,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.closeFilteredStrays(this.scrollContainer, el);
     // v1.5.9 — question first: the answer is held back for the think window.
     // v1.6.1 — the window can come from this note's frontmatter.
-    this.scrollThinkMs = this.settings.scrollAutoOpen
+    this.scrollThinkMs = this.runAnswers().think
       ? this.thinkGate.begin(el, this.thinkSettingsForNote(), now)
       : 0;
     if (this.scrollThinkMs > 0) {
@@ -3147,7 +3144,7 @@ export default class NotionTogglePlugin extends Plugin {
           this.scrollPos = this.scrollDir < 0 ? max : 0;
           container.scrollTop = Math.floor(this.scrollPos);
           this.thinkGate.clear();
-          if (this.scrollOpenEl && this.settings.scrollAutoClose) {
+          if (this.scrollOpenEl && this.runAnswers().close) {
             this.setToggleOpen(this.scrollOpenEl, false);
             this.scrollOpenEl = null;
           }
