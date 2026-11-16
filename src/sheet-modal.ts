@@ -196,6 +196,33 @@ export class ScrollSheetModal extends Modal {
         btn.setButtonText("Choose").onClick(() => new ScrollSpeedModal(this.app, this.plugin).open())
       );
 
+    // v1.9.30 — glide quality and answer read time.
+    new Setting(this.contentEl)
+      .setName("Smoothness")
+      .setDesc("Standard = whole pixels. Smooth / Ultra = sub-pixel glide + soft start after each stop (slow phone par khud Standard).")
+      .addDropdown((dd) =>
+        dd
+          .addOptions({ standard: "Standard", smooth: "Smooth", ultra: "Ultra" })
+          .setValue(s.scrollSmoothness ?? "smooth")
+          .onChange(async (v) => {
+            this.plugin.settings.scrollSmoothness = v as "standard" | "smooth" | "ultra";
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(this.contentEl)
+      .setName("Answer read time")
+      .setDesc("Answer khulne ke baad lamba answer utni der khula rahe: words ÷ speed (max 30s). 0 = off.")
+      .addDropdown((dd) =>
+        dd
+          .addOptions({ "0": "Off", "2": "Slow (2 words/s)", "3": "Normal (3 words/s)", "5": "Fast (5 words/s)" })
+          .setValue(String(s.scrollReadWps ?? 3))
+          .onChange(async (v) => {
+            this.plugin.settings.scrollReadWps = Number(v);
+            await this.plugin.saveSettings();
+          })
+      );
+
     new Setting(this.contentEl)
       .setName("Pause for")
       .setDesc(`Hold time — currently ${formatDwell(clampHold(s.scrollHold))}.`)

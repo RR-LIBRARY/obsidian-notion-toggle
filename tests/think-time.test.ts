@@ -190,7 +190,7 @@ describe("run loop wiring (v1.5.9)", () => {
   it("extends every stop's dwell by the think window", () => {
     // v1.6.2 — hold + think are now computed by the pure `dwellPlan` helper, so
     // a refused park can return a 0 deadline instead of holding an empty stop.
-    const plans = main.match(/dwellPlan\(ts, [^)]+, this\.scrollThinkMs, parked\)/g) ?? [];
+    const plans = main.match(/dwellPlan\(ts, .+?, this\.scrollThinkMs, parked\)/g) ?? [];
     expect(plans.length).toBe(2); // route waypoints + normal stops
   });
 

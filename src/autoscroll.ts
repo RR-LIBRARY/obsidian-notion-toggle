@@ -109,6 +109,12 @@ export interface AutoScrollSettings {
   scrollReducedMotion: boolean;
   /** v1.6.1 — log toggle-open / countdown / reveal timestamps in the debug overlay. */
   scrollTimingDebug: boolean;
+  /** v1.9.30 — glide quality: whole-pixel (standard) or sub-pixel with soft starts. */
+  scrollSmoothness: "standard" | "smooth" | "ultra";
+  /** v1.9.30 — answer read time: words per second (0 = off). */
+  scrollReadWps: number;
+  /** v1.9.30 — longest extra read time, seconds. */
+  scrollReadMaxSec: number;
 }
 
 
@@ -149,6 +155,9 @@ export const DEFAULT_AUTOSCROLL: AutoScrollSettings = {
   scrollFocusChrome: true,
   scrollReducedMotion: false,
   scrollTimingDebug: false,
+  scrollSmoothness: "smooth",
+  scrollReadWps: 3,
+  scrollReadMaxSec: 30,
 };
 
 export const SPEED_MIN = 1;
