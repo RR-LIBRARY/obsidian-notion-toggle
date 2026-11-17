@@ -6,4 +6,5 @@
 - Treat missing or empty transcription replies as recoverable audio failures, not successful writes; release mic resources when audio-engine startup fails.
 - Voice network requests go through a timed transport and audio-engine wake-ups are time-boxed; never await requestUrl or AudioContext.resume() unbounded, because Android can leave either unanswered and freeze voice mode.
 - Run-session lifecycle helpers own start-number selection, gate cleanup and route completion; finish the final dwell before stopping to avoid lost reveals.
+- Resolve question selection from source headers and visible title numbers, never viewport ordinals; typed lists map question labels to the existing route engine so nested answers cannot shift targets.
 - ThinkGate owns the real fold and excludes transient badges from title identity; pause shifts both countdown and dwell deadlines.

@@ -2097,3 +2097,11 @@ details[data-callout="recall-yellow"] { --callout-color:var(--color-yellow-rgb);
 details[data-callout="recall-green"] { --callout-color:var(--color-green-rgb); }
 details[data-callout^="recall-"] > summary { color:rgb(var(--callout-color)); }
 .callout.ntt-notion-callout[data-callout^="recall-"] > .callout-title > .callout-fold { color:rgb(var(--callout-color)) !important; }
+/* Narrow quick controls keep question input and practice chips readable. */
+@media (max-width: 600px) {
+  .ntt-sheet .setting-item { flex-direction: column; align-items: stretch; gap: 10px; }
+  .ntt-sheet .setting-item-info { width: 100%; margin-right: 0; }
+  .ntt-sheet .setting-item-control { width: 100%; flex-wrap: wrap; justify-content: flex-start; }
+  .ntt-sheet .setting-item-control input[type="text"] { max-width: 100%; flex: 1; min-width: 100px; }
+  .ntt-sheet .setting-item-control button[aria-pressed="true"] { background: var(--interactive-accent); color: var(--text-on-accent); }
+}
