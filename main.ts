@@ -141,7 +141,7 @@ import {
 import { plannedScreenTops, clampScreenDwellMs, clampViewportPct, isScreenStop, screenPlan as deriveScreenPlan, describeScreenPlan, screenMergeTolerance, type ScreenPlan } from "./src/screen-stops";
 import { ensureFullRender, restoreFullRender, type FullRenderHandle } from "./src/full-render";
 import { gapScreenStops, stopHoldMs, isContinuationStop, screenStopLabel, keepOpenAtDwellEnd, waitFor, answersNotice, answersNoticeIsImportant } from "./src/screen-run";
-import { isFullyRendered, sourceKindCounts, sourceMatchCount, scanSourceToggles } from "./src/source-toggles";
+import { sourceQuestionNumbers, isFullyRendered, sourceKindCounts, sourceMatchCount, scanSourceToggles } from "./src/source-toggles";
 import {
   answerApplyIo,
   applyWantedToAll,
@@ -210,7 +210,7 @@ import {
 } from "./src/quiz-visibility";
 import { healQuizEls, needsHeal, revealLanded } from "./src/quiz-heal";
 import { FOCUS_RUN_CLASS, REDUCED_MOTION_CLASS, THINK_RUN_CLASS, ThinkGate, clearThinkMarks, thinkMsFor, titleTextOf } from "./src/think-gate";
-import { sessionStops, resetRunGate, finishRouteDwell, nextRouteIndex } from "./src/run-session";
+import { sessionStops, screensFromStart, seekStartQuestion, resetRunGate, finishRouteDwell, nextRouteIndex } from "./src/run-session";
 import { answerReadMs, answerTextOf, openAtArrival } from "./src/think-reveal";
 import { effectiveSmoothness, nextFrameAvg, normaliseSmoothness, rampFactor, scrollWriteValue } from "./src/smooth-scroll";
 import { DrawerGuard } from "./src/drawer-guard";
@@ -1936,12 +1936,11 @@ export default class NotionTogglePlugin extends Plugin {
     const scan = scanToggleEls(container, (el) =>
       filter.length === 0 ? true : matchesFilter(kindOf(toggleTypeOf(el)), filter)
     );
-    const base = container.getBoundingClientRect().top - container.scrollTop;
-    return scan.map((s, index) => {
+    const base = container.getBoundingClientRect().top - container.scrollTop; const srcQ = sourceQuestionNumbers(this.noteSource()); return scan.map((s, index) => {
       const rect = s.el.getBoundingClientRect();
       return {
         index,
-        ordinal: s.ordinal, question: s.question,
+        ordinal: s.ordinal, question: srcQ.get(s.identity) ?? s.question,
         identity: s.identity,
         top: Math.max(0, Math.round(rect.top - base)),
         height: Math.round(rect.height),
@@ -2163,7 +2162,7 @@ export default class NotionTogglePlugin extends Plugin {
   private screenPlanTops(container: HTMLElement, keptTops: number[]): number[] {
     const filtered = (this.settings.scrollFilter ?? []).length > 0;
     const maxScroll = container.scrollHeight - container.clientHeight;
-    return plannedScreenTops(this.screenPlanFor(container), filtered, keptTops, this.renderedFully(), maxScroll);
+    const plan = this.screenPlanFor(container); return screensFromStart(plannedScreenTops(plan, filtered, keptTops, this.renderedFully(), maxScroll), keptTops, this.settings, plan.screenPx).map((t) => Math.min(t, Math.max(0, maxScroll)));
   }
   /**
    * v1.1.1 — build the plan: colour filter first, then the pause-at mode
@@ -2346,12 +2345,12 @@ export default class NotionTogglePlugin extends Plugin {
     this.applyPerNoteScrollPrefs();
     document.body.classList.add('ntt-review-measuring'); const plan = this.buildScrollPlan(container); document.body.classList.remove('ntt-review-measuring');
     if (plan.length === 0) {
-      const anyToggle = this.collectStops(container).length > 0;
       // v1.5.4 — the source is the truth. A filter whose toggles exist in the
       // markdown but are not rendered yet gets a few more chances instead of
       // the old, wrong "No toggles match this selection" toast.
       const inSource = this.sourceMatchCount(this.settings.scrollFilter);
       const stillRendering = inSource > 0 && !this.renderedFully();
+      const seen = this.collectStops(container); const anyToggle = seen.length > 0; if (seekStartQuestion(container, seen, this.settings, this.scrollRenderRetries)) return this.retryStart(300, true);
       if ((stillRendering || !anyToggle) && this.sourceHasToggles() && this.scrollRenderRetries < 4) {
         return this.retryStart(350, true);
       }

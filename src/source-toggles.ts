@@ -76,3 +76,30 @@ export function isFullyRendered(domCount: number, sourceTotal: number): boolean 
   if (!Number.isFinite(sourceTotal) || sourceTotal <= 0) return true;
   return Number(domCount) >= sourceTotal;
 }
+
+const TOP_CALLOUT_RE = /^[ \t]*>[ \t]*\[!([^\]\n]+)\][+-]?[ \t]*(.*)$/gm;
+let qCache: { text: string; map: Map<string, number> } | null = null;
+/** Plain text of a markdown title, close to what Obsidian shows. */
+function plainTitle(md: string): string {
+  return md.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`~=]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+/**
+ * Question numbers from the note text: top-level callouts count 1, 2, 3…
+ * (nested Answers are not questions). Keyed like `toggleIdentity` (kind + title),
+ * so a question keeps its real number even when Obsidian has drawn only part of a long note.
+ */
+export function sourceQuestionNumbers(text: string | null | undefined): Map<string, number> {
+  const raw = String(text ?? "");
+  if (qCache?.text === raw) return qCache.map;
+  const map = new Map<string, number>();
+  let n = 0;
+  for (const m of withoutFences(raw).matchAll(TOP_CALLOUT_RE)) {
+    n++;
+    const kind = m[1].trim().toLowerCase();
+    const title = plainTitle(m[2]) || kind;
+    const key = `${kind}\u0000${title}`;
+    if (!map.has(key)) map.set(key, n);
+  }
+  qCache = { text: raw, map };
+  return map;
+}
