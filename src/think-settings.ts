@@ -10,6 +10,7 @@
  * switches, and a note about the per-note frontmatter override.
  */
 import { clampStartNumber } from "./run-session";
+import { parseQuestionSelection } from "./question-selection";
 import { Setting } from "obsidian";
 import { addSecondsPicker } from "./modals";
 import { formatDwell } from "./scrollmode";
@@ -20,6 +21,8 @@ export interface ThinkSettingsHost {
     scrollThinkEnabled: boolean;
     scrollThinkSeconds: number;
     scrollStartNumber: number;
+    scrollStartSequence?: number[];
+    scrollMode?: string;
     scrollThinkIcon: string;
     scrollFocusChrome: boolean;
     scrollReducedMotion: boolean;
@@ -82,12 +85,25 @@ export function renderThinkSettings(containerEl: HTMLElement, host: ThinkSetting
 
   new Setting(containerEl)
     .setName("Start from question number")
-    .setDesc("Default 1: questions run in note order. With a colour filter, starts at the first matching question at or after this number. Route and shuffle keep their chosen order.")
-    .addText((t) => t.setValue(String(s.scrollStartNumber ?? 1)).onChange(async (v) => {
-      if (!/^\d+$/.test(v.trim())) return;
-      s.scrollStartNumber = clampStartNumber(Number(v));
+    .setDesc("35 = start at question 35, then continue. 35,40,48 = only those questions, in that order. Ranges such as 35-40 work too. Stop the run before changing; colour filters still apply.")
+    .addText((t) => t.setValue(s.scrollStartSequence?.length ? s.scrollStartSequence.join(",") : String(s.scrollStartNumber ?? 1)).onChange(async (v) => {
+      const numbers = parseQuestionSelection(v);
+      t.inputEl.setCustomValidity(numbers ? "" : "Enter a positive question number, comma list, or range.");
+      t.inputEl.setAttribute("aria-invalid", String(!numbers));
+      if (!numbers) return;
+      s.scrollStartNumber = clampStartNumber(numbers[0]);
+      s.scrollStartSequence = numbers.length > 1 ? numbers : [];
       await host.saveSettings();
     }));
+
+  const practice = new Setting(containerEl).setName("Practice questions");
+  for (const [mode, label] of [["all", "All"], ["odd", "Odd"], ["even", "Even"]]) {
+    practice.addButton(b => {
+      b.setButtonText(label);
+      b.buttonEl.setAttribute("aria-pressed", String((s.scrollMode ?? "all") === mode));
+      b.onClick(async () => { s.scrollMode = mode; await host.saveSettings(); practice.controlEl.querySelectorAll("button").forEach(el => el.setAttribute("aria-pressed", String(el.textContent === label))); });
+    });
+  }
 
   const row = new Setting(containerEl)
     .setName("Think seconds")

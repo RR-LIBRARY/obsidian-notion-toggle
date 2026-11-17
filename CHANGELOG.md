@@ -1,3 +1,9 @@
+## 1.9.34
+- Typed start numbers follow explicit question labels (Q35 means Q35), not viewport positions or a count that shifts when earlier questions are missing. Source-backed toggle ordinals remain stable across lazy rendering.
+- Start field accepts comma sequences and ranges: 35 continues sequentially; 35,40,48 visits just those questions in typed order. Sequences use question-route stops in all advance modes, including screens, with full Think and answer dwell.
+- All / Odd / Even practice chips beside the start field; parity counts question labels, never nested answers. Odd/Even use question stops even when screen advance is selected.
+- Verified source regressions and real Obsidian 1.13.7 question runs; physical Android phone remains unverified. Release requires approval.
+
 ## 1.9.31
 - Think mode: real fold closes before every countdown, timer and tap both open the answer; pauses preserve think time, and the final route question receives its full countdown/read hold.
 - Start from question number in settings and the quick sheet (default 1, sequential). Colour filters preserve original note numbers; route/shuffle keep their explicit order.

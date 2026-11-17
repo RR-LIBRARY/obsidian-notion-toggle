@@ -103,6 +103,8 @@ export interface AutoScrollSettings {
   scrollThinkSeconds: number;
   /** First note-wide question; sequential order remains the default. */
   scrollStartNumber: number;
+  /** Optional exact question sequence, in the order typed. */
+  scrollStartSequence: number[];
   /** v1.6.0 — countdown badge face: emoji/text, or a png/gif/svg path or URL. */
   scrollThinkIcon: string;
   /** v1.5.9 — hide Obsidian's chrome while a run is going (no blink). */
@@ -154,6 +156,7 @@ export const DEFAULT_AUTOSCROLL: AutoScrollSettings = {
   scrollThinkEnabled: true,
   scrollThinkSeconds: 5,
   scrollStartNumber: 1,
+  scrollStartSequence: [],
   scrollThinkIcon: "🤔",
   scrollFocusChrome: true,
   scrollReducedMotion: false,

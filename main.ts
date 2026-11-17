@@ -141,7 +141,7 @@ import {
 import { plannedScreenTops, clampScreenDwellMs, clampViewportPct, isScreenStop, screenPlan as deriveScreenPlan, describeScreenPlan, screenMergeTolerance, type ScreenPlan } from "./src/screen-stops";
 import { ensureFullRender, restoreFullRender, type FullRenderHandle } from "./src/full-render";
 import { gapScreenStops, stopHoldMs, isContinuationStop, screenStopLabel, keepOpenAtDwellEnd, waitFor, answersNotice, answersNoticeIsImportant } from "./src/screen-run";
-import { sourceQuestionNumbers, isFullyRendered, sourceKindCounts, sourceMatchCount, scanSourceToggles } from "./src/source-toggles";
+import { isFullyRendered, sourceKindCounts, sourceMatchCount, scanSourceToggles } from "./src/source-toggles";
 import {
   answerApplyIo,
   applyWantedToAll,
@@ -210,7 +210,7 @@ import {
 } from "./src/quiz-visibility";
 import { healQuizEls, needsHeal, revealLanded } from "./src/quiz-heal";
 import { FOCUS_RUN_CLASS, REDUCED_MOTION_CLASS, THINK_RUN_CLASS, ThinkGate, clearThinkMarks, thinkMsFor, titleTextOf } from "./src/think-gate";
-import { sessionStops, screensFromStart, seekStartQuestion, resetRunGate, finishRouteDwell, nextRouteIndex } from "./src/run-session";
+import { sessionStops, screensFromStart, seekStartQuestion, resetRunGate, finishRouteDwell, nextRouteIndex } from "./src/run-session"; import { sourceQuestionFor, sourceQuestions, questionRoute, matchesQuestionParity, seekExactQuestion } from "./src/question-selection";
 import { answerReadMs, answerTextOf, openAtArrival } from "./src/think-reveal";
 import { effectiveSmoothness, nextFrameAvg, normaliseSmoothness, rampFactor, scrollWriteValue } from "./src/smooth-scroll";
 import { DrawerGuard } from "./src/drawer-guard";
@@ -1936,11 +1936,11 @@ export default class NotionTogglePlugin extends Plugin {
     const scan = scanToggleEls(container, (el) =>
       filter.length === 0 ? true : matchesFilter(kindOf(toggleTypeOf(el)), filter)
     );
-    const base = container.getBoundingClientRect().top - container.scrollTop; const srcQ = sourceQuestionNumbers(this.noteSource()); return scan.map((s, index) => {
+    const base = container.getBoundingClientRect().top - container.scrollTop, source = this.noteSource(), hasSource = sourceQuestions(source).length > 0; return scan.flatMap((s, index) => { const src = sourceQuestionFor(s.el, source); if (hasSource && !src) return [];
       const rect = s.el.getBoundingClientRect();
       return {
         index,
-        ordinal: s.ordinal, question: srcQ.get(s.identity) ?? s.question,
+        ordinal: src?.ordinal ?? s.ordinal, question: src?.question ?? s.question,
         identity: s.identity,
         top: Math.max(0, Math.round(rect.top - base)),
         height: Math.round(rect.height),
@@ -2117,8 +2117,9 @@ export default class NotionTogglePlugin extends Plugin {
   }
   /** v1.1.1 — the current pause-at configuration. */
   modeConfig(): ModeConfig {
+    if (this.settings.scrollStartSequence?.length) return { mode: "route", picks: [], route: questionRoute(this.noteSource(), this.settings.scrollStartSequence.filter(n => matchesQuestionParity(n, this.settings.scrollMode))), loopRoute: this.settings.scrollLoopRoute };
     return {
-      mode: this.settings.scrollMode,
+      mode: this.settings.scrollMode === "odd" || this.settings.scrollMode === "even" ? "all" : this.settings.scrollMode,
       picks: this.settings.scrollPicks ?? [],
       route: this.settings.scrollRoute ?? [],
       loopRoute: !!this.settings.scrollLoopRoute,
@@ -2188,7 +2189,7 @@ export default class NotionTogglePlugin extends Plugin {
     const keptTops = kept.map((s) => s.top);
     const screenEntry = (top: number, part: number) =>
       ({ index: -1, top, color: "other", ordinal: 0, part } as ToggleStop & { el?: HTMLElement; ordinal: number; part: number });
-    if (advanceBy === "screens") return this.screenPlanTops(container, keptTops).map(screenEntry);
+    if (advanceBy === "screens" && !this.settings.scrollStartSequence?.length && !["odd", "even"].includes(this.settings.scrollMode)) return this.screenPlanTops(container, keptTops).map(screenEntry);
     const ordered = orderModeStops(toggleStops, cfg, this.settings.scrollReverse);
     const togglePlan = ordered.flatMap((ms) => {
       const src = byOrdinal.get(ms.ordinal);
@@ -2343,7 +2344,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollNotePath = this.app.workspace.getActiveFile()?.path ?? null;
     this.scrollSeen = new Set();
     this.applyPerNoteScrollPrefs();
-    document.body.classList.add('ntt-review-measuring'); const plan = this.buildScrollPlan(container); document.body.classList.remove('ntt-review-measuring');
+    const firstQ = this.settings.scrollStartSequence?.find(n => matchesQuestionParity(n, this.settings.scrollMode)); if (firstQ && this.scrollRenderRetries < 80 && seekExactQuestion(container, this.collectStops(container), firstQ)) return this.retryStart(200, true); document.body.classList.add('ntt-review-measuring'); const plan = this.buildScrollPlan(container); document.body.classList.remove('ntt-review-measuring');
     if (plan.length === 0) {
       // v1.5.4 — the source is the truth. A filter whose toggles exist in the
       // markdown but are not rendered yet gets a few more chances instead of
@@ -2375,7 +2376,7 @@ export default class NotionTogglePlugin extends Plugin {
     this.scrollRenderRetries = 0;
     this.scrollPlan = plan;
     if (plan[0] && this.settings.scrollMode === "all" && !this.settings.scrollReverse) container.scrollTop = anchorScrollTop(container, plan[0].top, 0, this.settings.scrollStopAnchor);
-    const routed = this.settings.scrollMode === "route" || this.settings.scrollMode === "shuffle";
+    const routed = this.modeConfig().mode === "route" || this.modeConfig().mode === "shuffle";
     this.scrollAt = routed
       ? 0
       : firstStopFrom(plan, container.scrollTop, this.settings.scrollReverse);
@@ -2749,7 +2750,7 @@ export default class NotionTogglePlugin extends Plugin {
       // v1.7.1 — "both": screen stops fill the gaps between (anchored) toggle
       // stops with keys derived from the neighbouring toggle, so a re-measure
       // never double-pauses and never shadows a toggle stop.
-      const targets = advanceBy === "screens"
+      const targets = advanceBy === "screens" && !["odd", "even"].includes(this.settings.scrollMode)
         ? screenTargets
         : advanceBy === "both"
           ? [...toggleTargets, ...gapScreenStops(toggleTargets, derived.stepPx, maxScroll, screenMergeTolerance(screenVh), screenVh)]
@@ -3029,7 +3030,7 @@ export default class NotionTogglePlugin extends Plugin {
       let routeTarget: number | null = null;
       let routeStops: number[] = [];
       if (routeMode) {
-        const next = nextRouteIndex(cfg.route, this.scrollRouteIdx, this.scrollBoxes.map((b) => b.page), cfg.loopRoute); if (next === null) { this.stopAutoScroll(false); return; } this.scrollRouteIdx = next;
+        const targetQ = sourceQuestions(this.noteSource()).find(q => q.ordinal === cfg.route[this.scrollRouteIdx % cfg.route.length]); if (this.settings.scrollStartSequence?.length && targetQ && matchesFilter(kindOf(targetQ.kind), this.settings.scrollFilter) && !this.scrollBoxes.some(b => b.page === targetQ.ordinal) && seekExactQuestion(container, this.collectStops(container), targetQ.question)) { this.scrollPos = container.scrollTop; this.endScrollFrame(ts); return; } const next = nextRouteIndex(cfg.route, this.scrollRouteIdx, this.scrollBoxes.map((b) => b.page), cfg.loopRoute); if (next === null) { this.stopAutoScroll(false); return; } this.scrollRouteIdx = next;
         const wanted = cfg.route[this.scrollRouteIdx % cfg.route.length];
         const hit = this.scrollBoxes.find((b) => b.page === wanted);
         if (hit) {

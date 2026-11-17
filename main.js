@@ -2347,8 +2347,8 @@ function sourceToggleHeaders(text) {
     const depth = ((_a = prefix == null ? void 0 : prefix[1].match(/>/g)) != null ? _a : []).length;
     if (fence && depth < fence.depth)
       fence = void 0;
-    const plain = line.slice((_b = prefix == null ? void 0 : prefix[0].length) != null ? _b : 0);
-    const marker2 = plain.match(/^(`{3,}|~{3,})(.*)$/);
+    const plain2 = line.slice((_b = prefix == null ? void 0 : prefix[0].length) != null ? _b : 0);
+    const marker2 = plain2.match(/^(`{3,}|~{3,})(.*)$/);
     if (fence) {
       if (marker2 && marker2[1][0] === fence.char && marker2[1].length >= fence.length && !marker2[2].trim() && depth === fence.depth)
         fence = void 0;
@@ -4078,6 +4078,7 @@ var DEFAULT_AUTOSCROLL = {
   scrollThinkEnabled: true,
   scrollThinkSeconds: 5,
   scrollStartNumber: 1,
+  scrollStartSequence: [],
   scrollThinkIcon: "\u{1F914}",
   scrollFocusChrome: true,
   scrollReducedMotion: false,
@@ -5319,28 +5320,6 @@ function isFullyRendered(domCount, sourceTotal) {
   if (!Number.isFinite(sourceTotal) || sourceTotal <= 0)
     return true;
   return Number(domCount) >= sourceTotal;
-}
-var TOP_CALLOUT_RE = /^[ \t]*>[ \t]*\[!([^\]\n]+)\][+-]?[ \t]*(.*)$/gm;
-var qCache = null;
-function plainTitle2(md) {
-  return md.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`~=]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
-}
-function sourceQuestionNumbers(text) {
-  const raw = String(text != null ? text : "");
-  if ((qCache == null ? void 0 : qCache.text) === raw)
-    return qCache.map;
-  const map = /* @__PURE__ */ new Map();
-  let n = 0;
-  for (const m of withoutFences(raw).matchAll(TOP_CALLOUT_RE)) {
-    n++;
-    const kind = m[1].trim().toLowerCase();
-    const title = plainTitle2(m[2]) || kind;
-    const key = `${kind}\0${title}`;
-    if (!map.has(key))
-      map.set(key, n);
-  }
-  qCache = { text: raw, map };
-  return map;
 }
 
 // src/answer-state.ts
@@ -6611,20 +6590,103 @@ var ThinkGate = class {
   }
 };
 
+// src/question-selection.ts
+var plain = (s) => s.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/<[^>]*>/g, "").replace(/[*_`~=]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+var cache;
+function sourceQuestions(text) {
+  if ((cache == null ? void 0 : cache.text) === text)
+    return cache.entries;
+  let count = 0, parent = 0, htmlDepth = 0;
+  const lines = text.split("\n");
+  const entries = sourceToggleHeaders(text).map((h) => {
+    var _a, _b, _c;
+    const depth = ((_b = (_a = h.text.match(/^\s*((?:>\s*)*)/)) == null ? void 0 : _a[1].match(/>/g)) != null ? _b : []).length;
+    if (h.details)
+      htmlDepth = lines.slice(0, h.line).join("\n").split(/<details\b/i).length - lines.slice(0, h.line).join("\n").split(/<\/details>/i).length;
+    const root = h.details ? htmlDepth === 0 : depth === 1;
+    if (root) {
+      count++;
+      parent = (_c = titleNumber(plain(h.title))) != null ? _c : count;
+    }
+    return { ordinal: h.ordinal, question: parent, line: h.line, kind: h.kind.toLowerCase(), title: plain(h.title), root };
+  });
+  cache = { text, entries };
+  return entries;
+}
+function sourceQuestionFor(el2, text) {
+  var _a;
+  const entries = sourceQuestions(text), title = plain(toggleTitleOf(el2)), kind = toggleTypeOf(el2).toLowerCase();
+  const matches = entries.filter((q) => q.kind === kind && q.title === title);
+  const line = (_a = el2.closest("[data-line]")) == null ? void 0 : _a.dataset.line;
+  if (line !== void 0) {
+    const exact = matches.find((q) => q.line === Number(line));
+    if (exact)
+      return exact;
+  }
+  if (matches.length === 1)
+    return matches[0];
+  const n = titleNumber(title);
+  const numbered = entries.filter((q) => q.root && q.question === n && q.kind === kind);
+  return numbered.length === 1 ? numbered[0] : void 0;
+}
+function parseQuestionSelection(input) {
+  var _a;
+  const values = [];
+  for (const part of input.replace(/[–—]/g, "-").split(",")) {
+    const m = part.trim().match(/^(?:Q\s*)?(\d+)(?:\s*-\s*(?:Q\s*)?(\d+))?$/i);
+    if (!m)
+      return null;
+    const a = Number(m[1]), b = Number((_a = m[2]) != null ? _a : m[1]);
+    if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b) || a < 1 || b < a || b - a + values.length > 1e4)
+      return null;
+    for (let n = a; n <= b; n++)
+      if (!values.includes(n))
+        values.push(n);
+  }
+  return values.length ? values : null;
+}
+function questionRoute(text, numbers) {
+  const entries = sourceQuestions(text);
+  return numbers.flatMap((n) => {
+    const matches = entries.filter((q) => q.root && q.question === n);
+    return matches.length === 1 ? [matches[0].ordinal] : [];
+  });
+}
+function matchesQuestionParity(n, mode) {
+  return mode === "odd" ? n % 2 === 1 : mode === "even" ? n % 2 === 0 : true;
+}
+function seekExactQuestion(container, seen, question) {
+  if (seen.some((q) => q.question === question))
+    return false;
+  const numbers = seen.flatMap((q) => q.question ? [q.question] : []);
+  const direction = numbers.length && Math.min(...numbers) > question ? -1 : 1;
+  const max = Math.max(0, container.scrollHeight - container.clientHeight);
+  const next = Math.max(0, Math.min(max, container.scrollTop + direction * container.clientHeight * 0.7));
+  if (Math.abs(next - container.scrollTop) < 1)
+    return false;
+  container.scrollTop = next;
+  return true;
+}
+
 // src/run-session.ts
 function clampStartNumber(n) {
   return Number.isFinite(n) ? Math.max(1, Math.floor(n)) : 1;
 }
 function sessionStops(stops, s) {
-  var _a;
+  var _a, _b;
+  if ((_a = s.scrollStartSequence) == null ? void 0 : _a.length)
+    return stops.filter((t) => {
+      var _a2, _b2, _c;
+      return ((_b2 = s.scrollStartSequence) == null ? void 0 : _b2.includes((_a2 = t.question) != null ? _a2 : t.ordinal)) && matchesQuestionParity((_c = t.question) != null ? _c : t.ordinal, s.scrollMode);
+    });
   if (s.scrollMode === "route" || s.scrollMode === "shuffle")
     return stops;
-  const start = clampStartNumber((_a = s.scrollStartNumber) != null ? _a : 1);
+  const start = clampStartNumber((_b = s.scrollStartNumber) != null ? _b : 1);
   const num = (t) => {
     var _a2;
     return (_a2 = t.question) != null ? _a2 : t.ordinal;
   };
-  return stops.filter((t) => s.scrollReverse && start > 1 ? num(t) <= start : num(t) >= start);
+  return stops.filter((t) => matchesQuestionParity(num(t), s.scrollMode) && (s.scrollReverse && start > 1 ? num(t) <= start : num(t) >= start));
 }
 function screensFromStart(tops, keptTops, s, screenPx) {
   var _a;
@@ -6667,7 +6729,9 @@ function resetRunGate(host) {
   host.scrollActiveIdentity = null;
 }
 function finishRouteDwell(host, now) {
-  if (host.settings.scrollMode !== "route" && host.settings.scrollMode !== "shuffle" || host.settings.scrollLoopRoute || host.scrollRouteIdx < host.settings.scrollRoute.length || now < host.scrollDwellUntil)
+  var _a, _b;
+  const cfg = (_b = (_a = host.modeConfig) == null ? void 0 : _a.call(host)) != null ? _b : { mode: host.settings.scrollMode, route: host.settings.scrollRoute, loopRoute: host.settings.scrollLoopRoute };
+  if (cfg.mode !== "route" && cfg.mode !== "shuffle" || cfg.loopRoute || host.scrollRouteIdx < cfg.route.length || now < host.scrollDwellUntil)
     return false;
   host.stopAutoScroll(false);
   return true;
@@ -8511,8 +8575,8 @@ var ScrollModeModal = class extends import_obsidian10.Modal {
     const list = this.contentEl.createDiv({ cls: "notion-toggle-color-list" });
     const options = [
       { label: "\u221E Every toggle", mode: "all" },
-      { label: "1\uFE0F\u20E3 Odd toggles (1, 3, 5 \u2026)", mode: "odd" },
-      { label: "2\uFE0F\u20E3 Even toggles (2, 4, 6 \u2026)", mode: "even" },
+      { label: "1\uFE0F\u20E3 Odd questions (1, 3, 5 \u2026)", mode: "odd" },
+      { label: "2\uFE0F\u20E3 Even questions (2, 4, 6 \u2026)", mode: "even" },
       { label: "\u270D\uFE0F Custom list", mode: "custom" },
       { label: "\u{1F9ED} Route (my own order)", mode: "route" },
       { label: "\u{1F500} Shuffle (weakest first)", mode: "shuffle" }
@@ -8926,15 +8990,32 @@ function renderThinkSettings(containerEl, host) {
       await host.saveSettings();
     })
   );
-  new import_obsidian11.Setting(containerEl).setName("Start from question number").setDesc("Default 1: questions run in note order. With a colour filter, starts at the first matching question at or after this number. Route and shuffle keep their chosen order.").addText((t) => {
-    var _a;
-    return t.setValue(String((_a = s.scrollStartNumber) != null ? _a : 1)).onChange(async (v) => {
-      if (!/^\d+$/.test(v.trim()))
+  new import_obsidian11.Setting(containerEl).setName("Start from question number").setDesc("35 = start at question 35, then continue. 35,40,48 = only those questions, in that order. Ranges such as 35-40 work too. Stop the run before changing; colour filters still apply.").addText((t) => {
+    var _a, _b;
+    return t.setValue(((_a = s.scrollStartSequence) == null ? void 0 : _a.length) ? s.scrollStartSequence.join(",") : String((_b = s.scrollStartNumber) != null ? _b : 1)).onChange(async (v) => {
+      const numbers = parseQuestionSelection(v);
+      t.inputEl.setCustomValidity(numbers ? "" : "Enter a positive question number, comma list, or range.");
+      t.inputEl.setAttribute("aria-invalid", String(!numbers));
+      if (!numbers)
         return;
-      s.scrollStartNumber = clampStartNumber(Number(v));
+      s.scrollStartNumber = clampStartNumber(numbers[0]);
+      s.scrollStartSequence = numbers.length > 1 ? numbers : [];
       await host.saveSettings();
     });
   });
+  const practice = new import_obsidian11.Setting(containerEl).setName("Practice questions");
+  for (const [mode, label2] of [["all", "All"], ["odd", "Odd"], ["even", "Even"]]) {
+    practice.addButton((b) => {
+      var _a;
+      b.setButtonText(label2);
+      b.buttonEl.setAttribute("aria-pressed", String(((_a = s.scrollMode) != null ? _a : "all") === mode));
+      b.onClick(async () => {
+        s.scrollMode = mode;
+        await host.saveSettings();
+        practice.controlEl.querySelectorAll("button").forEach((el2) => el2.setAttribute("aria-pressed", String(el2.textContent === label2)));
+      });
+    });
+  }
   const row = new import_obsidian11.Setting(containerEl).setName("Think seconds").setDesc(
     `Currently ${formatDwell(clampThinkSeconds(s.scrollThinkSeconds))}. Per-toggle override: put \u{1F914}20s or ?30s in the question title. Per-note override: add "think: 20s" to the note's frontmatter. Tap the question to reveal early.`
   );
@@ -15614,15 +15695,17 @@ ${row}`, { line: cursor.line, ch: line.length });
       container,
       (el2) => filter.length === 0 ? true : matchesFilter(kindOf(toggleTypeOf(el2)), filter)
     );
-    const base = container.getBoundingClientRect().top - container.scrollTop;
-    const srcQ = sourceQuestionNumbers(this.noteSource());
-    return scan.map((s, index) => {
-      var _a;
+    const base = container.getBoundingClientRect().top - container.scrollTop, source = this.noteSource(), hasSource = sourceQuestions(source).length > 0;
+    return scan.flatMap((s, index) => {
+      var _a, _b;
+      const src = sourceQuestionFor(s.el, source);
+      if (hasSource && !src)
+        return [];
       const rect = s.el.getBoundingClientRect();
       return {
         index,
-        ordinal: s.ordinal,
-        question: (_a = srcQ.get(s.identity)) != null ? _a : s.question,
+        ordinal: (_a = src == null ? void 0 : src.ordinal) != null ? _a : s.ordinal,
+        question: (_b = src == null ? void 0 : src.question) != null ? _b : s.question,
         identity: s.identity,
         top: Math.max(0, Math.round(rect.top - base)),
         height: Math.round(rect.height),
@@ -15821,14 +15904,16 @@ ${row}`, { line: cursor.line, ch: line.length });
   }
   /** v1.1.1 — the current pause-at configuration. */
   modeConfig() {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e;
+    if ((_a = this.settings.scrollStartSequence) == null ? void 0 : _a.length)
+      return { mode: "route", picks: [], route: questionRoute(this.noteSource(), this.settings.scrollStartSequence.filter((n) => matchesQuestionParity(n, this.settings.scrollMode))), loopRoute: this.settings.scrollLoopRoute };
     return {
-      mode: this.settings.scrollMode,
-      picks: (_a = this.settings.scrollPicks) != null ? _a : [],
-      route: (_b = this.settings.scrollRoute) != null ? _b : [],
+      mode: this.settings.scrollMode === "odd" || this.settings.scrollMode === "even" ? "all" : this.settings.scrollMode,
+      picks: (_b = this.settings.scrollPicks) != null ? _b : [],
+      route: (_c = this.settings.scrollRoute) != null ? _c : [],
       loopRoute: !!this.settings.scrollLoopRoute,
-      shuffleFrom: (_c = this.settings.scrollShuffleFrom) != null ? _c : 0,
-      shuffleTo: (_d = this.settings.scrollShuffleTo) != null ? _d : 0
+      shuffleFrom: (_d = this.settings.scrollShuffleFrom) != null ? _d : 0,
+      shuffleTo: (_e = this.settings.scrollShuffleTo) != null ? _e : 0
     };
   }
   /** FSRS cards for the active note. */
@@ -15880,7 +15965,7 @@ ${row}`, { line: cursor.line, ch: line.length });
    * (every / odd / even / custom / route / shuffle) and tall-toggle chunking.
    */
   buildScrollPlan(container) {
-    var _a;
+    var _a, _b;
     const kept = this.collectStops(container, this.settings.scrollFilter);
     kept.splice(0, kept.length, ...sessionStops(kept, this.settings));
     this.scrollTotalItems = kept.length;
@@ -15893,7 +15978,7 @@ ${row}`, { line: cursor.line, ch: line.length });
     const advanceBy = (_a = this.settings.scrollAdvanceBy) != null ? _a : "toggles";
     const keptTops = kept.map((s) => s.top);
     const screenEntry = (top, part) => ({ index: -1, top, color: "other", ordinal: 0, part });
-    if (advanceBy === "screens")
+    if (advanceBy === "screens" && !((_b = this.settings.scrollStartSequence) == null ? void 0 : _b.length) && !["odd", "even"].includes(this.settings.scrollMode))
       return this.screenPlanTops(container, keptTops).map(screenEntry);
     const ordered = orderModeStops(toggleStops, cfg, this.settings.scrollReverse);
     const togglePlan = ordered.flatMap((ms3) => {
@@ -16045,7 +16130,7 @@ ${deckSummary(
     }, delayMs);
   }
   startAutoScroll() {
-    var _a, _b;
+    var _a, _b, _c;
     if (this.ensureReadingMode())
       return this.retryStart(180);
     if (this.beginFullRender())
@@ -16065,6 +16150,9 @@ ${deckSummary(
     this.scrollNotePath = (_b = (_a = this.app.workspace.getActiveFile()) == null ? void 0 : _a.path) != null ? _b : null;
     this.scrollSeen = /* @__PURE__ */ new Set();
     this.applyPerNoteScrollPrefs();
+    const firstQ = (_c = this.settings.scrollStartSequence) == null ? void 0 : _c.find((n) => matchesQuestionParity(n, this.settings.scrollMode));
+    if (firstQ && this.scrollRenderRetries < 80 && seekExactQuestion(container, this.collectStops(container), firstQ))
+      return this.retryStart(200, true);
     document.body.classList.add("ntt-review-measuring");
     const plan = this.buildScrollPlan(container);
     document.body.classList.remove("ntt-review-measuring");
@@ -16096,7 +16184,7 @@ ${deckSummary(
     this.scrollPlan = plan;
     if (plan[0] && this.settings.scrollMode === "all" && !this.settings.scrollReverse)
       container.scrollTop = anchorScrollTop(container, plan[0].top, 0, this.settings.scrollStopAnchor);
-    const routed = this.settings.scrollMode === "route" || this.settings.scrollMode === "shuffle";
+    const routed = this.modeConfig().mode === "route" || this.modeConfig().mode === "shuffle";
     this.scrollAt = routed ? 0 : firstStopFrom(plan, container.scrollTop, this.settings.scrollReverse);
     this.scrollHoldUntil = 0;
     this.scrollOpenedAt = 0;
@@ -16476,7 +16564,7 @@ ${deckSummary(
         key: `screen:${index}`,
         identity: `screen:${index}`
       }));
-      const targets = advanceBy === "screens" ? screenTargets : advanceBy === "both" ? [...toggleTargets, ...gapScreenStops(toggleTargets, derived.stepPx, maxScroll, screenMergeTolerance(screenVh), screenVh)].sort((a, b) => a.top - b.top) : toggleTargets;
+      const targets = advanceBy === "screens" && !["odd", "even"].includes(this.settings.scrollMode) ? screenTargets : advanceBy === "both" ? [...toggleTargets, ...gapScreenStops(toggleTargets, derived.stepPx, maxScroll, screenMergeTolerance(screenVh), screenVh)].sort((a, b) => a.top - b.top) : toggleTargets;
       this.scrollTargets = targets;
       this.scrollPlan = targets.map((t) => ({
         index: t.page > 0 ? t.page - 1 : -1,
@@ -16695,7 +16783,7 @@ ${deckSummary(
     return true;
   }
   autoScrollFrame(ts) {
-    var _a;
+    var _a, _b;
     this.scrollRaf = null;
     if (!this.scrollRunning || this.scrollHoldPaused)
       return;
@@ -16757,6 +16845,12 @@ ${deckSummary(
       let routeTarget = null;
       let routeStops = [];
       if (routeMode) {
+        const targetQ = sourceQuestions(this.noteSource()).find((q) => q.ordinal === cfg.route[this.scrollRouteIdx % cfg.route.length]);
+        if (((_a = this.settings.scrollStartSequence) == null ? void 0 : _a.length) && targetQ && matchesFilter(kindOf(targetQ.kind), this.settings.scrollFilter) && !this.scrollBoxes.some((b) => b.page === targetQ.ordinal) && seekExactQuestion(container, this.collectStops(container), targetQ.question)) {
+          this.scrollPos = container.scrollTop;
+          this.endScrollFrame(ts);
+          return;
+        }
         const next = nextRouteIndex(cfg.route, this.scrollRouteIdx, this.scrollBoxes.map((b) => b.page), cfg.loopRoute);
         if (next === null) {
           this.stopAutoScroll(false);
@@ -16788,7 +16882,7 @@ ${deckSummary(
           const holdMs = continuation ? clampScreenDwellMs(this.settings.scrollScreenDwellMs) : cfg.seconds * 1e3;
           const ordinal = cfg.route[this.scrollRouteIdx % cfg.route.length];
           this.scrollLastEvent = `waypointReached toggle ${ordinal} @ ${Math.round(routeTarget)}`;
-          const parked = this.parkOnToggle(ordinal, ts, (_a = this.scrollBoxes.find((box) => box.page === ordinal)) == null ? void 0 : _a.identity, continuation);
+          const parked = this.parkOnToggle(ordinal, ts, (_b = this.scrollBoxes.find((box) => box.page === ordinal)) == null ? void 0 : _b.identity, continuation);
           this.scrollDwellUntil = dwellPlan(ts, holdMs + this.readMs(holdMs, parked), this.scrollThinkMs, parked).dwellUntil;
           if (this.scrollRouteStop < routeStops.length - 1) {
             this.scrollRouteStop += 1;

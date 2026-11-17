@@ -301,8 +301,8 @@ export class ScrollModeModal extends Modal {
     const list = this.contentEl.createDiv({ cls: "notion-toggle-color-list" });
     const options: { label: string; mode: ScrollMode }[] = [
       { label: "∞ Every toggle", mode: "all" },
-      { label: "1️⃣ Odd toggles (1, 3, 5 …)", mode: "odd" },
-      { label: "2️⃣ Even toggles (2, 4, 6 …)", mode: "even" },
+      { label: "1️⃣ Odd questions (1, 3, 5 …)", mode: "odd" },
+      { label: "2️⃣ Even questions (2, 4, 6 …)", mode: "even" },
       { label: "✍️ Custom list", mode: "custom" },
       { label: "🧭 Route (my own order)", mode: "route" },
       { label: "🔀 Shuffle (weakest first)", mode: "shuffle" },
